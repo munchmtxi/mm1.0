@@ -1,0 +1,18 @@
+# Ignore environment files
+.env
+
+# Ignore notes directory
+notes/
+
+# Ignore logs directory
+logs/
+
+# Ignore Husky configuration directory
+.husky/
+
+# Ignore yarn lock file
+yarn.lock
+node_modules
+
+# Ignore old service files
+oldservicefiles/
