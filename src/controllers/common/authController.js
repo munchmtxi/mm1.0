@@ -88,6 +88,8 @@ module.exports = {
               ? user.driver_profile
               : user.role.name === authConstants.ROLES.ADMIN
               ? user.admin_profile
+              : user.role.name === authConstants.ROLES.STAFF
+              ? user.staff_profile
               : null,
         },
         access_token: accessToken,

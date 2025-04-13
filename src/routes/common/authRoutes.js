@@ -87,6 +87,18 @@ router.post(
     )
 );
 router.post(
+  '/login/staff', // Add this endpoint
+  rateLimiters.auth,
+  loginValidations,
+  validate,
+  (req, res, next) =>
+    login(
+      { ...req, body: { ...req.body, role: authConstants.ROLES.STAFF } },
+      res,
+      next
+    )
+);
+router.post(
   '/logout',
   rateLimiters.general,
   authenticate,

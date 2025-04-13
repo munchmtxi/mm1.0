@@ -101,11 +101,19 @@ const loginValidations = [
     .isString()
     .withMessage('Device ID must be a string'),
   body('device_type')
+    .if(body('device_id').exists())
+    .isString()
+    .notEmpty()
+    .withMessage('Device type is required when device ID is provided')
+    .isIn(['desktop', 'mobile', 'tablet', 'unknown'])
+    .withMessage('Device type must be desktop, mobile, tablet, or unknown'),
+  body('platform')
     .optional()
     .isString()
-    .withMessage('Device type must be a string'),
+    .isIn(['web', 'ios', 'android'])
+    .withMessage('Platform must be web, ios, or android'),
   body('role')
-    .optional() // Add this
+    .optional()
     .isIn(Object.values(authConstants.ROLES))
     .withMessage('Invalid role'),
 ];

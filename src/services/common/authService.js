@@ -6,10 +6,10 @@ const logger = require('@utils/logger');
 const jwtConfig = require('@config/jwtConfig');
 const authConstants = require('@constants/common/authConstants');
 const { TYPES: BUSINESS_TYPES } = require('@constants/merchant/businessTypes');
-const { User, Role, Device, Merchant, Customer, Driver, admin } = require('@models');
+const { User, Role, Device, Merchant, Customer, Driver, admin, Staff } = require('@models');
 
 const TokenService = {
-  generateTokens: async (user, deviceId) => {
+  generateTokens: async (user, deviceInfo = {}) => {
     const roleName = user.role ? user.role.name : (await Role.findByPk(user.role_id)).name;
     const payload = { id: user.id, role: roleName };
     if (roleName === authConstants.ROLES.MERCHANT && user.merchant_profile) {
@@ -28,21 +28,45 @@ const TokenService = {
       algorithm: jwtConfig.algorithm,
     });
   
-    if (deviceId) {
+    if (deviceInfo?.deviceId) { // Safe null check
+      const deviceType = deviceInfo.deviceType || 'unknown';
+      let platform;
+      switch (deviceType.toLowerCase()) {
+        case 'desktop':
+          platform = 'web';
+          break;
+        case 'mobile':
+          platform = 'ios';
+          break;
+        case 'tablet':
+          platform = 'ios';
+          break;
+        default:
+          platform = 'web';
+      }
+  
+      logger.info('Creating device with:', { deviceId: deviceInfo.deviceId, deviceType, platform });
+  
       const [device, created] = await Device.findOrCreate({
-        where: { user_id: user.id, device_id: deviceId },
+        where: { user_id: user.id, device_id: deviceInfo.deviceId },
         defaults: {
           user_id: user.id,
-          device_id: deviceId,
-          platform: 'web',
+          device_id: deviceInfo.deviceId,
+          device_type: deviceType,
+          platform: platform,
           last_active_at: new Date(),
+          last_used_at: new Date(),
+          is_pwa: false,
         },
       });
+  
       await device.update({
         refresh_token: refreshToken,
         refresh_token_expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         last_active_at: new Date(),
       });
+  
+      logger.info('Device handled:', { deviceId: deviceInfo.deviceId, created });
     }
   
     logger.logSecurityEvent('Tokens generated', { userId: user.id, role: roleName });
@@ -176,12 +200,16 @@ const registerUser = async (userData, isAdmin = false) => {
 
 const loginUser = async (email, password, deviceInfo, roleName) => {
   try {
+    logger.info(`Available models: ${Object.keys(require('@models')).join(', ')}`);
+    logger.info('Login attempt details:', { email, roleName, deviceInfo });
+
     const include = [
       { model: Role, as: 'role', where: { name: roleName } },
       { model: Merchant, as: 'merchant_profile' },
       { model: Customer, as: 'customer_profile' },
       { model: Driver, as: 'driver_profile' },
       { model: admin, as: 'admin_profile' },
+      { model: Staff, as: 'staff_profile' },
     ];
 
     const user = await User.findOne({
@@ -194,11 +222,14 @@ const loginUser = async (email, password, deviceInfo, roleName) => {
     });
 
     if (!user || user.role.name !== roleName) {
+      logger.error('User not found or role mismatch', { email, roleName });
       throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
     const isValid = user.valid_password(password);
+    logger.info('Password validation:', { isValid });
     if (!isValid) {
+      logger.error('Password incorrect', { email });
       throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -210,24 +241,7 @@ const loginUser = async (email, password, deviceInfo, roleName) => {
       throw new AppError('Please verify your account', 403, 'ACCOUNT_UNVERIFIED');
     }
 
-    const { accessToken, refreshToken } = await TokenService.generateTokens(user, deviceInfo?.deviceId);
-
-    if (deviceInfo && deviceInfo.deviceId) {
-      const { deviceId, deviceType } = deviceInfo;
-      const [device, created] = await Device.findOrCreate({
-        where: { user_id: user.id, device_id: deviceId },
-        defaults: {
-          user_id: user.id,
-          device_id: deviceId,
-          device_type: deviceType,
-          platform: 'web',
-          last_active_at: new Date(),
-        },
-      });
-      if (!created) {
-        await device.update({ last_active_at: new Date() });
-      }
-    }
+    const { accessToken, refreshToken } = await TokenService.generateTokens(user, deviceInfo);
 
     logger.logSecurityEvent('User logged in', { userId: user.id, role: roleName });
     return { user, accessToken, refreshToken };
@@ -239,26 +253,16 @@ const loginUser = async (email, password, deviceInfo, roleName) => {
 
 const googleOAuthLogin = async (user, deviceInfo) => {
   try {
-    const { accessToken, refreshToken } = await TokenService.generateTokens(user, deviceInfo?.deviceId);
+    const deviceType = deviceInfo?.deviceType || 'web';
+    const platform = deviceInfo?.platform || (deviceType === 'desktop' ? 'web' : 'ios');
 
-    if (deviceInfo && deviceInfo.deviceId) {
-      const { deviceId, deviceType } = deviceInfo;
-      const [device, created] = await Device.findOrCreate({
-        where: { user_id: user.id, device_id: deviceId },
-        defaults: {
-          user_id: user.id,
-          device_id: deviceId,
-          device_type: deviceType || 'web',
-          platform: 'web',
-          last_active_at: new Date(),
-        },
-      });
-      if (!created) {
-        await device.update({ last_active_at: new Date() });
-      }
-    }
+    const { accessToken, refreshToken } = await TokenService.generateTokens(user, {
+      deviceId: deviceInfo?.deviceId,
+      deviceType,
+      platform,
+    });
 
-    logger.logSecurityEvent('Google OAuth login', { userId: user.id, role: user.role });
+    logger.logSecurityEvent('Google OAuth login', { userId: user.id, role: user.role?.name });
     return { user, accessToken, refreshToken };
   } catch (error) {
     logger.logErrorEvent('Google OAuth login failed', { error: error.message });
@@ -270,7 +274,14 @@ const refreshToken = async (refreshToken) => {
   try {
     const decoded = jwt.verify(refreshToken, jwtConfig.refreshSecret);
     const user = await User.findByPk(decoded.id, {
-      include: [{ model: Role, as: 'role' }],
+      include: [
+        { model: Role, as: 'role' },
+        { model: Merchant, as: 'merchant_profile' },
+        { model: Customer, as: 'customer_profile' },
+        { model: Driver, as: 'driver_profile' },
+        { model: admin, as: 'admin_profile' },
+        { model: Staff, as: 'staff_profile' },
+      ],
     });
     if (!user) {
       throw new AppError('User not found', 404, 'USER_NOT_FOUND');
@@ -281,7 +292,7 @@ const refreshToken = async (refreshToken) => {
   } catch (error) {
     logger.logErrorEvent('Refresh token failed', { error: error.message });
     throw new AppError('Invalid refresh token', 401, 'INVALID_REFRESH_TOKEN');
-    }
+  }
 };
 
 module.exports = {

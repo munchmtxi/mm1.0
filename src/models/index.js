@@ -42,7 +42,6 @@ const associationOrder = [
   'Driver',
   'admin',
   'Device',
-  // Non-auth (deferred)
   'Staff',
   'Order',
   'MenuInventory',
