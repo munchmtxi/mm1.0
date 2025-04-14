@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.Payment, { foreignKey: 'merchant_id', as: 'payments' });
       this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
       this.belongsTo(models.Geofence, { foreignKey: 'geofence_id', as: 'geofence' });
+      // Associations for password history and reset logs remain unchanged
       this.hasMany(models.PasswordHistory, {
         foreignKey: 'user_id',
         constraints: false,
@@ -24,6 +25,14 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'user_id',
         constraints: false,
         scope: { user_type: 'merchant' },
+      });
+      // New association: Merchant belongs to Address using address_id
+      this.belongsTo(models.Address, { foreignKey: 'address_id', as: 'addressRecord' });
+      // Add MerchantBranch association
+      this.hasMany(models.MerchantBranch, {
+        foreignKey: 'merchant_id',
+        as: 'branches',
+        onDelete: 'CASCADE',
       });
     }
 
@@ -167,6 +176,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       validate: { notEmpty: { msg: 'Address is required' } },
     },
+    // New address_id field to link Address records
+    address_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'addresses', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',
+    },
     phone_number: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -226,7 +243,8 @@ module.exports = (sequelize, DataTypes) => {
     banner_url: { type: DataTypes.STRING, allowNull: true },
     storefront_url: { type: DataTypes.STRING, allowNull: true },
     delivery_area: { type: DataTypes.JSONB, allowNull: true },
-    location: { type: DataTypes.JSONB, allowNull: true },
+    // Update location field to use GEOMETRY('POINT')
+    location: { type: DataTypes.GEOMETRY('POINT'), allowNull: true },
     service_radius: { type: DataTypes.DECIMAL, allowNull: true, defaultValue: 5.0 },
     geofence_id: {
       type: DataTypes.INTEGER,

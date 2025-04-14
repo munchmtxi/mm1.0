@@ -1,6 +1,5 @@
 'use strict';
-const loggerModule = require('@utils/logger');
-const logger = loggerModule.logger || loggerModule; // Handle both { logger } and direct export
+const logger = require('@utils/logger');
 
 module.exports = (fn) => {
   return (req, res, next) => {

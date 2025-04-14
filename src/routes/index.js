@@ -1,13 +1,9 @@
-const authRoutes = require('@routes/common/authRoutes');
-const logger = require('@utils/logger');
+'use strict';
 
-module.exports = async (app) => {
-  app.use('/api/v1/auth', authRoutes);
+const express = require('express');
+const router = express.Router();
+const merchantProfileRoutes = require('@routes/merchant/profile/profileRoutes');
 
-  app.use((req, res) => {
-    logger.warn(`404: ${req.method} ${req.url}`);
-    res.status(404).json({ status: 'error', message: 'Route not found' });
-  });
+router.use('/merchant', merchantProfileRoutes);
 
-  logger.info('Routes configured');
-};
+module.exports = router;

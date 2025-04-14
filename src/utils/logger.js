@@ -75,7 +75,11 @@ if (config.nodeEnv !== 'production') {
 const logger = winston.createLogger({
   level: config.logging.level || 'info',
   levels: customLevels.levels,
-  format: winston.format.json(),
+  format: winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+),
+
   transports,
 });
 
@@ -83,5 +87,6 @@ const logger = winston.createLogger({
 logger.logSecurityEvent = (message, metadata = {}) => logger.info(message, { ...metadata, type: 'security' });
 logger.logErrorEvent = (message, metadata = {}) => logger.error(message, { ...metadata, type: 'error' });
 logger.logApiEvent = (message, metadata = {}) => logger.info(message, { ...metadata, type: 'api' });
+logger.logWarnEvent = (message, metadata = {}) => logger.warn(message, { ...metadata, type: 'warn' });
 
 module.exports = logger;

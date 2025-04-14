@@ -145,4 +145,37 @@ module.exports = {
     redirectUrl.searchParams.set('role', user.role);
     res.redirect(redirectUrl.toString());
   }),
+
+  // Added loginMerchant endpoint
+  loginMerchant: catchAsync(async (req, res, next) => {
+    const { email, password, deviceId, deviceType, rememberMe } = req.body;
+    logger.logApiEvent('Merchant login attempt', { email });
+    const deviceInfo = deviceId ? { deviceId, deviceType } : null;
+    const { user, accessToken, refreshToken } = await loginUser(
+      email,
+      password,
+      deviceInfo,
+      authConstants.ROLES.MERCHANT
+    );
+    console.log('authController: Emitting login notification for merchant:', user.id);
+    socketService.emitLoginNotification(req.io, {
+      id: user.id,
+      role: user.role.name,
+    });
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user: {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          email: user.email,
+          role: user.role.name,
+          profile: user.merchant_profile,
+        },
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      },
+    });
+  }),
 };

@@ -2,14 +2,14 @@
 const passport = require('passport');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
-const { User } = require('@models');
+const { User, Role } = require('@models');
 const jwtConfig = require('@config/jwtConfig');
 const config = require('@config/config');
 const logger = require('@utils/logger');
 const authConstants = require('@constants/common/authConstants');
 
 console.log('Initializing passport with jwtConfig:', {
-  secretOrKey: jwtConfig.secretOrKey || '[MISSING]',
+  secretOrKey: jwtConfig.secretOrKey ? 'Set' : '[MISSING]',
   jwtFromRequest: typeof jwtConfig.jwtFromRequest,
 });
 
@@ -29,14 +29,19 @@ if (!config.googleOAuth.clientId || !config.googleOAuth.clientSecret) {
 const configurePassport = () => {
   // JWT Strategy
   const jwtStrategy = new JwtStrategy(jwtConfig, async (payload, done) => {
-    logger.info('JWT Payload received:', payload);
+    logger.info('JWT Strategy invoked, verifying token', { tokenPayload: payload });
     try {
+      logger.info('Raw token payload:', payload);
       if (!payload || !payload.id) {
         logger.warn('Invalid token payload:', payload);
         return done(null, false, { message: 'Invalid token payload' });
       }
-
-      const user = await User.findByPk(payload.id);
+      logger.info('Fetching user for ID:', payload.id);
+      const user = await User.findByPk(payload.id, {
+        attributes: ['id', 'role_id', 'status'],
+        include: [{ model: Role, as: 'role', attributes: ['name'] }],
+      });
+      logger.info('User query result:', user ? user.dataValues : null);
       if (!user) {
         logger.warn('User not found for ID:', payload.id);
         return done(null, false, { message: 'User not found' });
@@ -45,17 +50,20 @@ const configurePassport = () => {
         logger.warn('User inactive:', payload.id);
         return done(null, false, { message: 'User account is inactive' });
       }
-
+  
+      const role = user.role?.name || (user.role_id === 19 ? 'merchant' : null);
+      logger.info('User fetched:', { id: user.id, role_id: user.role_id, role });
       const userData = {
         id: user.id,
         roleId: user.role_id,
-        role: user.role ? user.role.name : null,
+        role,
+        merchant_id: payload.merchant_id,
       };
-      logger.info('User authenticated:', { id: user.id, roleId: user.role_id });
+      logger.info('Setting userData:', userData);
       return done(null, userData);
     } catch (error) {
-      logger.error('Error during JWT verification:', error);
-      return done(error, false);
+      logger.error('JWT verification error:', { message: error.message, stack: error.stack });
+      return done(null, false, { message: 'Authentication error' });
     }
   });
 
@@ -72,21 +80,19 @@ const configurePassport = () => {
       try {
         let user = await User.findOne({
           where: { google_id: profile.id },
-          include: [{ model: require('@models').Role, as: 'role' }],
+          include: [{ model: Role, as: 'role', attributes: ['name'] }], // Changed 'users' to 'role'
         });
 
         if (!user) {
           user = await User.findOne({
             where: { email: profile.emails[0].value },
-            include: [{ model: require('@models').Role, as: 'role' }],
+            include: [{ model: Role, as: 'role', attributes: ['name'] }], // Changed 'users' to 'role'
           });
 
           if (user) {
-            // Link existing user with Google ID
             await user.update({ google_id: profile.id });
           } else {
-            // Create new user
-            const role = await require('@models').Role.findOne({
+            const role = await Role.findOne({
               where: { name: authConstants.ROLES.CUSTOMER },
             });
             user = await User.create({
@@ -115,12 +121,12 @@ const configurePassport = () => {
         const userData = {
           id: user.id,
           roleId: user.role_id,
-          role: user.role.name,
+          role: user.role.name, // Changed 'users' to 'role'
         };
         logger.info('Google user authenticated:', { id: user.id, role: user.role.name });
         return done(null, userData);
       } catch (error) {
-        logger.error('Error during Google OAuth:', error);
+        logger.error('Google OAuth error:', { message: error.message, stack: error.stack });
         return done(error, false);
       }
     }

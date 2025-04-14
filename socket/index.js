@@ -10,7 +10,8 @@ const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
 const { User, Role } = require('@models');
 const authRooms = require('./rooms/authRooms');
-const { setupAuthHandlers } = require('./handlers');
+const merchantRooms = require('./rooms/merchantRooms');
+const { setupHandlers } = require('./handlers');
 
 const initializeSocket = (server) => {
   const io = new Server(server, {
@@ -78,6 +79,11 @@ const initializeSocket = (server) => {
 
       socket.user = { id: user.id, role: user.role.name };
       await authRooms.joinAuthRooms(socket, user.role.name);
+      if (user.role.name === 'merchant') {
+        await merchantRooms.joinMerchantRooms(socket);
+      } else if (user.role.name === 'staff') {
+        await merchantRooms.joinStaffRooms(socket);
+      }
       logger.logSecurityEvent('Socket authenticated', {
         userId: user.id,
         role: user.role.name,
@@ -100,11 +106,14 @@ const initializeSocket = (server) => {
       role: socket.user.role,
     });
 
-    setupAuthHandlers(io, socket);
+    setupHandlers(io, socket);
 
     socket.on('disconnect', async () => {
       try {
         await authRooms.leaveAuthRooms(socket, socket.user.role);
+        if (socket.user.role === 'merchant') {
+          await merchantRooms.leaveMerchantRooms(socket);
+        }
         logger.info('Socket disconnected', {
           socketId: socket.id,
           userId: socket.user.id,

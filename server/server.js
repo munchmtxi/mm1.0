@@ -10,6 +10,7 @@ const config = require('@config/config');
 const { setupPassport } = require('@config/passport');
 const { initializeSocket } = require('@socket/index');
 const authRoutes = require('@routes/common/authRoutes');
+const routes = require('@routes/index'); // Add this line
 const errorMiddleware = require('@middleware/common/errorMiddleware');
 const logger = require('@utils/logger');
 const { applySecurityHeaders, sanitizeXSS } = require('@utils/security');
@@ -49,6 +50,7 @@ app.use((req, res, next) => {
 
 // Routes with rate-limiting
 app.use('/auth', rateLimiters.auth, authRoutes); // Apply rate limiter to auth routes
+app.use('/api/v1', routes); // Add this line
 app.use(rateLimiters.general); // Apply general limiter to all routes (optional)
 
 // Error handling

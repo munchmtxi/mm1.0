@@ -6,7 +6,7 @@ const logger = require('@utils/logger');
 const jwtConfig = require('@config/jwtConfig');
 const authConstants = require('@constants/common/authConstants');
 const { TYPES: BUSINESS_TYPES } = require('@constants/merchant/businessTypes');
-const { User, Role, Device, Merchant, Customer, Driver, admin, Staff } = require('@models');
+const { User, Role, Device, Merchant, Customer, Driver, admin, Staff, Session } = require('@models'); 
 
 const TokenService = {
   generateTokens: async (user, deviceInfo = {}) => {
@@ -28,7 +28,7 @@ const TokenService = {
       algorithm: jwtConfig.algorithm,
     });
   
-    if (deviceInfo?.deviceId) { // Safe null check
+    if (deviceInfo?.deviceId) {
       const deviceType = deviceInfo.deviceType || 'unknown';
       let platform;
       switch (deviceType.toLowerCase()) {
@@ -67,6 +67,21 @@ const TokenService = {
       });
   
       logger.info('Device handled:', { deviceId: deviceInfo.deviceId, created });
+
+      // Add Session storage
+      try {
+        await Session.create({
+          userId: user.id,
+          token: accessToken,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        logger.info('Session stored for access token', { userId: user.id, token: accessToken.substring(0, 20) + '...' });
+      } catch (error) {
+        logger.error('Failed to store session', { userId: user.id, error: error.message });
+        throw new AppError('Failed to store session', 500, 'SESSION_STORAGE_FAILED');
+      }
     }
   
     logger.logSecurityEvent('Tokens generated', { userId: user.id, role: roleName });
@@ -84,6 +99,11 @@ const TokenService = {
         },
         { where: { user_id: userId } }
       );
+      // Add Session cleanup
+      await Session.update(
+        { isActive: false, updatedAt: new Date() },
+        { where: { userId, isActive: true } }
+      );
     } else if (deviceId) {
       await Device.update(
         {
@@ -94,11 +114,17 @@ const TokenService = {
         },
         { where: { user_id: userId, device_id: deviceId } }
       );
+      // Add Session cleanup for device
+      await Session.update(
+        { isActive: false, updatedAt: new Date() },
+        { where: { userId, token: (await Device.findOne({ where: { user_id: userId, device_id: deviceId } }))?.refresh_token }}
+      );
     }
     logger.logSecurityEvent('User logged out', { userId, deviceId, clearAllDevices });
   },
 };
 
+// Rest of authService.js unchanged
 const registerUser = async (userData, isAdmin = false) => {
   try {
     const {
