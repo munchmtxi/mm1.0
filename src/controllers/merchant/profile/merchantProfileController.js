@@ -12,7 +12,7 @@ const catchAsync = require('@utils/catchAsync');
 
 module.exports = {
   getProfile: catchAsync(async (req, res, next) => {
-    const merchantId = req.user.merchant_id; // Fix: Use merchant_id
+    const merchantId = req.user.merchant_id;
     const includeBranches = req.query.includeBranches === 'true';
     const token = req.headers.authorization.split('Bearer ')[1];
 
@@ -26,7 +26,7 @@ module.exports = {
   }),
 
   updateProfile: catchAsync(async (req, res, next) => {
-    const merchantId = req.user.merchant_id; // Fix: Use merchant_id
+    const merchantId = req.user.merchant_id;
     const updateData = req.body;
     const token = req.headers.authorization.split('Bearer ')[1];
 
@@ -50,7 +50,7 @@ module.exports = {
   }),
 
   updateNotificationPreferences: catchAsync(async (req, res, next) => {
-    const merchantId = req.user.merchant_id; // Fix: Use merchant_id
+    const merchantId = req.user.merchant_id;
     const preferences = req.body;
     const token = req.headers.authorization.split('Bearer ')[1];
 
@@ -69,7 +69,7 @@ module.exports = {
   }),
 
   changePassword: catchAsync(async (req, res, next) => {
-    const userId = req.user.id; // Correct: Use userId
+    const userId = req.user.id;
     const { oldPassword, newPassword, confirmNewPassword, deviceId = 'unknown', deviceType = 'unknown' } = req.body;
     const clientIp = req.ip;
 
@@ -83,7 +83,7 @@ module.exports = {
       deviceType
     );
 
-    const merchantId = req.user.merchant_id; // Fix: Use merchant_id for socket
+    const merchantId = req.user.merchant_id;
     req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.PASSWORD_CHANGED, {
       message: 'Password changed successfully',
     });
@@ -100,7 +100,7 @@ module.exports = {
   }),
 
   updateGeolocation: catchAsync(async (req, res, next) => {
-    const merchantId = req.user.merchant_id; // Fix: Use merchant_id
+    const merchantId = req.user.merchant_id;
     const locationData = req.body;
     const token = req.headers.authorization.split('Bearer ')[1];
 
@@ -119,17 +119,15 @@ module.exports = {
     });
   }),
 
-  // Unchanged methods
   createBranchProfile: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
+    const merchantId = req.user.merchant_id;
     const branchData = req.body;
     const files = req.files || {};
 
-    logger.logApiEvent('Creating branch profile', { userId });
+    logger.logApiEvent('Creating branch profile', { merchantId });
 
-    const branch = await branchProfileService.createBranchProfile(userId, branchData, files);
+    const branch = await branchProfileService.createBranchProfile(merchantId, branchData, files);
 
-    const merchantId = req.user.merchant_id;
     req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.BRANCH_CREATED, {
       branch,
     });
@@ -204,11 +202,10 @@ module.exports = {
   }),
 
   listBranchProfiles: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
+    const merchantId = req.user.merchant_id;
+    logger.logApiEvent('Listing branch profiles', { merchantId });
 
-    logger.logApiEvent('Listing branch profiles', { userId });
-
-    const branches = await branchProfileService.listBranchProfiles(userId);
+    const branches = await branchProfileService.listBranchProfiles(merchantId);
     return res.status(200).json({
       status: 'success',
       data: branches,
@@ -216,14 +213,12 @@ module.exports = {
   }),
 
   bulkUpdateBranches: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
-    const updateData = req.body;
-
-    logger.logApiEvent('Bulk updating branches', { userId, count: updateData.length });
-
-    const branches = await branchProfileService.bulkUpdateBranches(userId, updateData);
-
     const merchantId = req.user.merchant_id;
+    const updateData = req.body; // Fix: Use req.body directly
+    logger.logApiEvent('Bulk updating branches', { merchantId, count: updateData.length });
+
+    const branches = await branchProfileService.bulkUpdateBranches(merchantId, updateData);
+
     req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.BRANCHES_BULK_UPDATED, {
       branches,
     });
@@ -243,7 +238,7 @@ module.exports = {
     const userId = req.user.id;
     const mediaData = req.body;
     const files = req.files || {};
-  
+
     logger.debug('updateMerchantMedia input', {
       userId,
       merchantId: req.user.merchant_id,
@@ -253,14 +248,14 @@ module.exports = {
       logoPath: files.logo?.[0]?.path,
       bannerPath: files.banner?.[0]?.path,
     });
-  
+
     logger.logApiEvent('Updating merchant media', { userId });
-  
+
     const updates = await merchantMediaService.updateMerchantMedia(userId, mediaData, files);
-  
+
     const merchantId = req.user.merchant_id;
     req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.MEDIA_UPDATED, { updates });
-  
+
     return res.status(200).json({
       status: 'success',
       data: updates,

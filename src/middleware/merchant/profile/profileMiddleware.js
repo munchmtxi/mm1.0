@@ -9,16 +9,10 @@ const Joi = require('joi');
 const catchAsync = require('@utils/catchAsync');
 
 module.exports = {
-  /**
-   * Apply authentication and restrict to merchant role
-   */
   protect: [authenticate, restrictTo('merchant')],
 
-  /**
-   * Validate merchant profile exists
-   */
   verifyMerchantProfile: catchAsync(async (req, res, next) => {
-    const userId = req.user.id; // Changed from req.user.userId
+    const userId = req.user.id;
     logger.info('verifyMerchantProfile middleware', { userId });
 
     const merchant = await Merchant.findOne({ where: { user_id: userId } });
@@ -27,15 +21,12 @@ module.exports = {
       throw new AppError('Merchant profile not found', 404, 'MERCHANT_NOT_FOUND');
     }
 
-    req.merchant = merchant; // Attach merchant to request
+    req.merchant = merchant;
     next();
   }),
 
-  /**
-   * Validate branch ownership for branch-specific routes
-   */
   verifyBranchOwnership: catchAsync(async (req, res, next) => {
-    const userId = req.user.id; // Changed from req.user.userId
+    const userId = req.user.id;
     const branchId = parseInt(req.params.branchId, 10);
 
     if (isNaN(branchId)) {
@@ -54,50 +45,60 @@ module.exports = {
         userId,
         branchId,
         merchantId: branch.merchant_id,
-        message: 'The branch does not belong to the merchant'
+        message: 'The branch does not belong to the merchant',
       });
       throw new AppError('You do not own this branch', 403, 'UNAUTHORIZED_BRANCH');
     }
 
-    req.branch = branch; // Attach branch to request
+    req.branch = branch;
     next();
   }),
 
-  /**
-   * Validate request data using Joi schemas
-   * @param {string} validatorName
-   */
   validate: (validatorName) => catchAsync(async (req, res, next) => {
     if (!profileValidator[validatorName]) {
       throw new AppError('Invalid validator', 500, 'INVALID_VALIDATOR');
     }
 
-    const schema = profileValidator[validatorName];
-    const data = {
-      ...req.body,
-      ...req.params,
-      ...req.query,
-    };
+    logger.debug('Validating request data', {
+      validatorName,
+      body: req.body,
+      params: req.params,
+      query: req.query,
+    });
 
-    const { error } = schema.validate(data, { abortEarly: false });
+    const schema = profileValidator[validatorName];
+
+    // For array-based validators like bulkUpdateBranches, validate req.body directly
+    let error;
+    if (validatorName === 'bulkUpdateBranches') {
+      ({ error } = schema.validate(req.body, { abortEarly: false }));
+    } else {
+      const data = {
+        ...req.body,
+        ...req.params,
+        ...req.query,
+      };
+      ({ error } = schema.validate(data, { abortEarly: false }));
+    }
+
     if (error) {
       const errorMessages = error.details.map((detail) => detail.message).join(', ');
-      logger.logValidationError('Validation failed', {
-        userId: req.user.id, // Changed from req.user.userId
-        errors: error.details.map(detail => detail.message).join(', '),
-      });      
+      logger.error('Validation failed', {
+        userId: req.user.id,
+        validatorName,
+        errors: errorMessages,
+      });
       throw new AppError(`Validation failed: ${errorMessages}`, 400, 'VALIDATION_FAILED');
     }
 
     next();
   }),
 
-  /**
-   * Validate multiple branches for bulk update
-   */
   verifyBulkBranches: catchAsync(async (req, res, next) => {
-    const userId = req.user.id; // Changed from req.user.userId
+    const userId = req.user.id;
     const updateData = req.body;
+
+    logger.debug('Verifying bulk branches', { userId, updateData });
 
     const merchant = await Merchant.findOne({ where: { user_id: userId } });
     if (!merchant) {
@@ -111,7 +112,7 @@ module.exports = {
           branchId: update.branchId,
           userId,
           status: 'unauthorized',
-          message: `Branch ${update.branchId} is either not found or does not belong to the merchant`
+          message: `Branch ${update.branchId} is either not found or does not belong to the merchant`,
         });
         throw new AppError(`Invalid or unauthorized branch ID: ${update.branchId}`, 400, 'INVALID_BRANCH');
       }

@@ -1,6 +1,6 @@
 'use strict';
 
-const { MerchantBranch, Merchant, Address } = require('@models');
+const { MerchantBranch, Merchant, Address, sequelize } = require('@models'); // Added sequelize import
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const mapService = require('@services/common/mapService');
