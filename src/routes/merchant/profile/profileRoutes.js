@@ -5,6 +5,7 @@ const router = express.Router();
 const merchantProfileController = require('@controllers/merchant/profile/merchantProfileController');
 const profileMiddleware = require('@middleware/merchant/profile/profileMiddleware');
 const upload = require('@config/multerConfig');
+const logger = require('@utils/logger');
 
 router.use(profileMiddleware.protect, profileMiddleware.verifyMerchantProfile);
 
@@ -25,10 +26,20 @@ router
   .route('/profile/geolocation')
   .patch(profileMiddleware.validate('updateGeolocation'), merchantProfileController.updateGeolocation);
 
-router
+  router
   .route('/profile/media')
   .patch(
     upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'banner', maxCount: 1 }]),
+    (req, res, next) => {
+      logger.debug('Multer output', {
+        files: req.files,
+        logo: req.files?.logo?.[0],
+        banner: req.files?.banner?.[0],
+        logoKeys: req.files?.logo ? Object.keys(req.files.logo[0]) : null,
+        bannerKeys: req.files?.banner ? Object.keys(req.files.banner[0]) : null
+      });
+      next();
+    },
     profileMiddleware.validate('updateMerchantMedia'),
     merchantProfileController.updateMerchantMedia
   );

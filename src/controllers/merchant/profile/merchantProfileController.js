@@ -243,16 +243,24 @@ module.exports = {
     const userId = req.user.id;
     const mediaData = req.body;
     const files = req.files || {};
-
-    logger.logApiEvent('Updating merchant media', { userId });
-
-    const updates = await merchantMediaService.updateMerchantMedia(userId, mediaData, files);
-
-    const merchantId = req.user.merchant_id;
-    req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.MEDIA_UPDATED, {
-      updates,
+  
+    logger.debug('updateMerchantMedia input', {
+      userId,
+      merchantId: req.user.merchant_id,
+      storefront_url: mediaData.storefront_url,
+      logo: files.logo?.[0]?.originalname,
+      banner: files.banner?.[0]?.originalname,
+      logoPath: files.logo?.[0]?.path,
+      bannerPath: files.banner?.[0]?.path,
     });
-
+  
+    logger.logApiEvent('Updating merchant media', { userId });
+  
+    const updates = await merchantMediaService.updateMerchantMedia(userId, mediaData, files);
+  
+    const merchantId = req.user.merchant_id;
+    req.io.to(merchantRooms.getMerchantRoom(merchantId)).emit(profileEvents.MEDIA_UPDATED, { updates });
+  
     return res.status(200).json({
       status: 'success',
       data: updates,
