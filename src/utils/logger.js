@@ -1,15 +1,15 @@
 'use strict';
-
+require('module-alias/register');
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 const config = require('@config/config');
 const fs = require('fs');
 const path = require('path');
 
-// Ensure logs directory exists
-const logDir = path.join(__dirname, 'logs');
+// Ensure logs directory exists at project root
+const logDir = path.join(__dirname, '../../logs');
 if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir);
+  fs.mkdirSync(logDir, { recursive: true });
 }
 
 // Define custom log levels and colors
@@ -76,10 +76,9 @@ const logger = winston.createLogger({
   level: config.logging.level || 'info',
   levels: customLevels.levels,
   format: winston.format.combine(
-  winston.format.timestamp(),
-  winston.format.json()
-),
-
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
   transports,
 });
 

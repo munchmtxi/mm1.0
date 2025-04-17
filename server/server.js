@@ -16,6 +16,10 @@ const logger = require('@utils/logger');
 const { applySecurityHeaders, sanitizeXSS } = require('@utils/security');
 const { rateLimiters } = require('@utils/rateLimiter');
 
+// Log server startup
+logger.info('Starting server...');
+logger.info('Loading models...');
+
 const app = express();
 const server = http.createServer(app);
 

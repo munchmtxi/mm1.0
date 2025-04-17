@@ -39,8 +39,8 @@ module.exports = (sequelize, DataTypes) => {
     tableName: 'time_windows',
     underscored: true,
     indexes: [
-      { fields: ['interval'] },
-      { fields: ['optimalWindow'] }
+      { name: 'idx_interval', fields: ['interval'] },
+      { name: 'idx_optimal_window', fields: ['optimal_window'] }
     ]
   });
   return TimeWindow;

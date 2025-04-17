@@ -1,31 +1,35 @@
 'use strict';
 
 // Import individual handler setup functions
-const { handleLogin } = require('./loginHandler');
-const { handleLogout } = require('./logoutHandler');
-
-const { setupAuthHandlers } = require('./loginHandler');
-const { setupLogoutHandlers } = require('./logoutHandler');
-const { setupProfileHandlers } = require('./merchant/profile/profileHandler');
+const { handleLogin, setupAuthHandlers } = require('./loginHandler');
+const { handleLogout, setupLogoutHandlers } = require('./logoutHandler');
+const { setupProfileHandlers: setupMerchantProfileHandlers } = require('./merchant/profile/profileHandler');
+const { setupProfileHandlers: setupCustomerProfileHandlers } = require('./customer/profile/profileHandler');
+const { setupProfileHandlers: setupDriverProfileHandlers } = require('./driver/profile/profileHandler');
 
 // Define the login event handler
 const setupAuthHandlersInternal = (io, socket) => {
-  // Placeholder for client-initiated events if needed
+  // Handle client-initiated login events
   socket.on('auth:login', (data) => {
     handleLogin(io, { id: socket.user.id, role: socket.user.role });
   });
 };
 
+// Ensure setupAuthHandlers is either the imported function or the internal one
+const authHandlers = setupAuthHandlers || setupAuthHandlersInternal;
+
 // Register all main socket handlers
 const setupHandlers = (io, socket) => {
-  setupAuthHandlersInternal(io, socket); // Internal login event
+  authHandlers(io, socket); // Use imported or internal auth handlers
   setupLogoutHandlers(io, socket);
-  setupProfileHandlers(io, socket);
+  setupMerchantProfileHandlers(io, socket);
+  setupCustomerProfileHandlers(io, socket);
+  setupDriverProfileHandlers(io, socket);
 };
 
 module.exports = {
   setupHandlers,
-  setupAuthHandlers: setupAuthHandlersInternal,
+  setupAuthHandlers: authHandlers,
   handleLogin,
   handleLogout,
 };

@@ -11,7 +11,7 @@ module.exports = {
   /**
    * Retrieve place details from Google Maps.
    * @param {string} placeId
-   * @param {string} sessionToken
+   * @param {string} [sessionToken]
    * @returns {object}
    */
   async getPlaceDetails(placeId, sessionToken) {
@@ -43,7 +43,7 @@ module.exports = {
   /**
    * Get address predictions from Google Maps.
    * @param {string} input
-   * @param {string} sessionToken
+   * @param {string} [sessionToken]
    * @returns {array}
    */
   async getAddressPredictions(input, sessionToken) {
@@ -71,15 +71,16 @@ module.exports = {
   /**
    * Resolve location data into a geo-point and formatted address.
    * @param {object} locationData
+   * @param {string} [sessionToken]
    * @returns {object}
    */
-  async resolveLocation(locationData) {
+  async resolveLocation(locationData, sessionToken) {
     try {
       const { placeId, address, coordinates } = locationData;
       let resolvedLocation;
 
       if (placeId) {
-        resolvedLocation = await this.getPlaceDetails(placeId);
+        resolvedLocation = await this.getPlaceDetails(placeId, sessionToken);
       } else if (address) {
         const response = await client.geocode({
           params: {
@@ -116,11 +117,42 @@ module.exports = {
         throw new AppError('Invalid location data', 400, 'INVALID_LOCATION');
       }
 
+      // Validate address components
+      if (!resolvedLocation.countryCode) {
+        throw new AppError('Country code not found in address', 400, 'INVALID_COUNTRY_CODE');
+      }
+      // Example: Restrict to supported countries (modify as needed)
+      const supportedCountries = config.supportedCountries || ['US', 'CA', 'GB'];
+      if (!supportedCountries.includes(resolvedLocation.countryCode)) {
+        throw new AppError('Country not supported', 400, 'UNSUPPORTED_COUNTRY');
+      }
+
       logger.logApiEvent('Location resolved', { placeId, address });
       return resolvedLocation;
     } catch (error) {
       logger.logErrorEvent('Failed to resolve location', { error: error.message });
       throw error instanceof AppError ? error : new AppError('Failed to resolve location', 500, 'LOCATION_RESOLUTION_FAILED');
+    }
+  },
+
+  /**
+   * Validate address components against supported regions.
+   * @param {object} addressData
+   * @returns {boolean}
+   */
+  async validateAddress(addressData) {
+    try {
+      const { countryCode } = addressData;
+      if (!countryCode) {
+        throw new AppError('Country code is required', 400, 'MISSING_COUNTRY_CODE');
+      }
+      const supportedCountries = config.supportedCountries || ['US', 'CA', 'GB'];
+      const isValid = supportedCountries.includes(countryCode);
+      logger.info('Address validation', { countryCode, isValid });
+      return isValid;
+    } catch (error) {
+      logger.logErrorEvent('Failed to validate address', { error: error.message });
+      throw error instanceof AppError ? error : new AppError('Failed to validate address', 400, 'ADDRESS_VALIDATION_FAILED');
     }
   },
 };

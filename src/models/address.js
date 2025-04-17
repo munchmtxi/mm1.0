@@ -1,16 +1,29 @@
 'use strict';
+
 const { Model, Op } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Address extends Model {
     static associate(models) {
+      // Association with Customer: using default_address_id now
       Address.hasMany(models.Customer, {
-        foreignKey: 'defaultAddressId',
+        foreignKey: 'default_address_id',
         as: 'customers',
       });
+      // Association with Merchant: remains the same
       Address.hasMany(models.Merchant, {
         foreignKey: 'address_id',
         as: 'merchants',
+      });
+      // New association with MerchantBranch
+      Address.hasMany(models.MerchantBranch, {
+        foreignKey: 'address_id',
+        as: 'branches',
+      });
+      // New association with User
+      Address.belongsTo(models.User, {
+        foreignKey: 'user_id',
+        as: 'user',
       });
     }
   }
@@ -22,6 +35,17 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
         autoIncrement: true,
         allowNull: false,
+      },
+      // New field for user association
+      user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+          model: 'users',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
       },
       formattedAddress: {
         type: DataTypes.STRING,
@@ -96,6 +120,7 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'addresses',
       underscored: false,
       indexes: [
+        { fields: ['user_id'], name: 'addresses_user_id_index' },
         { fields: ['placeId'], name: 'addresses_place_id_index' },
         { fields: ['latitude', 'longitude'], name: 'addresses_coordinates_index' },
         { fields: ['validationStatus'], name: 'addresses_validation_status_index' },

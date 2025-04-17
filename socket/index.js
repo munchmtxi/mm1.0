@@ -9,8 +9,7 @@ const jwtConfig = require('@config/jwtConfig');
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
 const { User, Role } = require('@models');
-const authRooms = require('./rooms/authRooms');
-const merchantRooms = require('./rooms/merchantRooms');
+const rooms = require('./rooms'); // Import from room index
 const { setupHandlers } = require('./handlers');
 
 const initializeSocket = (server) => {
@@ -78,11 +77,15 @@ const initializeSocket = (server) => {
       }
 
       socket.user = { id: user.id, role: user.role.name };
-      await authRooms.joinAuthRooms(socket, user.role.name);
+      await rooms.authRooms.joinAuthRooms(socket, user.role.name);
       if (user.role.name === 'merchant') {
-        await merchantRooms.joinMerchantRooms(socket);
+        await rooms.merchantRooms.joinMerchantRooms(socket);
       } else if (user.role.name === 'staff') {
-        await merchantRooms.joinStaffRooms(socket);
+        await rooms.merchantRooms.joinStaffRooms(socket);
+      } else if (user.role.name === 'customer') {
+        await rooms.customerRooms.joinCustomerRooms(socket);
+      } else if (user.role.name === 'driver') {
+        await rooms.driverRooms.joinDriverRoom(socket.user.id);
       }
       logger.logSecurityEvent('Socket authenticated', {
         userId: user.id,
@@ -110,9 +113,15 @@ const initializeSocket = (server) => {
 
     socket.on('disconnect', async () => {
       try {
-        await authRooms.leaveAuthRooms(socket, socket.user.role);
+        await rooms.authRooms.leaveAuthRooms(socket, socket.user.role);
         if (socket.user.role === 'merchant') {
-          await merchantRooms.leaveMerchantRooms(socket);
+          await rooms.merchantRooms.leaveMerchantRooms(socket);
+        } else if (socket.user.role === 'staff') {
+          await rooms.merchantRooms.leaveStaffRooms(socket);
+        } else if (socket.user.role === 'customer') {
+          await rooms.customerRooms.leaveCustomerRooms(socket);
+        } else if (user.role.name === 'driver') {
+          await rooms.driverRooms.leaveDriverRoom(socket.user.id);
         }
         logger.info('Socket disconnected', {
           socketId: socket.id,

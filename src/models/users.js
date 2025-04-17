@@ -70,6 +70,11 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'user_id',
         as: 'admin_profile',
       });
+
+      this.hasMany(models.Address, {
+        foreignKey: 'user_id',
+        as: 'addresses',
+      });
     }
 
     getFullName() {

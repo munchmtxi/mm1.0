@@ -8,10 +8,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'driver_id',
         as: 'driver',
       });
-      models.Driver.hasMany(this, {
-        foreignKey: 'driver_id',
-        as: 'availability',
-      });
+      // Removed: models.Driver.hasMany(this, { foreignKey: 'driver_id', as: 'availability' });
     }
   }
 
@@ -71,12 +68,12 @@ module.exports = (sequelize, DataTypes) => {
           },
         },
       },
-      isOnline: { // Added field
+      isOnline: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
       },
-      lastUpdated: { // Added field
+      lastUpdated: {
         type: DataTypes.DATE,
         allowNull: true,
       },

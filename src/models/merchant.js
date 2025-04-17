@@ -15,7 +15,6 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.Payment, { foreignKey: 'merchant_id', as: 'payments' });
       this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
       this.belongsTo(models.Geofence, { foreignKey: 'geofence_id', as: 'geofence' });
-      // Associations for password history and reset logs remain unchanged
       this.hasMany(models.PasswordHistory, {
         foreignKey: 'user_id',
         constraints: false,
@@ -26,9 +25,7 @@ module.exports = (sequelize, DataTypes) => {
         constraints: false,
         scope: { user_type: 'merchant' },
       });
-      // New association: Merchant belongs to Address using address_id
       this.belongsTo(models.Address, { foreignKey: 'address_id', as: 'addressRecord' });
-      // Add MerchantBranch association
       this.hasMany(models.MerchantBranch, {
         foreignKey: 'merchant_id',
         as: 'branches',
@@ -71,38 +68,15 @@ module.exports = (sequelize, DataTypes) => {
 
     validateBusinessTypeDetails() {
       const typeConfig = this.getBusinessTypeConfig();
-      console.log('Type Config:', typeConfig);
-      if (!typeConfig) {
-        console.log('No config found for type:', this.business_type);
-        return false;
-      }
-
+      if (!typeConfig) return false;
       const details = this.business_type_details || {};
-      console.log('Details:', details);
-      
-      const hasAllRequired = typeConfig.requiredFields.every(field => {
-        const isPresent = details[field] !== undefined && details[field] !== null;
-        console.log(`Field ${field}:`, { present: isPresent, value: details[field] });
-        return isPresent;
-      });
-
+      const hasAllRequired = typeConfig.requiredFields.every(field => details[field] !== undefined && details[field] !== null);
       const hasValidServices = details.service_types
-        ? details.service_types.every(service => {
-            const isValid = typeConfig.allowedServiceTypes.includes(service);
-            console.log(`Service ${service}:`, { valid: isValid, allowed: typeConfig.allowedServiceTypes });
-            return isValid;
-          })
+        ? details.service_types.every(service => typeConfig.allowedServiceTypes.includes(service))
         : true;
-
       const hasRequiredLicenses = details.licenses
-        ? typeConfig.requiredLicenses.every(license => {
-            const isPresent = details.licenses.includes(license);
-            console.log(`License ${license}:`, { present: isPresent, licenses: details.licenses });
-            return isPresent;
-          })
+        ? typeConfig.requiredLicenses.every(license => details.licenses.includes(license))
         : true;
-
-      console.log('Validation:', { hasAllRequired, hasValidServices, hasRequiredLicenses });
       return hasAllRequired && hasValidServices && hasRequiredLicenses;
     }
   }
@@ -116,67 +90,15 @@ module.exports = (sequelize, DataTypes) => {
       references: { model: 'users', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
-      validate: { notNull: { msg: 'User ID is required' }, isInt: { msg: 'User ID must be an integer' } },
     },
-    business_name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      validate: { notEmpty: { msg: 'Business name is required' } },
-    },
+    business_name: { type: DataTypes.STRING, allowNull: false },
     business_type: {
       type: DataTypes.ENUM(BUSINESS_TYPE_CODES),
       allowNull: false,
       defaultValue: 'cafe',
-      validate: {
-        isIn: {
-          args: [BUSINESS_TYPE_CODES],
-          msg: 'Invalid business type',
-        },
-      },
     },
-    business_type_details: {
-      type: DataTypes.JSONB,
-      allowNull: true,
-      validate: {
-        isValidForType(value) {
-          if (!value) return;
-          const typeConfig = BUSINESS_TYPES[this.business_type.toUpperCase()];
-          if (!typeConfig) {
-            console.log('Validator: No config for', this.business_type);
-            throw new Error('Invalid business type');
-          }
-
-          const missingFields = typeConfig.requiredFields.filter(field => !value[field]);
-          if (missingFields.length > 0) {
-            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
-          }
-
-          if (value.service_types) {
-            const invalidServices = value.service_types.filter(
-              service => !typeConfig.allowedServiceTypes.includes(service)
-            );
-            if (invalidServices.length > 0) {
-              throw new Error(`Invalid service types: ${invalidServices.join(', ')}`);
-            }
-          }
-
-          if (value.licenses) {
-            const missingLicenses = typeConfig.requiredLicenses.filter(
-              license => !value.licenses.includes(license)
-            );
-            if (missingLicenses.length > 0) {
-              throw new Error(`Missing required licenses: ${missingLicenses.join(', ')}`);
-            }
-          }
-        },
-      },
-    },
-    address: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      validate: { notEmpty: { msg: 'Address is required' } },
-    },
-    // New address_id field to link Address records
+    business_type_details: { type: DataTypes.JSONB, allowNull: true },
+    address: { type: DataTypes.STRING, allowNull: false },
     address_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -184,66 +106,20 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL',
     },
-    phone_number: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
-      validate: {
-        notEmpty: { msg: 'Phone number is required' },
-        isPhoneNumber(value) {
-          const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
-          try {
-            const number = phoneUtil.parse(value);
-            if (!phoneUtil.isValidNumber(number)) throw new Error('Invalid phone number format');
-          } catch (error) {
-            throw new Error('Invalid phone number format');
-          }
-        },
-      },
-    },
+    phone_number: { type: DataTypes.STRING, allowNull: false, unique: true },
     last_password_update: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
-    password_strength: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-      validate: { min: 0, max: 100 },
-    },
+    password_strength: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     failed_password_attempts: { type: DataTypes.INTEGER, defaultValue: 0 },
     password_lock_until: { type: DataTypes.DATE, allowNull: true },
-    currency: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: 'MWK',
-      validate: { notEmpty: { msg: 'Currency is required' } },
-    },
-    time_zone: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      defaultValue: 'Africa/Blantyre',
-      validate: { notEmpty: { msg: 'Time zone is required' } },
-    },
-    business_hours: {
-      type: DataTypes.JSON,
-      allowNull: true,
-      validate: {
-        isValidBusinessHours(value) {
-          if (value && (!value.open || !value.close)) {
-            throw new Error('Business hours must include both open and close times');
-          }
-        },
-      },
-    },
-    notification_preferences: {
-      type: DataTypes.JSON,
-      allowNull: true,
-      defaultValue: { orderUpdates: true, bookingNotifications: true, customerFeedback: true, marketingMessages: false },
-    },
+    currency: { type: DataTypes.STRING, allowNull: false, defaultValue: 'MWK' },
+    time_zone: { type: DataTypes.STRING, allowNull: false, defaultValue: 'Africa/Blantyre' },
+    business_hours: { type: DataTypes.JSON, allowNull: true },
+    notification_preferences: { type: DataTypes.JSON, allowNull: true },
     whatsapp_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     logo_url: { type: DataTypes.STRING, allowNull: true },
     banner_url: { type: DataTypes.STRING, allowNull: true },
     storefront_url: { type: DataTypes.STRING, allowNull: true },
     delivery_area: { type: DataTypes.JSONB, allowNull: true },
-    // Update location field to use GEOMETRY('POINT')
     location: { type: DataTypes.GEOMETRY('POINT'), allowNull: true },
     service_radius: { type: DataTypes.DECIMAL, allowNull: true, defaultValue: 5.0 },
     geofence_id: {
@@ -267,20 +143,28 @@ module.exports = (sequelize, DataTypes) => {
       { unique: true, fields: ['phone_number'], name: 'merchants_phone_number_unique' },
     ],
     hooks: {
-      beforeValidate: async (merchant) => {
-        console.log('BeforeValidate:', {
-          business_type: merchant.business_type,
-          details: merchant.business_type_details,
-          changed: merchant.changed()
+      afterSave: async (merchant, options) => {
+        const logger = require('@utils/logger');
+        logger.info('Merchant afterSave triggered', {
+          id: merchant.id,
+          address_id: merchant.address_id
         });
-        if (merchant.changed('business_type') && merchant.business_type_details) {
-          const isValid = merchant.validateBusinessTypeDetails();
-          if (!isValid) {
-            throw new Error('Business type details invalid for new business type');
+        try {
+          if (merchant.address_id && merchant.changed('address_id')) {
+            logger.info('Fetching address for merchant', { address_id: merchant.address_id });
+            const address = await sequelize.models.Address.findByPk(merchant.address_id, { transaction: options.transaction });
+            logger.info('Merchant address fetched', { formattedAddress: address ? address.formattedAddress : null });
+            if (address && merchant.address !== address.formattedAddress) {
+              logger.info('Updating Merchant address', { newAddress: address.formattedAddress });
+              merchant.address = address.formattedAddress;
+              await merchant.save({ transaction: options.transaction, hooks: false });
+            }
           }
+        } catch (error) {
+          logger.error('Merchant hook error', { message: error.message, stack: error.stack });
         }
-      },
-    },
+      }
+    }
   });
 
   return Merchant;
