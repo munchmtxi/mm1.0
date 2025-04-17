@@ -60,6 +60,9 @@ module.exports = {
         case 'driver_license':
           uploadDir = path.join(__dirname, '..', '..', 'Uploads', 'driver');
           break;
+        case 'staff':
+          uploadDir = path.join(__dirname, '..', '..', 'Uploads', 'staff');
+          break;
         default:
           throw new AppError('Invalid image type', 400, 'INVALID_IMAGE_TYPE');
       }
@@ -76,7 +79,13 @@ module.exports = {
         });
       }
 
-      const relativePath = `/Uploads/${type === 'logo' ? 'logos' : type === 'avatar' ? 'customer' : type === 'banner' ? 'banners' : 'driver'}/${filename}`;
+      const relativePath = `/Uploads/${
+        type === 'logo' ? 'logos' :
+        type === 'avatar' ? 'customer' :
+        type === 'banner' ? 'banners' :
+        type === 'driver_profile' || type === 'driver_license' ? 'driver' :
+        'staff'
+      }/${filename}`;
       logger.info('Image uploaded', { entityId, type, path: relativePath });
       return relativePath;
     } catch (error) {
@@ -97,7 +106,7 @@ module.exports = {
   async deleteImage(entityId, type) {
     try {
       let filePath;
-      if (type === 'avatar') {
+      if (type === 'avatar' || type === 'staff') {
         const user = await User.findByPk(entityId, {
           attributes: ['avatar_url'],
         });

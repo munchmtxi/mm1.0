@@ -30,6 +30,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'geofence_id',
         as: 'geofence'
       });
+      this.belongsTo(models.MerchantBranch, {
+        foreignKey: 'branch_id',
+        as: 'branch',
+      });
     }
   }
 

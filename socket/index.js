@@ -76,12 +76,12 @@ const initializeSocket = (server) => {
         throw new AppError('User account is inactive', 403, 'ACCOUNT_INACTIVE');
       }
 
-      socket.user = { id: user.id, role: user.role.name };
+      socket.user = { id: user.id, role: user.role.name, merchant_id: user.staff_profile?.merchant_id };
       await rooms.authRooms.joinAuthRooms(socket, user.role.name);
       if (user.role.name === 'merchant') {
         await rooms.merchantRooms.joinMerchantRooms(socket);
       } else if (user.role.name === 'staff') {
-        await rooms.merchantRooms.joinStaffRooms(socket);
+        await rooms.staffRoom(io, socket, socket.user); // Use staffRoom
       } else if (user.role.name === 'customer') {
         await rooms.customerRooms.joinCustomerRooms(socket);
       } else if (user.role.name === 'driver') {
@@ -117,10 +117,10 @@ const initializeSocket = (server) => {
         if (socket.user.role === 'merchant') {
           await rooms.merchantRooms.leaveMerchantRooms(socket);
         } else if (socket.user.role === 'staff') {
-          await rooms.merchantRooms.leaveStaffRooms(socket);
+          // No leaveStaffRooms needed, as staffRoom.js handles join only
         } else if (socket.user.role === 'customer') {
           await rooms.customerRooms.leaveCustomerRooms(socket);
-        } else if (user.role.name === 'driver') {
+        } else if (socket.user.role === 'driver') {
           await rooms.driverRooms.leaveDriverRoom(socket.user.id);
         }
         logger.info('Socket disconnected', {

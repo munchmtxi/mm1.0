@@ -6,6 +6,7 @@ const { handleLogout, setupLogoutHandlers } = require('./logoutHandler');
 const { setupProfileHandlers: setupMerchantProfileHandlers } = require('./merchant/profile/profileHandler');
 const { setupProfileHandlers: setupCustomerProfileHandlers } = require('./customer/profile/profileHandler');
 const { setupProfileHandlers: setupDriverProfileHandlers } = require('./driver/profile/profileHandler');
+const { setupProfileHandlers: setupStaffProfileHandlers } = require('./staff/profile/staffProfileHandler');
 
 // Define the login event handler
 const setupAuthHandlersInternal = (io, socket) => {
@@ -25,6 +26,7 @@ const setupHandlers = (io, socket) => {
   setupMerchantProfileHandlers(io, socket);
   setupCustomerProfileHandlers(io, socket);
   setupDriverProfileHandlers(io, socket);
+  setupStaffProfileHandlers(io, socket);
 };
 
 module.exports = {
