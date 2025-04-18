@@ -9,7 +9,7 @@ const jwtConfig = require('@config/jwtConfig');
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
 const { User, Role } = require('@models');
-const rooms = require('./rooms'); // Import from room index
+const rooms = require('./rooms');
 const { setupHandlers } = require('./handlers');
 
 const initializeSocket = (server) => {
@@ -81,11 +81,13 @@ const initializeSocket = (server) => {
       if (user.role.name === 'merchant') {
         await rooms.merchantRooms.joinMerchantRooms(socket);
       } else if (user.role.name === 'staff') {
-        await rooms.staffRoom(io, socket, socket.user); // Use staffRoom
+        await rooms.staffRoom(io, socket, socket.user);
       } else if (user.role.name === 'customer') {
         await rooms.customerRooms.joinCustomerRooms(socket);
       } else if (user.role.name === 'driver') {
         await rooms.driverRooms.joinDriverRoom(socket.user.id);
+      } else if (user.role.name === 'admin') {
+        await rooms.adminRooms.joinAdminRooms(socket, socket.user.id);
       }
       logger.logSecurityEvent('Socket authenticated', {
         userId: user.id,
@@ -122,6 +124,8 @@ const initializeSocket = (server) => {
           await rooms.customerRooms.leaveCustomerRooms(socket);
         } else if (socket.user.role === 'driver') {
           await rooms.driverRooms.leaveDriverRoom(socket.user.id);
+        } else if (socket.user.role === 'admin') {
+          await rooms.adminRooms.leaveAdminRooms(socket, socket.user.id);
         }
         logger.info('Socket disconnected', {
           socketId: socket.id,
