@@ -28,7 +28,12 @@ const ERROR_CODES = {
   INVALID_INPUT: 'INVALID_INPUT',
   NOT_FOUND: 'NOT_FOUND',
   INVALID_STATUS: 'INVALID_STATUS',
-  // …other codes…
+};
+
+// === Ride Limits for Subscriptions ===
+const SUBSCRIPTION_RIDE_LIMITS = {
+  RIDE_STANDARD: 10, // Example: 10 rides per month for standard
+  RIDE_PREMIUM: 20, // Example: 20 rides per month for premium
 };
 
 // === Array-based lists (for ENUM spreads) ===
@@ -52,7 +57,7 @@ module.exports = {
   SUBSCRIPTION_STATUSES,
   SUBSCRIPTION_SHARE_STATUSES,
   ERROR_CODES,
-
+  SUBSCRIPTION_RIDE_LIMITS, // Add to exports
   SUBSCRIPTION_TYPES_ARRAY,
   SUBSCRIPTION_SCHEDULES_ARRAY,
   DAYS_OF_WEEK,

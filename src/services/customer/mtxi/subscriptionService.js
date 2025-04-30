@@ -178,7 +178,7 @@ const createRideSubscription = async (userId, subscriptionData, options = {}) =>
       await transaction.commit();
     }
     logger.info('Ride subscription created', { subscriptionId: subscription.id, rideSubscriptionId: rideSubscription.id, userId });
-    return rideSubscription;
+    return subscription; // Return Subscription instead of RideSubscription
   } catch (error) {
     if (!options.transaction) {
       await transaction.rollback();

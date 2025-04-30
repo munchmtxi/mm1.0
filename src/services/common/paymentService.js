@@ -1,6 +1,7 @@
 'use strict';
 
-const { Payment, Customer } = require('@models');
+const { Payment, Customer, Ride } = require('@models');
+const { sequelize } = require('@models'); // Add sequelize import
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const socketService = require('@services/common/socketService');
@@ -54,45 +55,49 @@ const createPaymentIntent = async (userId, amount, type, merchant_id, metadata =
 };
 
 const confirmPayment = async (paymentId, userId, options = {}) => {
-  return sequelize.transaction(async (t) => {
-    const payment = await Payment.findOne({
-      where: { id: paymentId },
-      include: [{ model: Customer, as: 'customer' }],
-      transaction: t,
-    });
+  const transaction = options.transaction; // Use provided transaction
+  if (!transaction) {
+    logger.error('No transaction provided for confirmPayment', { paymentId, userId });
+    throw new AppError('Transaction required for payment confirmation', 500, 'INTERNAL_SERVER_ERROR');
+  }
 
-    if (!payment) {
-      logger.warn('Payment not found', { paymentId });
-      throw new AppError('Payment not found', 404, 'NOT_FOUND');
-    }
-
-    if (payment.status !== 'pending') {
-      logger.warn('Invalid payment status', { paymentId, status: payment.status });
-      throw new AppError('Invalid payment status', 400, 'INVALID_STATUS');
-    }
-
-    if (payment.customer.user_id !== userId) {
-      logger.warn('Unauthorized payment confirmation', { paymentId, userId });
-      throw new AppError('Unauthorized', 403, 'UNAUTHORIZED');
-    }
-
-    payment.status = 'completed';
-    await payment.save({ transaction: t });
-
-    // Update Ride.payment_id if ride_id is present
-    if (payment.ride_id) {
-      const ride = await Ride.findOne({ where: { id: payment.ride_id }, transaction: t });
-      if (ride && !ride.payment_id) {
-        ride.payment_id = payment.id;
-        await ride.save({ transaction: t });
-        logger.info('Ride payment_id updated', { rideId: payment.ride_id, paymentId });
-      }
-    }
-
-    logger.info('Payment confirmed', { paymentId, userId });
-    socketService.emitToUser(userId, 'payment:confirmed', { paymentId, status: payment.status });
-    return payment;
+  const payment = await Payment.findOne({
+    where: { id: paymentId },
+    include: [{ model: Customer, as: 'customer' }],
+    transaction,
   });
+
+  if (!payment) {
+    logger.warn('Payment not found', { paymentId });
+    throw new AppError('Payment not found', 404, 'NOT_FOUND');
+  }
+
+  if (payment.status !== 'pending') {
+    logger.warn('Invalid payment status', { paymentId, status: payment.status });
+    throw new AppError('Invalid payment status', 400, 'INVALID_STATUS');
+  }
+
+  if (payment.customer.user_id !== userId) {
+    logger.warn('Unauthorized payment confirmation', { paymentId, userId });
+    throw new AppError('Unauthorized', 403, 'UNAUTHORIZED');
+  }
+
+  payment.status = 'completed';
+  await payment.save({ transaction });
+
+  // Update Ride.payment_id if ride_id is present
+  if (payment.ride_id) {
+    const ride = await Ride.findOne({ where: { id: payment.ride_id }, transaction });
+    if (ride && !ride.payment_id) {
+      ride.payment_id = payment.id;
+      await ride.save({ transaction });
+      logger.info('Ride payment_id updated', { rideId: payment.ride_id, paymentId });
+    }
+  }
+
+  logger.info('Payment confirmed', { paymentId, userId });
+  socketService.emitToUser(userId, 'payment:confirmed', { paymentId, status: payment.status });
+  return payment;
 };
 
 const authorizePayment = async (userId, amount, type, rideId, metadata = {}, options = {}) => {
