@@ -68,6 +68,16 @@ const baseConfig = {
     cors: {
       whitelist: process.env.CORS_WHITELIST?.split(',') || []
     }
+  },
+  // Supported countries and pricing settings
+  supportedCountries: ['US', 'CA', 'GB'],
+  pricing: {
+    baseFare: parseFloat(process.env.BASE_FARE || 5),
+    perKmRate: parseFloat(process.env.PER_KM_RATE || 1.5),
+    perMinuteRate: parseFloat(process.env.PER_MINUTE_RATE || 0.3),
+    waitTimeRate: parseFloat(process.env.WAIT_TIME_RATE || 0.5),
+    driverPercentage: parseFloat(process.env.DRIVER_PERCENTAGE || 0.8),
+    averageSpeed: parseFloat(process.env.AVERAGE_SPEED || 30) // km/h
   }
 };
 
@@ -81,12 +91,7 @@ const databaseConfigs = {
     port: process.env.DB_PORT,
     dialect: 'postgres',
     logging: console.log,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
+    pool: { max: 5, min: 0, acquire: 30000, idle: 10000 }
   },
   test: {
     username: process.env.DB_USER,
@@ -96,12 +101,7 @@ const databaseConfigs = {
     port: process.env.DB_PORT,
     dialect: 'postgres',
     logging: false,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
+    pool: { max: 5, min: 0, acquire: 30000, idle: 10000 }
   },
   production: {
     username: process.env.DB_USER,
@@ -111,12 +111,7 @@ const databaseConfigs = {
     port: process.env.DB_PORT,
     dialect: 'postgres',
     logging: false,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    }
+    pool: { max: 5, min: 0, acquire: 30000, idle: 10000 }
   }
 };
 
@@ -130,29 +125,16 @@ const config = {
 if (!process.env.SKIP_CONFIG_VALIDATION) {
   const validateConfig = () => {
     const requiredEnvVars = [
-      'DB_HOST',
-      'DB_USER',
-      'DB_PASSWORD',
-      'JWT_SECRET',
-      'SESSION_SECRET',
-      'GOOGLE_MAPS_API_KEY',
-      'GOOGLE_CLIENT_ID',
-      'GOOGLE_CLIENT_SECRET',
-      'TWILIO_ACCOUNT_SID',
-      'TWILIO_AUTH_TOKEN',
-      'TWILIO_WHATSAPP_NUMBER',
-      'EMAIL_HOST',
-      'EMAIL_PORT',
-      'EMAIL_USER',
-      'EMAIL_PASS',
-      'EMAIL_ENCRYPTION',
-      'JWT_ALGORITHM',
-      'JWT_DEFAULT_EXPIRATION',
-      'STATUS_MONITOR_USERNAME',
-      'STATUS_MONITOR_PASSWORD',
-      'SMS_PROVIDER',
-      'SMS_API_KEY',
-      'SMS_SENDER_ID'
+      'DB_HOST', 'DB_USER', 'DB_PASSWORD',
+      'JWT_SECRET', 'SESSION_SECRET',
+      'GOOGLE_MAPS_API_KEY', 'GOOGLE_CLIENT_ID',
+      'GOOGLE_CLIENT_SECRET', 'TWILIO_ACCOUNT_SID',
+      'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_NUMBER',
+      'EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USER',
+      'EMAIL_PASS', 'EMAIL_ENCRYPTION',
+      'JWT_ALGORITHM', 'JWT_DEFAULT_EXPIRATION',
+      'STATUS_MONITOR_USERNAME', 'STATUS_MONITOR_PASSWORD',
+      'SMS_PROVIDER', 'SMS_API_KEY', 'SMS_SENDER_ID'
     ];
 
     if (environment === 'test') {
@@ -161,7 +143,7 @@ if (!process.env.SKIP_CONFIG_VALIDATION) {
       requiredEnvVars.push('DB_NAME');
     }
 
-    const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
     if (missingVars.length > 0) {
       console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
       throw new Error('Configuration validation failed');

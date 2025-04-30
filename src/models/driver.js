@@ -1,3 +1,4 @@
+// src/models/driver.js
 'use strict';
 const { Model, Op } = require('sequelize');
 const libphonenumber = require('google-libphonenumber');
@@ -5,12 +6,18 @@ const libphonenumber = require('google-libphonenumber');
 module.exports = (sequelize, DataTypes) => {
   class Driver extends Model {
     static associate(models) {
-      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
-      this.hasMany(models.Order, { foreignKey: 'driver_id', as: 'orders' });
-      this.hasMany(models.Payment, { foreignKey: 'driver_id', as: 'payments' });
-      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
-      this.belongsTo(models.Route, { foreignKey: 'active_route_id', as: 'activeRoute' });
-      this.hasMany(models.DriverAvailability, { foreignKey: 'driver_id', as: 'availability' });
+      // Core associations
+      this.belongsTo(models.User,       { foreignKey: 'user_id',        as: 'user' });
+      this.hasMany(models.Ride,          { foreignKey: 'driver_id',      as: 'rides' });
+      this.hasMany(models.DriverRatings, { foreignKey: 'driver_id',      as: 'ratings' });
+      this.hasOne(models.Vehicle,        { foreignKey: 'driver_id',      as: 'vehicle' });
+      this.hasMany(models.DriverAvailability, { foreignKey: 'driver_id', as: 'availabilities' });
+
+      // Order, payments, notifications, route
+      this.hasMany(models.Order,         { foreignKey: 'driver_id',      as: 'orders' });
+      this.hasMany(models.Payment,       { foreignKey: 'driver_id',      as: 'payments' });
+      this.hasMany(models.Notification,  { foreignKey: 'user_id',        as: 'notifications' });
+      this.belongsTo(models.Route,       { foreignKey: 'active_route_id', as: 'activeRoute' });
     }
 
     format_phone_for_whatsapp() {
@@ -18,7 +25,7 @@ module.exports = (sequelize, DataTypes) => {
       try {
         const number = phoneUtil.parse(this.phone_number);
         return `+${number.getCountryCode()}${number.getNationalNumber()}`;
-      } catch (error) {
+      } catch {
         throw new Error('Invalid phone number format');
       }
     }
@@ -27,9 +34,9 @@ module.exports = (sequelize, DataTypes) => {
   Driver.init({
     id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
-      autoIncrement: true,
       primaryKey: true,
+      autoIncrement: true,
+      allowNull: false,
     },
     user_id: {
       type: DataTypes.INTEGER,
@@ -40,7 +47,7 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: 'CASCADE',
       validate: {
         notNull: { msg: 'User ID is required' },
-        isInt: { msg: 'User ID must be an integer' },
+        isInt:   { msg: 'User ID must be an integer' },
       },
     },
     name: {
@@ -57,11 +64,9 @@ module.exports = (sequelize, DataTypes) => {
         isPhoneNumber(value) {
           const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
           try {
-            const number = phoneUtil.parse(value);
-            if (!phoneUtil.isValidNumber(number)) {
-              throw new Error('Invalid phone number format');
-            }
-          } catch (error) {
+            const num = phoneUtil.parse(value);
+            if (!phoneUtil.isValidNumber(num)) throw new Error();
+          } catch {
             throw new Error('Invalid phone number format');
           }
         },
@@ -78,16 +83,38 @@ module.exports = (sequelize, DataTypes) => {
       unique: true,
       validate: { notEmpty: { msg: 'License number is required' } },
     },
-    profile_picture_url: { type: DataTypes.STRING, allowNull: true },
-    license_picture_url: { type: DataTypes.STRING, allowNull: true },
-    routes: { type: DataTypes.JSON, allowNull: true },
-    availability_status: {
-      type: DataTypes.ENUM('available', 'unavailable', 'busy'),
-      allowNull: false,
-      defaultValue: 'available',
+    profile_picture_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: { isUrl:   { msg: 'Profile picture URL must be a valid URL' } },
     },
-    current_location: { type: DataTypes.JSONB, allowNull: true },
-    last_location_update: { type: DataTypes.DATE, allowNull: true },
+    license_picture_url: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: { isUrl:   { msg: 'License picture URL must be a valid URL' } },
+    },
+    routes: {
+      type: DataTypes.JSON,
+      allowNull: true,
+    },
+    availability_status: {
+      type: DataTypes.ENUM('available', 'busy', 'offline'),
+      allowNull: false,
+      defaultValue: 'offline',
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'busy'),
+      allowNull: false,
+      defaultValue: 'active',
+    },
+    current_location: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    last_location_update: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
     active_route_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -95,14 +122,18 @@ module.exports = (sequelize, DataTypes) => {
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL',
     },
-    service_area: { type: DataTypes.JSONB, allowNull: true },
-    preferred_zones: { type: DataTypes.JSONB, allowNull: true },
-    status: {
-      type: DataTypes.ENUM('active', 'busy'),
-      allowNull: false,
-      defaultValue: 'active',
+    service_area: {
+      type: DataTypes.JSONB,
+      allowNull: true,
     },
-    rating: { type: DataTypes.DECIMAL, allowNull: true },
+    preferred_zones: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
+    rating: {
+      type: DataTypes.DECIMAL,
+      allowNull: true,
+    },
     total_rides: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -123,7 +154,10 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
     },
-    deleted_at: { type: DataTypes.DATE, allowNull: true },
+    deleted_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Driver',
@@ -131,59 +165,46 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     paranoid: true,
     indexes: [
-      { unique: true, fields: ['user_id'], name: 'drivers_user_id_unique' },
-      { unique: true, fields: ['phone_number'], name: 'drivers_phone_number_unique' },
-      { unique: true, fields: ['license_number'], name: 'drivers_license_number_unique' },
-      { fields: ['active_route_id'], name: 'drivers_active_route_id_index' },
+      { unique: true, fields: ['user_id'] },
+      { unique: true, fields: ['phone_number'] },
+      { unique: true, fields: ['license_number'] },
+      { fields: ['active_route_id'] },
+      { fields: ['availability_status'] },
     ],
   });
 
-  Driver.addHook('afterUpdate', async (driver, options) => {
+  Driver.addHook('afterUpdate', async (driver) => {
     try {
-      console.log(`afterUpdate hook triggered for driver_id: ${driver.id}`);
       const now = new Date();
-      const currentDate = now.toISOString().split('T')[0];
+      const today = now.toISOString().slice(0,10);
       const currentTime = now.toTimeString().split(' ')[0];
       const { DriverAvailability } = sequelize.models;
 
-      const availability = await DriverAvailability.findOne({
+      const avail = await DriverAvailability.findOne({
         where: {
           driver_id: driver.id,
-          date: currentDate,
+          date: today,
           start_time: { [Op.lte]: currentTime },
-          end_time: { [Op.gte]: currentTime },
+          end_time:   { [Op.gte]: currentTime },
         },
-        order: [['last_updated', 'DESC']],
+        order: [['last_updated','DESC']],
       });
 
-      if (availability) {
-        const newStatus = availability.status === 'available' ? 'available' :
-                         availability.status === 'busy' ? 'busy' : 'unavailable';
-        console.log(`Availability found: ${availability.status}, calculated newStatus: ${newStatus}`);
-
-        // Only update if status has changed
+      if (avail) {
+        const newStatus = avail.status === 'available' ? 'available'
+                         : avail.status === 'busy'      ? 'busy'
+                         : 'offline';
         if (driver.availability_status !== newStatus) {
-          console.log(`Updating availability_status from ${driver.availability_status} to ${newStatus}`);
           await sequelize.query(
-            `UPDATE drivers SET availability_status = :status, updated_at = :updatedAt WHERE id = :id`,
-            {
-              replacements: {
-                status: newStatus,
-                updatedAt: new Date(),
-                id: driver.id,
-              },
+            `UPDATE drivers SET availability_status = :status, updated_at = :now WHERE id = :id`, {
+              replacements: { status: newStatus, now, id: driver.id },
               type: sequelize.QueryTypes.UPDATE,
             }
           );
-          console.log(`Updated availability_status for driver_id: ${driver.id} to ${newStatus}`);
-        } else {
-          console.log(`No status change needed for driver_id: ${driver.id}, current: ${driver.availability_status}`);
         }
-      } else {
-        console.log(`No matching availability record found for driver_id: ${driver.id}`);
       }
-    } catch (error) {
-      console.error('Error in Driver afterUpdate hook:', error);
+    } catch (err) {
+      console.error('Driver afterUpdate hook error:', err);
     }
   });
 

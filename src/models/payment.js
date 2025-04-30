@@ -24,11 +24,14 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'staff_id',
         as: 'staff',
       });
-      // Optionally, define an association for in_dining_order if needed:
-      // this.belongsTo(models.InDiningOrder, {
-      //   foreignKey: 'in_dining_order_id',
-      //   as: 'inDiningOrder',
-      // });
+      this.belongsTo(models.InDiningOrder, {
+        foreignKey: 'in_dining_order_id',
+        as: 'inDiningOrder',
+      });
+      this.belongsTo(models.Ride, {
+        foreignKey: 'ride_id',
+        as: 'ride',
+      });
     }
   }
 
@@ -42,7 +45,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       order_id: {
         type: DataTypes.INTEGER,
-        allowNull: true, // Changed to allow null
+        allowNull: true,
         references: {
           model: 'orders',
           key: 'id',
@@ -69,7 +72,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       merchant_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: {
           model: 'merchants',
           key: 'id',
@@ -77,7 +80,6 @@ module.exports = (sequelize, DataTypes) => {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
         validate: {
-          notNull: { msg: 'Merchant ID is required' },
           isInt: { msg: 'Merchant ID must be an integer' },
         },
       },
@@ -107,16 +109,34 @@ module.exports = (sequelize, DataTypes) => {
           isInt: { msg: 'Staff ID must be an integer' },
         },
       },
-      // Existing in_dining_order_id field:
       in_dining_order_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: { model: 'in_dining_orders', key: 'id' },
+        references: {
+          model: 'in_dining_orders',
+          key: 'id',
+        },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
+        validate: {
+          isInt: { msg: 'In-Dining Order ID must be an integer' },
+        },
+      },
+      ride_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'rides',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+        validate: {
+          isInt: { msg: 'Ride ID must be an integer' },
+        },
       },
       amount: {
-        type: DataTypes.FLOAT,
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
         validate: {
           min: {
@@ -136,6 +156,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.ENUM(
           'pending',
           'processing',
+          'authorized',
           'completed',
           'failed',
           'refunded',
@@ -201,8 +222,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment: 'Stores refund reason, approver, timestamp, etc.',
       },
+      dispute_details: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        comment: 'Details of any payment dispute',
+      },
       tip_amount: {
-        type: DataTypes.FLOAT,
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
         defaultValue: 0,
         validate: {
@@ -213,6 +239,17 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.JSONB,
         allowNull: true,
         comment: 'Stores tip distribution details among staff/drivers',
+      },
+      type: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+        defaultValue: 'payment',
+        validate: {
+          isIn: {
+            args: [['payment', 'tip', 'fare']],
+            msg: 'Type must be one of: payment, tip, fare',
+          },
+        },
       },
       created_at: {
         type: DataTypes.DATE,
@@ -237,8 +274,12 @@ module.exports = (sequelize, DataTypes) => {
       paranoid: true,
       validate: {
         atLeastOneOrderReference() {
-          if (!this.order_id && !this.in_dining_order_id) {
-            throw new Error('At least one of Order ID or In-Dining Order ID is required');
+          // Skip validation for subscription payments
+          if (this.payment_details?.type === 'subscription') {
+            return;
+          }
+          if (!this.order_id && !this.in_dining_order_id && !this.ride_id) {
+            throw new Error('At least one of Order ID, In-Dining Order ID, or Ride ID is required');
           }
         },
       },
@@ -251,6 +292,7 @@ module.exports = (sequelize, DataTypes) => {
         { fields: ['bank_reference'], name: 'payments_bank_reference_index' },
         { fields: ['provider'], name: 'payments_provider_index' },
         { fields: ['in_dining_order_id'], name: 'payments_in_dining_order_id_index' },
+        { fields: ['ride_id'], name: 'payments_ride_id_index' },
       ],
     }
   );

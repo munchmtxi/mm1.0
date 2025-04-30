@@ -24,7 +24,8 @@
     "seed:undo": "cross-env NODE_ENV=development sequelize db:seed:undo:all --config src/config/config.js",
     "start": "node server/server.js",
     "validate:env": "node scripts/validateEnv.js",
-    "test:connections": "node scripts/testConnections.js"
+    "test:connections": "node scripts/testConnections.js",
+    "test:mtxi": "jest --runInBand"
   },
   "_moduleAliases": {
     "@constants": "src/constants",
@@ -44,7 +45,7 @@
     "@server": "server"
   },
   "dependencies": {
-    "@googlemaps/google-maps-services-js": "^3.3.0",
+    "@googlemaps/google-maps-services-js": "^3.4.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "africastalking": "^0.7.2",
     "archiver": "^7.0.1",
@@ -133,7 +134,7 @@
     "postcss": "^8.5.3",
     "prettier": "^3.4.2",
     "sequelize-cli": "^6.6.2",
-    "supertest": "^7.0.0"
+    "supertest": "^7.1.0"
   },
   "lint-staged": {
     "*.js": [

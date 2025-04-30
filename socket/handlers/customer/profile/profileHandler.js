@@ -111,7 +111,7 @@ const setupProfileHandlers = (io, socket) => {
       socket.emit('friend:manage:success', { status: 'success', data: updatedConnections });
 
       if (action === PROFILE.ACTIONS.FRIEND.ADD) {
-        profileEvents.emitFriendRequestSent(io, userId, farmerId);
+        profileEvents.emitFriendRequestSent(io, userId, friendId);
       } else if (action === PROFILE.ACTIONS.FRIEND.ACCEPT) {
         profileEvents.emitFriendRequestAccepted(io, userId, friendId);
       } else if (action === PROFILE.ACTIONS.FRIEND.REJECT) {
@@ -137,4 +137,4 @@ const setupProfileHandlers = (io, socket) => {
   );
 };
 
-module.exports = { setupProfileHandlers, authenticateSocket };
+module.exports = { setupProfileHandlers };

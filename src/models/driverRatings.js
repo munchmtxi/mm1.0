@@ -4,30 +4,9 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class DriverRatings extends Model {
     static associate(models) {
-      this.belongsTo(models.Driver, {
-        foreignKey: 'driver_id',
-        as: 'driver',
-      });
-      this.belongsTo(models.Ride, {
-        foreignKey: 'ride_id',
-        as: 'ride',
-      });
-      this.belongsTo(models.Order, {
-        foreignKey: 'order_id',
-        as: 'order',
-      });
-      models.Driver.hasMany(this, {
-        foreignKey: 'driver_id',
-        as: 'ratings',
-      });
-      models.Ride.hasOne(this, {
-        foreignKey: 'ride_id',
-        as: 'rating',
-      });
-      models.Order.hasOne(this, {
-        foreignKey: 'order_id',
-        as: 'rating',
-      });
+      this.belongsTo(models.Driver, { foreignKey: 'driver_id', as: 'driver' });
+      this.belongsTo(models.Ride, { foreignKey: 'ride_id', as: 'ride' });
+      this.belongsTo(models.Order, { foreignKey: 'order_id', as: 'order' });
     }
   }
 
@@ -42,30 +21,21 @@ module.exports = (sequelize, DataTypes) => {
       driver_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'drivers',
-          key: 'id',
-        },
+        references: { model: 'drivers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
       ride_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'rides',
-          key: 'id',
-        },
+        references: { model: 'rides', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
       },
       order_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'orders',
-          key: 'id',
-        },
+        references: { model: 'orders', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
       },
