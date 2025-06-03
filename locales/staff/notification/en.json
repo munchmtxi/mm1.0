@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Your Staff Profile Has Been Updated",
+    "profile_updated": "Your staff profile has been updated successfully, staff ID: {staffId}.",
+    "profile_verified_subject": "Staff Profile Compliance Verified",
+    "profile_verified": "Your staff profile compliance has been verified successfully.",
+    "profile_compliance_failed_subject": "Staff Profile Compliance Verification Failed",
+    "profile_compliance_failed": "Compliance verification failed: {reason}.",
+    "task_assignment_subject": "New Task Assigned",
+    "task_assignment": "You have been assigned a new task: {taskName}.",
+    "shift_update_subject": "Shift Schedule Updated",
+    "shift_update": "Your shift schedule has been updated: {shiftDetails}.",
+    "wallet_update_subject": "Wallet Details Updated",
+    "wallet_update": "Your wallet details have been updated successfully.",
+    "training_reminder_subject": "Training Reminder",
+    "training_reminder": "Please complete your {trainingName} training by {deadline}.",
+    "announcement_subject": "Important Announcement",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Points Awarded",
+    "gamification_points_awarded": "You earned {points} points for {actionName}!"
+  }
+}

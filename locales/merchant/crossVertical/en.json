@@ -1,0 +1,14 @@
+
+{
+  "crossVertical": {
+    "servicesUnified": "Unified mtables/munch: {{orders}} orders, {{bookings}} bookings",
+    "pointsSynced": "Synced {{totalPoints}} loyalty points across services",
+    "uiEnsured": "Ensured consistent UI with theme {{theme}}",
+    "pointsAwarded": "Awarded {{points}} points for cross-service usage",
+    "errors": {
+      "invalidMerchant": "Invalid merchant",
+      "invalidCustomer": "Invalid customer",
+      "noBranches": "No branches found"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "cancellation": {
+    "mtables_cancelled": "Your table booking {reference} has been cancelled. Reason: {reason}.",
+    "munch_cancelled": "Your order {reference} has been cancelled. Reason: {reason}.",
+    "mtxi_cancelled": "Your ride {reference} has been cancelled. Reason: {reason}.",
+    "in_dining_cancelled": "Your in-dining order {reference} has been cancelled. Reason: {reason}.",
+    "refunded": "Refund of {amount} {currency} processed for {serviceType} service."
+  },
+  "errors": {
+    "service_not_found": "The requested service was not found.",
+    "service_already_cancelled": "This service has already been cancelled.",
+    "invalid_service_type": "Invalid service type. Must be mtables, munch, mtxi, or in_dining.",
+    "invalid_service_id": "Service ID must be a positive integer.",
+    "reason_required": "A reason for cancellation is required.",
+    "user_not_found": "User not found.",
+    "unauthorized": "You are not authorized to perform this action.",
+    "forbidden": "You do not have permission to cancel this service.",
+    "invalid_wallet": "Invalid wallet.",
+    "no_payment_found": "No completed payment found for service.",
+    "refund_failed": "Failed to process refund."
+  }
+}

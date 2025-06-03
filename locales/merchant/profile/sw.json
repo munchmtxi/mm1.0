@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Profaili yako ya mchuuzi imeundwa kikamilifu, {name}.",
+    "updated": "Profaili yako ya mchuuzi imehariri kikamilifu, {name}.",
+    "country_updated": "Mipangilio ya nchi imebadilishwa ku-{country}.",
+    "media_uploaded": "Midia ({mediaType}) imeongezwa kikamilifu.",
+    "wallet_settings_updated": "Mipangilio ya mkoba wako imehariri kikamilifu.",
+    "payment_method_added": "Njia ya malipo ({methodType}) imeongezwa kwenye mkoba wako.",
+    "withdrawal_processed": "Kutoa kwa {amount} {currency} kimekamilika."
+  }
+}

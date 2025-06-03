@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Wasifu wako wa dereva umetengenezwa kwa mafanikio, {name}.",
+    "updated": "Wasifu wako wa dereva umehaririwa kwa mafanikio, {name}.",
+    "certification_uploaded": "Uthibitisho ({certType}) umepakuliwa kwa mafanikio.",
+    "verified": "Hali ya uthibitisho wa wasifu wako: {status}.",
+    "country_updated": "Mipangilio ya nchi yako imebadilishwa kuwa {country}.",
+    "wallet_settings_updated": "Mipangilio ya mkoba wako imehaririwa kwa mafanikio.",
+    "payment_method_added": "Njia ya malipo ({methodType}) imeongezwa kwenye mkoba wako.",
+    "withdrawal_processed": "Kutoa {amount} {currency} kimefanikiwa kutendwa."
+  }
+}

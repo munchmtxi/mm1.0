@@ -1,37 +1,72 @@
 'use strict';
 
-const { body } = require('express-validator');
+/**
+ * Driver Profile Validator
+ * Validates incoming data for driver profile operations using Joi. Ensures compliance with
+ * driverConstants.js for allowed values and formats.
+ *
+ * Last Updated: May 15, 2025
+ */
 
-exports.personalInfoValidator = [
-  body('first_name').optional().isString().trim().isLength({ min: 2, max: 50 }),
-  body('last_name').optional().isString().trim().isLength({ min: 2, max: 50 }),
-  body('email').optional().isEmail().normalizeEmail(),
-  body('phone').optional().isString().trim(),
-];
+const Joi = require('joi');
+const driverConstants = require('@constants/driverConstants');
+const AppError = require('@utils/AppError');
+const logger = require('@utils/logger');
 
-exports.vehicleInfoValidator = [
-  body('type').optional().isString().trim(),
-  body('model').optional().isString().trim(),
-  body('year').optional().isInt({ min: 1900, max: new Date().getFullYear() + 1 }),
-];
+/**
+ * Validation schema for updating driver profile.
+ */
+const updateProfileSchema = Joi.object({
+  name: Joi.string().min(2).max(100).optional(),
+  email: Joi.string().email().optional(),
+  phone: Joi.string().pattern(/^\+?[1-9]\d{1,14}$/).optional(),
+  vehicleType: Joi.string()
+    .valid(...Object.values(driverConstants.PROFILE_CONSTANTS.VEHICLE_TYPES))
+    .optional(),
+}).min(1);
 
-exports.passwordChangeValidator = [
-  body('currentPassword').isString().notEmpty(),
-  body('newPassword')
-    .isString()
-    .isLength({ min: 8, max: 100 })
-    .matches(/[A-Z]/, 'i')
-    .matches(/[a-z]/, 'i')
-    .matches(/[0-9]/)
-    .matches(/[^A-Za-z0-9]/),
-];
+/**
+ * Validation schema for uploading certifications.
+ */
+const uploadCertificationSchema = Joi.object({
+  type: Joi.string()
+    .valid(...Object.values(driverConstants.PROFILE_CONSTANTS.CERTIFICATIONS))
+    .required(),
+});
 
-exports.addressValidator = [
-  body('action').isString().isIn(['add_address', 'remove_address']),
-  body('addressData.formattedAddress')
-    .if(body('action').equals('add_address'))
-    .notEmpty().withMessage('Formatted address is required'),
-  body('addressData.id')
-    .if(body('action').equals('remove_address'))
-    .notEmpty().withMessage('Address ID is required'),
-];
+/**
+ * Validates update profile request body.
+ * @param {Object} data - Request body.
+ */
+const validateUpdateProfile = (data) => {
+  const { error } = updateProfileSchema.validate(data);
+  if (error) {
+    logger.warn('Update profile validation failed', { error: error.details });
+    throw new AppError(
+      error.details[0].message,
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
+};
+
+/**
+ * Validates certification upload request body.
+ * @param {Object} data - Request body.
+ */
+const validateUploadCertification = (data) => {
+  const { error } = uploadCertificationSchema.validate(data);
+  if (error) {
+    logger.warn('Upload certification validation failed', { error: error.details });
+    throw new AppError(
+      error.details[0].message,
+      400,
+      driverConstants.ERROR_CODES.INVALID_CERTIFICATION_TYPE
+    );
+  }
+};
+
+module.exports = {
+  validateUpdateProfile,
+  validateUploadCertification,
+};

@@ -1,0 +1,29 @@
+{
+  "booking": {
+    "confirmed": "Booking {reference} confirmed.",
+    "seated": "Booking {reference} has been seated.",
+    "waitlisted": "Booking {reference} added to waitlist at position {position}.",
+    "removed_from_waitlist": "Booking {reference} removed from waitlist."
+  },
+  "check_in": {
+    "confirmed": "Check-in confirmed for booking {reference} at table {tableNumber}."
+  },
+  "order": {
+    "created": "Order {orderNumber} placed at table {tableNumber}.",
+    "preparing": "Order {orderNumber} is being prepared."
+  },
+  "pre_order": {
+    "created": "Pre-order {orderNumber} placed for table {tableNumber}.",
+    "preparing": "Pre-order {orderNumber} is being prepared.",
+    "pending": "Pre-order {orderNumber} is pending.",
+    "confirmed": "Pre-order {orderNumber} is confirmed."
+  },
+  "support": {
+    "request_created": "Support ticket {ticketNumber} created.",
+    "escalated": "Support ticket {ticketNumber} escalated.",
+    "resolved": "Support ticket {ticketNumber} resolved."
+  },
+  "supply": {
+    "restock_requested": "Restock requested for {itemCount} items at branch {branchId}."
+  }
+}

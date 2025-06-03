@@ -1,0 +1,18 @@
+{
+  "analytics": {
+    "behavior_tracked": "Customer behavior tracked for customer {customerId}",
+    "spending_trends_analyzed": "Spending trends analyzed for customer {customerId}",
+    "recommendations_provided": "Provided {count} recommendations for customer {customerId}",
+    "analytics_points_awarded": "Awarded {points} points to customer {customerId} for analytics engagement"
+  },
+  "errors": {
+    "customer_not_found": "Customer not found",
+    "invalid_customer_id": "Customer ID must be a positive integer",
+    "unauthorized": "You are not authorized to perform this action",
+    "forbidden": "You do not have permission to access this resource",
+    "invalid_action": "Invalid gamification action",
+    "behavior_tracking_failed": "Failed to track customer behavior",
+    "spending_analysis_failed": "Failed to analyze spending trends",
+    "recommendation_failed": "Failed to provide recommendations"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Moto wako wa driver umapoto bwino, {name}.",
+    "updated": "Moto wako wa driver ulikhala bwino, {name}.",
+    "certification_uploaded": "Sertifiketi ({certType}) amapoto bwino.",
+    "verified": "Malo osatha moto wanu: {status}.",
+    "country_updated": "Zosindikira zake za dziko zachitidwe ku {country}.",
+    "wallet_settings_updated": "Zosindikira za pokera yanu zikhala bwino.",
+    "payment_method_added": "Mwayi wa kulipira ({methodType}) wadzipoto mu pokera yanu.",
+    "withdrawal_processed": "Kulipitsa {amount} {currency} wachitidwe bwino."
+  }
+}

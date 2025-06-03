@@ -1,0 +1,16 @@
+
+{
+  "offline": {
+    "ordersCached": "Cached {{count}} orders for offline processing",
+    "bookingsCached": "Cached {{count}} bookings for offline processing",
+    "dataSynced": "Synced {{orderCount}} orders and {{bookingCount}} bookings",
+    "pointsAwarded": "Awarded {{points}} points for offline usage",
+    "errors": {
+      "invalidMerchant": "Invalid merchant",
+      "invalidCustomer": "Invalid customer",
+      "invalidBranch": "Invalid branch",
+      "invalidOrderData": "Invalid order data",
+      "invalidBookingData": "Invalid booking data"
+    }
+  }
+}

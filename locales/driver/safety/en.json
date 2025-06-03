@@ -1,0 +1,6 @@
+{
+  "safety": {
+    "incident_reported": "Safety incident {incident_number} reported successfully.",
+    "sos_triggered": "SOS {incident_number} triggered. Help is on the way."
+  }
+}

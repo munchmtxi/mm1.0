@@ -1,255 +1,607 @@
 'use strict';
 
-const { User, admin } = require('@models');
-const AppError = require('@utils/AppError');
-const logger = require('@utils/logger');
-const imageService = require('@services/common/ImageService');
-const adminConstants = require('@constants/admin/adminConstants');
-const { sequelize } = require('@models');
-const bcrypt = require('bcryptjs');
-const libphonenumber = require('google-libphonenumber');
+/**
+ * Admin Profile Service
+ * Manages admin profile operations, including account creation, updates, permissions,
+ * security, notifications, gamification, localization, and accessibility.
+ */
 
-const fetchUserAndAdmin = async (userId) => {
-  const user = await User.findByPk(userId, {
-    include: [{ model: admin, as: 'admin_profile' }],
+const { Op } = require('sequelize');
+const {
+  admin,
+  User,
+  adminPermissions,
+  adminAccessibility,
+  mfaTokens,
+  Permission,
+  PasswordHistory,
+  Session,
+  AuditLog,
+} = require('@models');
+const securityService = require('@services/common/securityService');
+const auditService = require('@services/common/auditService');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const pointService = require('@services/gamification/pointService');
+const backupRecoveryService = require('@services/common/backupRecoveryService');
+const localization = require('@utils/localization/localization');
+const validation = require('@utils/validation');
+const errorHandling = require('@utils/errorHandling');
+const adminCoreConstants = require('@constants/admin/adminCoreConstants');
+const adminEngagementConstants = require('@constants/admin/adminEngagementConstants');
+const adminSystemConstants = require('@constants/admin/adminSystemConstants');
+
+//─────────────────────────────────────────────────────────────────────────────
+// Helper: Always log with User's ID (not admin.id)
+const logAdminAction = async ({ userId, action, details, ipAddress }) => {
+  await auditService.logAdminAction({
+    adminId: userId,
+    action,
+    details,
+    ipAddress,
   });
-  const adminProfile = user?.admin_profile;
-  if (!user || !adminProfile) {
-    throw new AppError('User or admin profile not found', 404, adminConstants.ERROR_CODES.PROFILE_NOT_FOUND);
-  }
-  return { user, adminProfile };
 };
+//─────────────────────────────────────────────────────────────────────────────
 
-class AdminProfileService {
-  /**
-   * Get admin profile by user ID
-   * @param {number} userId
-   * @returns {object} Admin profile data
-   */
-  async getProfile(userId) {
-    try {
-      const user = await User.findByPk(userId, {
-        include: [
-          {
-            model: admin,
-            as: 'admin_profile',
-          },
-        ],
-      });
-
-      if (!user || !user.admin_profile) {
-        throw new AppError('User or admin profile not found', 404, adminConstants.ERROR_CODES.PROFILE_NOT_FOUND);
-      }
-
-      logger.info('Admin profile retrieved', { userId });
-      return {
-        id: user.admin_profile.id,
-        user: {
-          id: user.id,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          email: user.email,
-          phone: user.phone,
-          country: user.country,
-          avatar_url: user.avatar_url,
-          is_verified: user.is_verified,
-          status: user.status,
-        },
-        last_activity_at: user.admin_profile.last_activity_at,
-        availability_status: user.admin_profile.availability_status || adminConstants.AVAILABILITY_STATUSES.AVAILABLE,
-        created_at: user.admin_profile.created_at,
-        updated_at: user.admin_profile.updated_at,
-      };
-    } catch (error) {
-      logger.error('Failed to retrieve admin profile', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to retrieve profile', 500, adminConstants.ERROR_CODES.PROFILE_RETRIEVAL_FAILED);
+/**
+ * Creates a new admin account with the specified details, assigns a role, and sends a notification.
+ */
+async function createAdminAccount(adminData) {
+  try {
+    // Validate input data (requires first and last name)
+    await validation.validateAdminData(adminData, true);
+    if (!/^\S+\s+\S+/.test(adminData.name.trim())) {
+      throw new Error('Name must include first and last names, separated by a space.');
     }
-  }
 
-  /**
-   * Update admin personal information
-   * @param {number} userId
-   * @param {object} updateData
-   * @param {object} requestingUser
-   * @returns {object} Updated admin profile
-   */
-  async updatePersonalInfo(userId, updateData, requestingUser) {
-    try {
-      const { first_name, last_name, email, phone, country } = updateData;
-      const { user, adminProfile } = await fetchUserAndAdmin(userId);
-      const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
+    // Split into first_name / last_name
+    const [firstName, ...lastNameParts] = adminData.name.trim().split(' ');
+    const lastName = lastNameParts.join(' ');
 
-      // Authorization: Only the admin themselves or another admin can update
-      if (requestingUser.id !== userId && requestingUser.role !== 'admin') {
-        throw new AppError('Unauthorized to update this profile', 403, adminConstants.ERROR_CODES.UNAUTHORIZED);
-      }
+    // Create User – password hashing via model hooks
+    const user = await User.create({
+      first_name: firstName,
+      last_name: lastName,
+      email: adminData.email,
+      password: adminData.password,
+      role_id: adminData.roleId,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
 
-      // Validate phone number if provided
-      if (phone && phone !== user.phone) {
-        try {
-          const number = phoneUtil.parse(phone);
-          if (!phoneUtil.isValidNumber(number)) {
-            throw new AppError('Invalid phone number format', 400, adminConstants.ERROR_CODES.INVALID_PHONE);
-          }
-          const existingUser = await User.findOne({ where: { phone } });
-          if (existingUser && existingUser.id !== user.id) {
-            throw new AppError('Phone number already in use', 400, adminConstants.ERROR_CODES.DUPLICATE_PHONE);
-          }
-        } catch (error) {
-          if (error instanceof AppError) throw error;
-          throw new AppError('Invalid phone number format', 400, adminConstants.ERROR_CODES.INVALID_PHONE);
-        }
-      }
+    // Create Admin record linked to user.id
+    const adminRecord = await admin.create({
+      user_id: user.id,
+      role_id: adminData.roleId,
+      currency_code: adminData.currencyCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_CURRENCY,
+      language_code: adminData.languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      status: adminCoreConstants.ADMIN_STATUSES.ACTIVE,
+      notification_preferences: { email: true, push: true, sms: false },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
 
-      // Validate country if provided
-      if (country && !adminConstants.ALLOWED_COUNTRIES.includes(country)) {
-        throw new AppError('Invalid country', 400, adminConstants.ERROR_CODES.INVALID_COUNTRY);
-      }
+    // Audit log with correct user.id
+    await logAdminAction({
+      userId: user.id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.USER_ONBOARDING.action,
+      details: { email: adminData.email, roleId: adminData.roleId },
+      ipAddress: adminData.ipAddress,
+    });
 
-      const userUpdates = {
-        first_name: first_name || user.first_name,
-        last_name: last_name || user.last_name,
-        email: email || user.email,
-        phone: phone || user.phone,
-        country: country || user.country,
-      };
+    // Send welcome notification
+    const welcomeMessage = localization.formatMessage(
+      'admin',
+      'profile',
+      adminData.languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'welcome_message',
+      { name: adminData.name }
+    );
+    await notificationService.sendNotification({
+      userId: user.id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: welcomeMessage,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
+      languageCode: adminData.languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
-      await sequelize.transaction(async (t) => {
-        await user.update(userUpdates, { transaction: t });
-        await adminProfile.update({ last_activity_at: new Date() }, { transaction: t });
-      });
+    // Award points for onboarding
+    await pointService.awardPoints({
+      userId: user.id,
+      role: 'admin',
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.USER_ONBOARDING.action,
+      points: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.USER_ONBOARDING.points,
+      languageCode: adminData.languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
-      logger.info('Admin personal info updated', { userId, updatedFields: Object.keys(updateData) });
-      return this.getProfile(userId);
-    } catch (error) {
-      logger.error('Failed to update admin personal info', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to update profile', 500, adminConstants.ERROR_CODES.PROFILE_UPDATE_FAILED);
-    }
-  }
+    // Emit real-time event
+    await socketService.emitToRoom(`admin:${adminRecord.id}`, 'admin:profile:created', {
+      adminId: adminRecord.id,
+      email: adminData.email,
+    });
 
-  /**
-   * Change admin password
-   * @param {number} userId
-   * @param {string} currentPassword
-   * @param {string} newPassword
-   * @returns {boolean} Success status
-   */
-  async changePassword(userId, currentPassword, newPassword) {
-    try {
-      logger.info('Changing admin password', { userId });
-
-      const user = await User.scope(null).findByPk(userId, {
-        attributes: ['id', 'password'],
-      });
-      if (!user) throw new AppError('User not found', 404, adminConstants.ERROR_CODES.USER_NOT_FOUND);
-
-      if (!user.password) throw new AppError('Password data unavailable', 500, adminConstants.ERROR_CODES.PASSWORD_UNAVAILABLE);
-
-      const isMatch = await bcrypt.compare(currentPassword, user.password);
-      if (!isMatch) throw new AppError('Current password is incorrect', 401, adminConstants.ERROR_CODES.INVALID_PASSWORD);
-
-      // Validate new password
-      const passwordValidator = require('password-validator');
-      const schema = new passwordValidator();
-      schema
-        .is().min(8)
-        .is().max(100)
-        .has().uppercase()
-        .has().lowercase()
-        .has().digits()
-        .has().symbols();
-
-      if (!schema.validate(newPassword)) {
-        throw new AppError('New password does not meet complexity requirements', 400, adminConstants.ERROR_CODES.INVALID_NEW_PASSWORD);
-      }
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await user.update({ password: hashedPassword });
-
-      logger.info('Admin password changed', { userId });
-      return true;
-    } catch (error) {
-      logger.error('Failed to change admin password', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to change password', 500, adminConstants.ERROR_CODES.PASSWORD_CHANGE_FAILED);
-    }
-  }
-
-  /**
-   * Upload admin profile picture
-   * @param {number} userId
-   * @param {object} file
-   * @returns {string} Avatar URL
-   */
-  async uploadProfilePicture(userId, file) {
-    try {
-      if (!file) throw new AppError('No file uploaded', 400, adminConstants.ERROR_CODES.NO_FILE_UPLOADED);
-      const { user } = await fetchUserAndAdmin(userId);
-
-      return await sequelize.transaction(async (t) => {
-        const avatarUrl = await imageService.uploadImage(userId, file, 'admin');
-        await user.update({ avatar_url: avatarUrl }, { transaction: t });
-        logger.info('Admin profile picture updated', { userId, avatarUrl });
-        return avatarUrl;
-      });
-    } catch (error) {
-      logger.error('Failed to upload admin profile picture', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to upload profile picture', 500, adminConstants.ERROR_CODES.PICTURE_UPLOAD_FAILED);
-    }
-  }
-
-  /**
-   * Delete admin profile picture
-   * @param {number} userId
-   * @returns {boolean} Success status
-   */
-  async deleteProfilePicture(userId) {
-    try {
-      const { user } = await fetchUserAndAdmin(userId);
-
-      return await sequelize.transaction(async (t) => {
-        if (!user.avatar_url) {
-          throw new AppError('No profile picture to delete', 400, adminConstants.ERROR_CODES.NO_PROFILE_PICTURE);
-        }
-        await imageService.deleteImage(userId, 'admin');
-        await user.update({ avatar_url: null }, { transaction: t });
-        logger.info('Admin profile picture deleted', { userId });
-        return true;
-      });
-    } catch (error) {
-      logger.error('Failed to delete admin profile picture', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to delete profile picture', 500, adminConstants.ERROR_CODES.PICTURE_DELETE_FAILED);
-    }
-  }
-
-  /**
-   * Update admin availability status
-   * @param {number} userId
-   * @param {string} status
-   * @param {object} requestingUser
-   * @returns {string} Updated status
-   */
-  async updateAvailabilityStatus(userId, status, requestingUser) {
-    try {
-      const validStatuses = Object.values(adminConstants.AVAILABILITY_STATUSES);
-      if (!validStatuses.includes(status)) {
-        throw new AppError('Invalid availability status', 400, adminConstants.ERROR_CODES.INVALID_STATUS);
-      }
-
-      const { adminProfile } = await fetchUserAndAdmin(userId);
-
-      // Authorization: Only the admin themselves can update their status
-      if (requestingUser.id !== userId) {
-        throw new AppError('Unauthorized to update availability status', 403, adminConstants.ERROR_CODES.UNAUTHORIZED);
-      }
-
-      await adminProfile.update({ availability_status: status });
-      logger.info('Admin availability status updated', { userId, status });
-      return status;
-    } catch (error) {
-      logger.error('Failed to update admin availability status', { error: error.message, userId });
-      throw error instanceof AppError ? error : new AppError('Failed to update availability status', 500, adminConstants.ERROR_CODES.STATUS_UPDATE_FAILED);
-    }
+    return adminRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('createAdminAccount', error, adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
   }
 }
 
-module.exports = new AdminProfileService();
+/**
+ * Updates an admin's profile with new details (e.g., name, email, currencyCode).
+ */
+async function updateAdminProfile(adminId, updateData) {
+  try {
+    // Validate input data
+    await validation.validateAdminData(updateData, false);
+
+    // Find admin record
+    const adminRecord = await admin.findByPk(adminId, { include: [{ model: User, as: 'user' }] });
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    // Prepare User updates
+    const userUpdates = {};
+    if (updateData.name) {
+      if (!/^\S+\s+\S+/.test(updateData.name.trim())) {
+        throw new Error('Name must include first and last names.');
+      }
+      const [fn, ...lnParts] = updateData.name.trim().split( ' ');
+      userUpdates.first_name = fn;
+      userUpdates.last_name = lnParts.join(' ');
+    }
+    if (updateData.email) userUpdates.email = updateData.email;
+
+    // Apply User updates (hooks will hash password)
+    if (Object.keys(userUpdates).length) {
+      await User.update(userUpdates, { where: { id: adminRecord.user_id } });
+    }
+
+    // Handle password reset separately to log history
+    if (updateData.password) {
+      await User.update({ password: updateData.password }, { where: { id: adminRecord.user_id } });
+      const histHash = await securityService.encryptPassword(updateData.password);
+      await PasswordHistory.create({
+        user_id: adminRecord.user_id,
+        user_type: adminCoreConstants.USER_MANAGEMENT_CONSTANTS.USER_TYPES.ADMIN,
+        password_hash: histHash,
+        created_at: new Date(),
+      });
+    }
+
+    // Update admin-specific fields
+    const adminUpdates = {};
+    if (updateData.currencyCode) adminUpdates.currency_code = updateData.currencyCode;
+    if (updateData.languageCode) adminUpdates.language_code = updateData.languageCode;
+    if (updateData.notificationPreferences) adminUpdates.notification_preferences = updateData.notificationPreferences;
+    if (Object.keys(adminUpdates).length) {
+      await adminRecord.update(adminUpdates);
+    }
+
+    // Audit the profile update
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.PROFILE_UPDATE.action,
+      details: updateData,
+      ipAddress: updateData.ipAddress,
+    });
+
+    // Send update notification
+    const updateMessage = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'profile_updated_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: updateMessage,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+      languageCode: adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    // Emit real-time event
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:updated', {
+      adminId,
+      changes: updateData,
+    });
+
+    return adminRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('updateAdminProfile', error, adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+  }
+}
+
+/**
+ * Sets permissions for an admin by updating the adminPermissions table.
+ */
+async function setAdminPermissions(adminId, permissionIds, ipAddress) {
+  try {
+    // Validate admin
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    // Validate permissions
+    const permissions = await Permission.findAll({ where: { id: permissionIds } });
+    if (permissions.length !== permissionIds.length) throw new Error(adminCoreConstants.ERROR_CODES.PERMISSION_DENIED);
+
+    // Clear existing permissions
+    await adminPermissions.destroy({ where: { admin_id: adminId } });
+
+    // Assign new permissions
+    const permissionRecords = permissionIds.map((id) => ({
+      admin_id: adminId,
+      permission_id: id,
+      assigned_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
+    }));
+    await adminPermissions.bulkCreate(permissionRecords);
+
+    // Audit event
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SET_PERMISSIONS.action,
+      details: { permissionIds },
+      ipAddress,
+    });
+
+    // Notification
+    const permMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'permissions_updated_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: permMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
+      languageCode: adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    // Emit event
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:permissions_updated', {
+      adminId,
+      permissionIds,
+    });
+
+    return adminRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('setAdminPermissions', error, adminCoreConstants.ERROR_CODES.PERMISSION_DENIED);
+  }
+}
+
+/**
+ * Verifies an admin's identity using MFA token.
+ */
+async function verifyAdminIdentity(adminId, mfaToken, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    const tokenRecord = await mfaTokens.findOne({
+      where: {
+        user_id: adminRecord.user_id,
+        token: mfaToken,
+        expires_at: { [Op.gt]: new Date() },
+      },
+    });
+    if (!tokenRecord) {
+      await logAdminAction({
+        userId: adminRecord.user_id,
+        action: adminSystemConstants.SECURITY_CONSTANTS.SECURITY_INCIDENT_TYPES.FAILED_MFA,
+        details: { mfaToken },
+        ipAddress,
+      });
+      throw new Error(adminSystemConstants.ERROR_CODES.SECURITY_INCIDENT);
+    }
+
+    // Consume token
+    await tokenRecord.destroy();
+
+    // Audit success
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminSystemConstants.SECURITY_CONSTANTS.SECURITY_INCIDENT_TYPES.SUCCESS_MFA,
+      details: { mfaToken },
+      ipAddress,
+    });
+
+    // Notification
+    const mfaMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'mfa_verified_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SECURITY_UPDATE,
+      message: mfaMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
+      languageCode: adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    return true;
+  } catch (error) {
+    throw errorHandling.handleServiceError('verifyAdminIdentity', error, adminSystemConstants.ERROR_CODES.SECURITY_INCIDENT);
+  }
+}
+
+/**
+ * Suspends an admin account, invalidating sessions and notifying the admin.
+ */
+async function suspendAdminAccount(adminId, reason, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId, { include: [{ model: User, as: 'user' }] });
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    await adminRecord.update({ status: adminCoreConstants.ADMIN_STATUSES.SUSPENDED });
+    await Session.destroy({ where: { user_id: adminRecord.user_id } });
+
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SUSPEND_ACCOUNT.action,
+      details: { reason },
+      ipAddress,
+    });
+
+    const suspendMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'account_suspended_message',
+      { reason }
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: suspendMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.HIGH,
+      languageCode: adminRecord.language_code,
+    });
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:suspended', { adminId, reason });
+
+    return adminRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('suspendAdminAccount', error, adminCoreConstants.ERROR_CODES.USER_SUSPENSION_FAILED);
+  }
+}
+
+/**
+ * Deletes an admin account, archiving data and invalidating sessions.
+ */
+async function deleteAdminAccount(adminId, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId, { include: [{ model: User, as: 'user' }] });
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    await backupRecoveryService.backupAdminData(adminId, { user: adminRecord.user, admin: adminRecord });
+    await Session.destroy({ where: { user_id: adminRecord.user_id } });
+    await adminRecord.destroy();
+    await adminRecord.user.destroy();
+
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.DELETE_ACCOUNT.action,
+      details: {},
+      ipAddress,
+    });
+
+    const deleteMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'account_deleted_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: deleteMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.HIGH,
+      languageCode: adminRecord.language_code,
+    });
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:deleted', { adminId });
+
+    return true;
+  } catch (error) {
+    throw errorHandling.handleServiceError('deleteAdminAccount', error, adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+  }
+}
+
+/**
+ * Generates activity reports for an admin over a specified period.
+ */
+async function generateAdminReports(adminId, period, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    const auditLogs = await AuditLog.findAll({
+      where: { user_id: adminRecord.user_id, created_at: { [Op.between]: [period.startDate, period.endDate] } },
+    });
+    const report = {
+      adminId,
+      period,
+      actions: auditLogs.map((log) => ({
+        action: log.log_type,
+        details: log.details,
+        timestamp: log.created_at,
+        ipAddress: log.ip_address,
+      })),
+    };
+
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.action,
+      details: { period },
+      ipAddress,
+    });
+    await pointService.awardPoints({
+      userId: adminRecord.user_id,
+      role: 'admin',
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.action,
+      points: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.points,
+      languageCode: adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    const reportMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'report_generated_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.REPORT_GENERATED,
+      message: reportMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+      languageCode: adminRecord.language_code,
+    });
+
+    return report;
+  } catch (error) {
+    throw errorHandling.handleServiceError('generateAdminReports', error, adminSystemConstants.ERROR_CODES.ANALYTICS_GENERATION_FAILED);
+  }
+}
+
+/**
+ * Awards gamification points to an admin for specific actions.
+ */
+async function awardAdminPoints(adminId, action, points, languageCode) {
+  try {
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    return pointService.awardPoints({
+      userId: adminRecord.user_id,
+      role: 'admin',
+      action,
+      points,
+      languageCode: languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+    });
+  } catch (error) {
+    throw errorHandling.handleServiceError('awardAdminPoints', error, adminEngagementConstants.ERROR_CODES.SUPPORT_TICKET_FAILED);
+  }
+}
+
+/**
+ * Configures localization settings for an admin (e.g., language, currency).
+ */
+async function configureLocalization(adminId, localizationData, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    const updates = {};
+    if (localizationData.languageCode) updates.language_code = localizationData.languageCode;
+    if (localizationData.currencyCode) updates.currency_code = localizationData.currencyCode;
+
+    if (Object.keys(updates).length) await adminRecord.update(updates);
+
+ открытия
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.CONFIGURE_LOCALIZATION.action,
+      details: localizationData,
+      ipAddress,
+    });
+
+    const locMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'localization_updated_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: locMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+      languageCode: adminRecord.language_code,
+    });
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:localization_updated', {
+      adminId,
+      localizationData,
+    });
+
+    return adminRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('configureLocalization', error, adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+  }
+}
+
+/**
+ * Manages accessibility settings for an admin (e.g., screen reader, font size).
+ */
+async function manageAccessibility(adminId, accessibilityData, ipAddress) {
+  try {
+    const adminRecord = await admin.findByPk(adminId);
+    if (!adminRecord) throw new Error(adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+
+    // Build settings JSON
+    const settings = {
+      screen_reader: accessibilityData.screenReader ?? false,
+      font_size: accessibilityData.fontSize ?? 'medium',
+      high_contrast: accessibilityData.highContrast ?? false,
+    };
+
+    // Upsert the JSON blob
+    let accessibilityRecord = await adminAccessibility.findOne({ where: { admin_id: adminId } });
+    if (!accessibilityRecord) {
+      accessibilityRecord = await adminAccessibility.create({
+        admin_id: adminId,
+        settings,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+    } else {
+      await accessibilityRecord.update({ settings, updated_at: new Date() });
+    }
+
+    // Audit accessibility change
+    await logAdminAction({
+      userId: adminRecord.user_id,
+      action: adminSystemConstants.ACCESSIBILITY_CONSTANTS.ACTIONS.UPDATE,
+      details: settings,
+      ipAddress,
+    });
+
+    // Send notification
+    const accMsg = localization.formatMessage(
+      'admin',
+      'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'accessibility_updated_message'
+    );
+    await notificationService.sendNotification({
+      userId: adminRecord.user_id,
+      type: adminEngagementConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.USER_UPDATE,
+      message: accMsg,
+      priority: adminEngagementConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+      languageCode: adminRecord.language_code,
+    });
+    await socketService.emitToRoom(`admin:${adminId}`, 'admin:profile:accessibility_updated', {
+      adminId,
+      accessibilityData,
+    });
+
+    return accessibilityRecord;
+  } catch (error) {
+    throw errorHandling.handleServiceError('manageAccessibility', error, adminCoreConstants.ERROR_CODES.ADMIN_NOT_FOUND);
+  }
+}
+
+module.exports = {
+  createAdminAccount,
+  updateAdminProfile,
+  setAdminPermissions,
+  verifyAdminIdentity,
+  suspendAdminAccount,
+  deleteAdminAccount,
+  generateAdminReports,
+  awardAdminPoints,
+  configureLocalization,
+  manageAccessibility,
+};

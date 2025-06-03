@@ -1,0 +1,8 @@
+{
+  "payout": {
+    "settings_updated": "Payout settings updated: {schedule} schedule, {method} method.",
+    "received": "You received a payout of {amount} {currency}.",
+    "method_verified": "Payout method ({method}) verified successfully.",
+    "history": "Payout history retrieved with {count} records."
+  }
+}

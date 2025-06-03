@@ -1,13 +1,12 @@
 'use strict';
-const { Model } = require('sequelize');
+const { Model, DataTypes } = require('sequelize');
+const adminCoreConstants = require('@constants/admin/adminCoreConstants');
 
-module.exports = (sequelize, DataTypes) => {
+module.exports = (sequelize) => {
   class PasswordHistory extends Model {
     static associate(models) {
-      this.belongsTo(models.User, {
-        foreignKey: 'user_id',
-        as: 'user',
-      });
+      // Many-to-one with User
+      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
     }
   }
 
@@ -22,26 +21,23 @@ module.exports = (sequelize, DataTypes) => {
       user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'users',
-          key: 'id',
-        },
+        references: { model: 'users', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
       user_type: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(20),
         allowNull: false,
-        defaultValue: 'merchant',
+        defaultValue: adminCoreConstants.USER_MANAGEMENT_CONSTANTS.USER_TYPES.MERCHANT,
         validate: {
           isIn: {
-            args: [['merchant', 'customer', 'staff', 'driver']],
-            msg: 'User type must be merchant, customer, staff, or driver',
+            args: [Object.values(adminCoreConstants.USER_MANAGEMENT_CONSTANTS.USER_TYPES)],
+            msg: 'Invalid user type',
           },
         },
       },
       password_hash: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(255),
         allowNull: false,
         validate: {
           notEmpty: { msg: 'Password hash is required' },
@@ -50,9 +46,9 @@ module.exports = (sequelize, DataTypes) => {
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
+        defaultValue: DataTypes.NOW,
       },
-      updated_at: { // Added
+      updated_at: {
         type: DataTypes.DATE,
         allowNull: true,
       },
@@ -67,16 +63,14 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'password_histories',
       underscored: true,
       paranoid: true,
+      timestamps: true,
       defaultScope: {
         attributes: {
           exclude: ['password_hash'],
         },
       },
       indexes: [
-        {
-          unique: false,
-          fields: ['user_id'],
-        },
+        { fields: ['user_id'] },
       ],
     }
   );

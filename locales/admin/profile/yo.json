@@ -1,0 +1,10 @@
+{
+  "welcome_message": "Kaabo, {name}! A ti ṣẹda àkọọlẹ adarí rẹ.",
+  "profile_updated_message": "Profaili rẹ ti ni imudojuiwọn ni aṣeyọri.",
+  "permissions_updated_message": "Àṣẹ rẹ ti ni imudojuiwọn.",
+  "account_suspended_message": "Àkọọlẹ rẹ ti dawọ́. Ìdí: {reason}",
+  "account_deleted_message": "Àkọọlẹ rẹ ti paarẹ.",
+  "points_awarded_message": "O jèrè {points} ìdíyelé fún {action}!",
+  "localization_updated_message": "Àwọn ìṣètò ìbòmọlẹ ti ni imudojuiwọn ni aṣeyọri.",
+  "accessibility_updated_message": "Àwọn ìṣètò àwọ̀n ìraye ti ni imudojuiwọn ni aṣeyọri."
+}

@@ -1,0 +1,7 @@
+{
+  "analytics": {
+    "report_generated": "{period} financial report generated: {revenue} {currency} revenue.",
+    "trends_analyzed": "Financial trends analyzed for the past 6 months.",
+    "goals_recommended": "New financial goal: {monthlyTarget} {currency} monthly revenue."
+  }
+}

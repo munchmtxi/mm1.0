@@ -1,0 +1,27 @@
+{
+  "error": {
+    "customer_not_found": "Customer not found",
+    "invalid_email": "Invalid email format",
+    "invalid_phone": "Invalid phone format",
+    "unsupported_country": "Unsupported country",
+    "invalid_language": "Unsupported language",
+    "invalid_dietary_filter": "Invalid dietary preferences",
+    "invalid_screen_reader_setting": "Screen reader setting must be boolean",
+    "invalid_font_size": "Font size must be between {min} and {max}",
+    "invalid_privacy_settings": "Invalid privacy settings",
+    "invalid_privacy_settings_type": "Privacy settings must be boolean",
+    "invalid_data_access_permissions": "Invalid data access permissions",
+    "invalid_data_access_permissions_type": "Data access permissions must be boolean"
+  },
+  "profile": {
+    "created": "Your profile has been created successfully, {name}.",
+    "updated": "Your profile has been updated successfully, {name}.",
+    "country_updated": "Your country has been set to {countryCode}.",
+    "language_updated": "Your interface language has been set to {languageCode}.",
+    "dietary_updated": "Your dietary preferences have been updated successfully.",
+    "screen_reader_updated": "Screen reader support has been {enabled}.",
+    "font_size_updated": "Font size updated to {fontSize}px.",
+    "privacy_settings_updated": "Your privacy settings have been updated successfully.",
+    "data_access_updated": "Your data sharing permissions have been updated successfully."
+  }
+}

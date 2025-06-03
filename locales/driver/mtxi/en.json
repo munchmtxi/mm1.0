@@ -1,0 +1,11 @@
+{
+  "ride": {
+    "accepted": "Ride #{rideId} has been accepted.",
+    "status_updated": "Ride #{rideId} status updated to {status}.",
+    "message_received": "Message from driver: {message}",
+    "passenger_added": "You have been added to shared ride #{rideId}.",
+    "passenger_removed": "You have been removed from shared ride #{rideId}.",
+    "assigned": "Ride #{rideId} has been assigned to you.",
+    "cancelled": "Ride #{rideId} has been cancelled."
+  }
+}

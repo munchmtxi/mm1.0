@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Aṣẹ́yọ̀rù fún ìjàpá wáà ti ṣíṣẹdá nípa lórí àkànṣe rẹ̀, {name}.",
+    "updated": "Aṣẹ́yọ̀rù fún ìjàpá wáà ti ṣíṣòro nípa lórí àkànṣe rẹ̀, {name}.",
+    "country_updated": "Àwọn ìsìtò orílẹ̀-èdè tí ó wà ti yipada si {country}.",
+    "media_uploaded": "Mídìọ̀ ({mediaType}) tí ó wà ti ká sọrọ̀ lẹ́yìn ẹ̀wọ̀n rẹ̀.",
+    "wallet_settings_updated": "Àwọn ìsìtò ẹ̀wọ̀n rẹ̀ ti yipada nípa lórí àkànṣe.",
+    "payment_method_added": "Ọ̀nà ìsanwo ({methodType}) tí ó wà ti ká sọrọ̀ lẹ́yìn ẹ̀wọ̀n rẹ̀.",
+    "withdrawal_processed": "Ìwọ̀n tí ó wà ni {amount} {currency} ti ṣíṣẹdá nípa lórí àkànṣe."
+  }
+}

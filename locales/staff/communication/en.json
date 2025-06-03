@@ -1,0 +1,8 @@
+{
+  "communication": {
+    "message_sent": "Message {messageId} sent successfully.",
+    "announcement_broadcast": "Announcement for shift {shiftId} broadcast successfully.",
+    "logs_retrieved": "Communication logs retrieved for staff {staffId}.",
+    "points_awarded": "Points awarded for communication activities."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "branch": {
+    "created": "Filial ({name}) criada com sucesso.",
+    "updated": "Filial ({name}) atualizada com sucesso.",
+    "settings_updated": "Configurações da filial atualizadas com sucesso.",
+    "country_updated": "As configurações do país da filial foram atualizadas para {country}.",
+    "geofence_updated": "Configurações de geocerca da filial atualizadas com sucesso.",
+    "media_uploaded": "Mídia ({mediaType}) da filial carregada com sucesso.",
+    "wallet_settings_updated": "Configurações da carteira da filial atualizadas com sucesso.",
+    "payment_method_added": "Método de pagamento ({methodType}) adicionado à carteira da filial.",
+    "withdrawal_processed": "Saque de {amount} {currency} processado com sucesso a partir da carteira da filial."
+  }
+}

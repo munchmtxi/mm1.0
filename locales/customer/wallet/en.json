@@ -1,0 +1,20 @@
+{
+  "error": {
+    "customer_not_found": "Customer not found",
+    "wallet_already_exists": "Wallet already exists",
+    "wallet_not_found": "Wallet not found",
+    "invalid_amount": "Invalid amount",
+    "invalid_payment_method": "Invalid payment method",
+    "insufficient_funds": "Insufficient funds",
+    "invalid_balance": "Balance exceeds maximum limit",
+    "currency_mismatch": "Currency mismatch",
+    "transaction_failed": "Transaction failed"
+  },
+  "notification": {
+    "wallet.created": "Wallet {walletId} created successfully",
+    "wallet.deposit_confirmed": "Deposited {amount} {currency} to your wallet",
+    "wallet.withdrawal_confirmed": "Withdrawn {amount} {currency} from your wallet",
+    "wallet.payment_confirmed": "Paid {amount} {currency} for service {serviceId}",
+    "wallet.gamification_reward": "Credited {amount} {currency} for {description}"
+  }
+}

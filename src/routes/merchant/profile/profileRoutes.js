@@ -1,91 +1,165 @@
 'use strict';
 
+/**
+ * Merchant Profile Routes
+ * Defines Express routes for merchant profile operations, including business details,
+ * country settings, localization, gamification, media, and branch management. Applies
+ * authentication, validation, and role-based middleware.
+ *
+ * Last Updated: May 14, 2025
+ */
+
 const express = require('express');
-const router = express.Router();
 const merchantProfileController = require('@controllers/merchant/profile/merchantProfileController');
 const profileMiddleware = require('@middleware/merchant/profile/profileMiddleware');
-const upload = require('@config/multerConfig');
-const logger = require('@utils/logger');
+const profileValidator = require('@validators/merchant/profile/profileValidator');
 
-router.use(profileMiddleware.protect, profileMiddleware.verifyMerchantProfile);
+const router = express.Router();
 
-router
-  .route('/profile')
-  .get(profileMiddleware.validate('getProfile'), merchantProfileController.getProfile)
-  .patch(profileMiddleware.validate('updateProfile'), merchantProfileController.updateProfile);
+/**
+ * Route to update merchant business details.
+ */
+router.put(
+  '/:merchantId/business',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMerchantId,
+  profileMiddleware.restrictToOwnMerchant,
+  profileValidator.validateUpdateBusinessDetails,
+  merchantProfileController.updateBusinessDetails
+);
 
-router
-  .route('/profile/notifications')
-  .patch(profileMiddleware.validate('updateNotificationPreferences'), merchantProfileController.updateNotificationPreferences);
+/**
+ * Route to set merchant country settings.
+ */
+router.put(
+  '/:merchantId/country',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMerchantId,
+  profileMiddleware.restrictToOwnMerchant,
+  profileValidator.validateCountrySettings,
+  merchantProfileController.setCountrySettings
+);
 
-router
-  .route('/profile/password')
-  .patch(profileMiddleware.validate('changePassword'), merchantProfileController.changePassword);
+/**
+ * Route to manage merchant localization settings.
+ */
+router.put(
+  '/:merchantId/localization',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMerchantId,
+  profileMiddleware.restrictToOwnMerchant,
+  profileValidator.validateLocalizationSettings,
+  merchantProfileController.manageLocalization
+);
 
-router
-  .route('/profile/geolocation')
-  .patch(profileMiddleware.validate('updateGeolocation'), merchantProfileController.updateGeolocation);
+/**
+ * Route to track merchant profile gamification points.
+ */
+router.post(
+  '/:merchantId/gamification',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMerchantId,
+  profileMiddleware.restrictToOwnMerchant,
+  merchantProfileController.trackProfileGamification
+);
 
-  router
-  .route('/profile/media')
-  .patch(
-    upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'banner', maxCount: 1 }]),
-    (req, res, next) => {
-      logger.debug('Multer output', {
-        files: req.files,
-        logo: req.files?.logo?.[0],
-        banner: req.files?.banner?.[0],
-        logoKeys: req.files?.logo ? Object.keys(req.files.logo[0]) : null,
-        bannerKeys: req.files?.banner ? Object.keys(req.files.banner[0]) : null
-      });
-      next();
-    },
-    profileMiddleware.validate('updateMerchantMedia'),
-    merchantProfileController.updateMerchantMedia
-  );
+/**
+ * Route to upload menu photos for a restaurant.
+ */
+router.post(
+  '/:restaurantId/menu-photos',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateBranchId,
+  profileValidator.validateMenuPhotos,
+  merchantProfileController.uploadMenuPhotos
+);
 
-router
-  .route('/branches')
-  .get(profileMiddleware.validate('listBranchProfiles'), merchantProfileController.listBranchProfiles)
-  .post(
-    upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'banner', maxCount: 1 }]),
-    profileMiddleware.validate('createBranchProfile'),
-    merchantProfileController.createBranchProfile
-  );
+/**
+ * Route to manage promotional media for a restaurant.
+ */
+router.post(
+  '/:restaurantId/promotional-media',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateBranchId,
+  profileValidator.validatePromotionalMedia,
+  merchantProfileController.managePromotionalMedia
+);
 
-router
-  .route('/branches/bulk')
-  .patch(
-    profileMiddleware.validate('bulkUpdateBranches'),
-    profileMiddleware.verifyBulkBranches,
-    merchantProfileController.bulkUpdateBranches
-  );
+/**
+ * Route to update media metadata.
+ */
+router.put(
+  '/media/:mediaId/metadata',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMediaId,
+  profileValidator.validateMediaMetadata,
+  merchantProfileController.updateMediaMetadata
+);
 
-router
-  .route('/branches/:branchId')
-  .get(
-    profileMiddleware.validate('getBranchProfile'),
-    profileMiddleware.verifyBranchOwnership,
-    merchantProfileController.getBranchProfile
-  )
-  .patch(
-    upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'banner', maxCount: 1 }]),
-    profileMiddleware.validate('updateBranchProfile'),
-    profileMiddleware.verifyBranchOwnership,
-    merchantProfileController.updateBranchProfile
-  )
-  .delete(
-    profileMiddleware.validate('deleteBranchProfile'),
-    profileMiddleware.verifyBranchOwnership,
-    merchantProfileController.deleteBranchProfile
-  );
+/**
+ * Route to delete media.
+ */
+router.delete(
+  '/media/:mediaId',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMediaId,
+  merchantProfileController.deleteMedia
+);
 
-router
-  .route('/places/:placeId')
-  .get(profileMiddleware.validate('getPlaceDetails'), merchantProfileController.getPlaceDetails);
+/**
+ * Route to update branch details.
+ */
+router.put(
+  '/branch/:branchId/details',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateBranchId,
+  profileValidator.validateBranchDetails,
+  merchantProfileController.updateBranchDetails
+);
 
-router
-  .route('/places/predictions')
-  .get(profileMiddleware.validate('getAddressPredictions'), merchantProfileController.getAddressPredictions);
+/**
+ * Route to configure branch settings.
+ */
+router.put(
+  '/branch/:branchId/settings',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateBranchId,
+  profileValidator.validateBranchSettings,
+  merchantProfileController.configureBranchSettings
+);
+
+/**
+ * Route to manage branch media.
+ */
+router.post(
+  '/branch/:branchId/media',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateBranchId,
+  profileValidator.validateBranchMedia,
+  merchantProfileController.manageBranchMedia
+);
+
+/**
+ * Route to synchronize branch profiles.
+ */
+router.post(
+  '/:merchantId/branches/sync',
+  profileMiddleware.authenticateMerchant,
+  profileMiddleware.restrictToMerchantTypes,
+  profileMiddleware.validateMerchantId,
+  profileMiddleware.restrictToOwnMerchant,
+  merchantProfileController.syncBranchProfiles
+);
 
 module.exports = router;

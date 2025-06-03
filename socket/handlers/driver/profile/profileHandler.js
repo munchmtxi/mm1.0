@@ -1,110 +1,111 @@
 'use strict';
 
+/**
+ * Driver Profile Socket Handler
+ * Handles socket events for driver profile operations, using event constants from profileEvents.js.
+ * Manages real-time updates, certification uploads, profile retrieval, and verification.
+ *
+ * Last Updated: May 15, 2025
+ */
+
 const profileService = require('@services/driver/profile/profileService');
-const logger = require('@utils/logger');
-const catchAsyncSocket = require('@utils/catchAsyncSocket');
+const socketService = require('@services/common/socketService');
 const profileEvents = require('@socket/events/driver/profile/profileEvents');
-const { verifySocketToken } = require('@services/common/authService');
+const AppError = require('@utils/AppError');
+const logger = require('@utils/logger');
+const driverConstants = require('@constants/driverConstants');
 
-const setupProfileHandlers = (socket, io) => {
-  socket.on(
-    profileEvents.DRIVER_PROFILE_UPDATED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver profile update', { userId });
-      const updatedProfile = await profileService.updatePersonalInfo(userId, data);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_PROFILE_UPDATED, updatedProfile);
-      callback({ status: 'success', data: updatedProfile });
-    })
-  );
+/**
+ * Handles profile update socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains driverId and details.
+ */
+const handleProfileUpdate = async (socket, { driverId, details }) => {
+  if (!driverId || !details) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
 
-  socket.on(
-    profileEvents.DRIVER_VEHICLE_UPDATED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver vehicle update', { userId });
-      const updatedDriver = await profileService.updateVehicleInfo(userId, data);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_VEHICLE_UPDATED, updatedDriver);
-      callback({ status: 'success', data: updatedDriver });
-    })
-  );
+  const driver = await profileService.updateProfile(driverId, details);
+  await socketService.emitToRoom(`driver:${driver.user_id}`, profileEvents.PROFILE_UPDATED, {
+    driverId,
+    updatedFields: details,
+  });
 
-  socket.on(
-    profileEvents.DRIVER_PASSWORD_CHANGED,
-    catchAsyncSocket(async ({ currentPassword, newPassword }, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver password change', { userId });
-      await profileService.changePassword(userId, currentPassword, newPassword);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_PASSWORD_CHANGED, { message: 'Password changed successfully' });
-      callback({ status: 'success', message: 'Password changed successfully' });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_PROFILE_PICTURE_UPDATED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver profile picture update', { userId });
-      const profilePictureUrl = await profileService.updateProfilePicture(userId, data.file);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_PROFILE_PICTURE_UPDATED, { profilePictureUrl });
-      callback({ status: 'success', data: { profilePictureUrl } });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_PROFILE_PICTURE_DELETED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver profile picture deletion', { userId });
-      await profileService.deleteProfilePicture(userId);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_PROFILE_PICTURE_DELETED, { message: 'Profile picture deleted' });
-      callback({ status: 'success', message: 'Profile picture deleted successfully' });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_LICENSE_PICTURE_UPDATED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver license picture update', { userId });
-      const licensePictureUrl = await profileService.updateLicensePicture(userId, data.file);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_LICENSE_PICTURE_UPDATED, { licensePictureUrl });
-      callback({ status: 'success', data: { licensePictureUrl } });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_LICENSE_PICTURE_DELETED,
-    catchAsyncSocket(async (data, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver license picture deletion', { userId });
-      await profileService.deleteLicensePicture(userId);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_LICENSE_PICTURE_DELETED, { message: 'License picture deleted' });
-      callback({ status: 'success', message: 'License picture deleted successfully' });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_ADDRESS_ADDED,
-    catchAsyncSocket(async ({ addressData }, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver address addition', { userId });
-      const address = await profileService.manageAddresses(userId, 'add_address', addressData);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_ADDRESS_ADDED, address);
-      callback({ status: 'success', data: address });
-    })
-  );
-
-  socket.on(
-    profileEvents.DRIVER_ADDRESS_REMOVED,
-    catchAsyncSocket(async ({ addressData }, callback) => {
-      const userId = await verifySocketToken(socket);
-      logger.info('Handling driver address removal', { userId });
-      await profileService.manageAddresses(userId, 'remove_address', addressData);
-      io.to(`driver:${userId}`).emit(profileEvents.DRIVER_ADDRESS_REMOVED, { addressId: addressData.id });
-      callback({ status: 'success', message: 'Address removed successfully' });
-    })
-  );
+  socket.emit(profileEvents.PROFILE_UPDATED, { success: true, driver });
 };
 
-module.exports = { setupProfileHandlers };
+/**
+ * Handles certification upload socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains driverId, file, and type.
+ */
+const handleCertificationUpload = async (socket, { driverId, file, type }) => {
+  if (!driverId || !file || !type) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
+
+  const imageUrl = await profileService.uploadCertification(driverId, { file, type });
+  await socketService.emitToRoom(`driver:${socket.user.id}`, profileEvents.CERTIFICATION_UPDATED, {
+    driverId,
+    type,
+    imageUrl,
+  });
+
+  socket.emit(profileEvents.CERTIFICATION_UPDATED, { success: true, imageUrl });
+};
+
+/**
+ * Handles profile get socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains driverId.
+ */
+const handleProfileGet = async (socket, { driverId }) => {
+  if (!driverId) {
+    throw new AppError(
+      'Missing driver ID',
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
+
+  const driver = await profileService.getProfile(driverId);
+  socket.emit(profileEvents.PROFILE_GET, { success: true, driver });
+};
+
+/**
+ * Handles profile verification socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains driverId.
+ */
+const handleProfileVerification = async (socket, { driverId }) => {
+  if (!driverId) {
+    throw new AppError(
+      'Missing driver ID',
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
+
+  const complianceStatus = await profileService.verifyProfile(driverId);
+  await socketService.emitToRoom(`driver:${socket.user.id}`, profileEvents.PROFILE_VERIFIED, {
+    driverId,
+    complianceStatus,
+  });
+
+  socket.emit(profileEvents.PROFILE_VERIFIED, { success: true, complianceStatus });
+};
+
+module.exports = {
+  handleProfileUpdate,
+  handleCertificationUpload,
+  handleProfileGet,
+  handleProfileVerification,
+};

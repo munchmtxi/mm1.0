@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Tu perfil de personal se ha creado correctamente, {name}.",
+    "bank_details_updated": "Los detalles bancarios se han actualizado correctamente.",
+    "branch_updated": "La sucursal asignada se ha actualizado a {branchName}.",
+    "geofence_updated": "Tu geofence se ha actualizado a {geofenceName}.",
+    "country_updated": "La configuración de país se ha actualizado a {country}.",
+    "wallet_settings_updated": "La configuración de tu cartera se ha actualizado correctamente.",
+    "payment_method_added": "Método de pago ({methodType}) añadido a tu cartera.",
+    "withdrawal_processed": "Retirada de {amount} {currency} procesada correctamente.",
+    "error": {
+      "invalid_email": "La dirección de correo electrónico proporcionada no es válida.",
+      "invalid_phone": "El número de teléfono proporcionado no es válido.",
+      "invalid_position": "La posición seleccionada no es válida.",
+      "invalid_certifications": "Una o más certificaciones no son válidas.",
+      "missing_certifications": "Faltan certificaciones obligatorias: {certifications}.",
+      "invalid_branch": "La sucursal seleccionada no es válida o no está autorizada.",
+      "invalid_geofence": "El geofence seleccionado no es válido.",
+      "invalid_currency": "La moneda de los detalles bancarios debe coincidir con la del comerciante ({currency}).",
+      "incomplete_profile": "Perfil incompleto: faltan {fields}.",
+      "incomplete_branch_profile": "El horario de funcionamiento de la sucursal está incompleto."
+    }
+  }
+}

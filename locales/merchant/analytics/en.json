@@ -1,0 +1,20 @@
+{
+  "analytics": {
+    "branch_data_aggregated": "Aggregated data for {branchCount} branches.",
+    "branch_performance_compared": "Compared performance for {branchCount} branches.",
+    "multi_branch_reports_generated": "Generated reports for {branchCount} branches.",
+    "resources_allocated": "Allocated resources for {branchCount} branches.",
+    "customer_behavior_tracked": "Tracked behavior with {orderCount} orders.",
+    "spending_trends_analyzed": "Analyzed spending trends with total {totalSpent}.",
+    "recommendations_provided": "Provided {itemCount} item recommendations.",
+    "analytics_points_awarded": "Awarded {points} points for analytics engagement.",
+    "staff_metrics_monitored": "Monitored staff metrics with {tasksCompleted} tasks completed.",
+    "staff_performance_report": "Generated staff report with {totalTasks} tasks.",
+    "staff_feedback_provided": "Provided feedback: {message}.",
+    "staff_points_awarded": "Awarded {points} points for staff performance.",
+    "driver_metrics_monitored": "Monitored driver metrics with {totalDeliveries} deliveries.",
+    "driver_performance_report": "Generated driver report with {totalDeliveries} deliveries.",
+    "driver_feedback_provided": "Provided feedback: {message}.",
+    "driver_points_awarded": "Awarded {points} points for driver performance."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Seu perfil de comerciante foi criado com sucesso, {name}.",
+    "updated": "Seu perfil de comerciante foi atualizado com sucesso, {name}.",
+    "country_updated": "As configurações do país foram atualizadas para {country}.",
+    "media_uploaded": "Mídia ({mediaType}) carregada com sucesso.",
+    "wallet_settings_updated": "As configurações da sua carteira foram atualizadas com sucesso.",
+    "payment_method_added": "Método de pagamento ({methodType}) adicionado à sua carteira.",
+    "withdrawal_processed": "Saque de {amount} {currency} processado com sucesso."
+  }
+}

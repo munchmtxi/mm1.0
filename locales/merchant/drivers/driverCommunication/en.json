@@ -1,0 +1,27 @@
+{
+  "driverManagement": {
+    "deliveryTaskAssigned": "Assigned delivery task for order {{orderNumber}}",
+    "complianceCheckFailed": "Driver compliance check failed",
+    "complianceCheckPassed": "Driver compliance check passed",
+    "gamificationPointsAwarded": "Earned {{points}} points for {{action}}",
+    "locationUpdated": "Driver location updated successfully",
+    "errors": {
+      "driverNotFound": "Driver not found or unavailable",
+      "orderNotReady": "Order not ready or not found",
+      "routeNotFound": "Route not found for order",
+      "complianceCheckFailed": "Compliance check failed"
+    }
+  },
+  "driverCommunication": {
+    "driverMessage": "Message: {{message}} (Task ID: {{taskId}})",
+    "deliveryUpdate": "Order {{orderNumber}} update: {{message}} (Task ID: {{taskId}})",
+    "channelsUpdated": "Driver communication channels updated for merchant",
+    "communicationTracked": "Driver communication history tracked",
+    "errors": {
+      "driverNotFound": "Driver not found",
+      "orderNotFound": "Order or assigned driver not found",
+      "merchantNotFound": "Merchant not found",
+      "taskNotFound": "No active delivery tasks found"
+    }
+  }
+}

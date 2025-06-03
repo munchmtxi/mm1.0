@@ -1,97 +1,247 @@
-// AdminProfileController.js
 'use strict';
 
+/**
+ * Admin Profile Controller
+ * Handles HTTP requests for admin profile operations, interacting with adminProfileService
+ * and returning JSON responses.
+ */
+
 const adminProfileService = require('@services/admin/profile/adminProfileService');
-const adminConstants = require('@constants/admin/adminConstants');
-const AppError = require('@utils/AppError');
-const logger = require('@utils/logger');
+const localization = require('@utils/localization/localization');
+const errorHandling = require('@utils/errorHandling');
 const catchAsync = require('@utils/catchAsync');
+const adminCoreConstants = require('@constants/admin/adminCoreConstants');
+const adminEngagementConstants = require('@constants/admin/adminEngagementConstants');
 
-class AdminProfileController {
-  /**
-   * Get admin profile
-   */
-  getProfile = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    const profile = await adminProfileService.getProfile(userId);
-    logger.info('Admin profile retrieved', { userId });
-    res.status(200).json({
-      status: 'success',
-      data: profile,
-    });
+/**
+ * Creates a new admin account.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const createAdmin = catchAsync(async (req, res, next) => {
+  const adminData = { ...req.body, ipAddress: req.ip };
+  const adminRecord = await adminProfileService.createAdminAccount(adminData);
+
+  res.status(201).json({
+    status: 'success',
+    data: { admin: adminRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminData.languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'admin_created_message',
+    ),
   });
+});
 
-  /**
-   * Update admin personal information
-   */
-  updatePersonalInfo = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    const updateData = req.body;
-    const profile = await adminProfileService.updatePersonalInfo(userId, updateData, req.user);
-    logger.info('Admin profile updated', { userId });
-    res.status(200).json({
-      status: 'success',
-      data: profile,
-    });
+/**
+ * Updates an admin's profile.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const updateAdmin = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const updateData = { ...req.body, ipAddress: req.ip };
+  const adminRecord = await adminProfileService.updateAdminProfile(adminId, updateData);
+
+  res.status(200).json({
+    status: 'success',
+    data: { admin: adminRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'profile_updated_message',
+    ),
   });
+});
 
-  /**
-   * Change admin password
-   */
-  changePassword = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    const { currentPassword, newPassword } = req.body;
-    await adminProfileService.changePassword(userId, currentPassword, newPassword);
-    logger.info('Admin password changed', { userId });
-    res.status(200).json({
-      status: 'success',
-      message: 'Password changed successfully',
-    });
+/**
+ * Sets permissions for an admin.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const setPermissions = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const { permissionIds } = req.body;
+  const adminRecord = await adminProfileService.setAdminPermissions(adminId, permissionIds, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { admin: adminRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'permissions_updated_message',
+    ),
   });
+});
 
-  /**
-   * Upload admin profile picture
-   */
-  uploadProfilePicture = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    const file = req.file;
-    if (!file) {
-      throw new AppError('No file uploaded', 400, adminConstants.ERROR_CODES.NO_FILE_UPLOADED);
-    }
-    const avatarUrl = await adminProfileService.uploadProfilePicture(userId, file);
-    logger.info('Admin profile picture uploaded', { userId });
-    res.status(200).json({
-      status: 'success',
-      data: { avatar_url: avatarUrl },
-    });
+/**
+ * Verifies an admin's identity using MFA token.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const verifyIdentity = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const { mfaToken } = req.body;
+  const isVerified = await adminProfileService.verifyAdminIdentity(adminId, mfaToken, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { verified: isVerified },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'mfa_verified_message',
+    ),
   });
+});
 
-  /**
-   * Delete admin profile picture
-   */
-  deleteProfilePicture = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    await adminProfileService.deleteProfilePicture(userId);
-    logger.info('Admin profile picture deleted', { userId });
-    res.status(200).json({
-      status: 'success',
-      message: 'Profile picture deleted successfully',
-    });
+/**
+ * Suspends an admin account.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const suspendAdmin = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const { reason } = req.body;
+  const adminRecord = await adminProfileService.suspendAdminAccount(adminId, reason, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { admin: adminRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'account_suspended_message',
+      { reason },
+    ),
   });
+});
 
-  /**
-   * Update admin availability status
-   */
-  updateAvailabilityStatus = catchAsync(async (req, res) => {
-    const userId = req.user.id;
-    const { status } = req.body;
-    const updatedStatus = await adminProfileService.updateAvailabilityStatus(userId, status, req.user);
-    logger.info('Admin availability status updated', { userId, status });
-    res.status(200).json({
-      status: 'success',
-      data: { availability_status: updatedStatus },
-    });
+/**
+ * Deletes an admin account.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const deleteAdmin = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  await adminProfileService.deleteAdminAccount(adminId, req.ip);
+
+  res.status(204).json({
+    status: 'success',
+    data: null,
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'account_deleted_message',
+    ),
   });
-}
+});
 
-module.exports = new AdminProfileController();
+/**
+ * Generates activity reports for an admin.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const generateReports = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const { startDate, endDate } = req.body;
+  const report = await adminProfileService.generateAdminReports(adminId, { startDate, endDate }, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { report },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'report_generated_message',
+    ),
+  });
+});
+
+/**
+ * Awards gamification points to an admin.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const awardPoints = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const { action, points, languageCode } = req.body;
+  const pointsRecord = await adminProfileService.awardAdminPoints(adminId, action, points, languageCode);
+
+  res.status(200).json({
+    status: 'success',
+    data: { points: pointsRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      languageCode || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'points_awarded_message',
+      { points },
+    ),
+  });
+});
+
+/**
+ * Configures localization settings for an admin.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const configureLocalization = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const localizationData = req.body;
+  const adminRecord = await adminProfileService.configureLocalization(adminId, localizationData, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { admin: adminRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminRecord.language_code || adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'localization_updated_message',
+    ),
+  });
+});
+
+/**
+ * Manages accessibility settings for an admin.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const manageAccessibility = catchAsync(async (req, res, next) => {
+  const adminId = parseInt(req.params.adminId, 10);
+  const accessibilityData = req.body;
+  const accessibilityRecord = await adminProfileService.manageAccessibility(adminId, accessibilityData, req.ip);
+
+  res.status(200).json({
+    status: 'success',
+    data: { accessibility: accessibilityRecord },
+    message: localization.formatMessage(
+      'admin', 'profile',
+      adminCoreConstants.ADMIN_SETTINGS.DEFAULT_LANGUAGE,
+      'accessibility_updated_message',
+    ),
+  });
+});
+
+module.exports = {
+  createAdmin,
+  updateAdmin,
+  setPermissions,
+  verifyIdentity,
+  suspendAdmin,
+  deleteAdmin,
+  generateReports,
+  awardPoints,
+  configureLocalization,
+  manageAccessibility,
+};

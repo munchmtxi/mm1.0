@@ -1,0 +1,13 @@
+{
+  "branch": {
+    "created": "Sucursal ({name}) creada exitosamente.",
+    "updated": "Sucursal ({name}) actualizada exitosamente.",
+    "settings_updated": "Configuración de la sucursal actualizada exitosamente.",
+    "country_updated": "La configuración del país de la sucursal se actualizó a {country}.",
+    "geofence_updated": "Configuración de geovalla de la sucursal actualizada exitosamente.",
+    "media_uploaded": "Medios ({mediaType}) de la sucursal cargados exitosamente.",
+    "wallet_settings_updated": "Configuración de billetera de la sucursal actualizada exitosamente.",
+    "payment_method_added": "Método de pago ({methodType}) agregado a la billetera de la sucursal.",
+    "withdrawal_processed": "Retiro de {amount} {currency} procesado exitosamente desde la billetera de la sucursal."
+  }
+}

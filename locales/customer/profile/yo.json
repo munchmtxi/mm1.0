@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Àkọsilẹ̀ rẹ ti ṣèyẹ́ daradara, {name}.",
+    "updated": "Àkọsilẹ̀ rẹ ti ṣèyẹ́ tun ṣetan, {name}.",
+    "language_updated": "Èdè ìtànṣẹ rẹ ti yipada si {languageCode}.",
+    "dietary_updated": "Awọn iyanrara rẹ ti ṣèyẹ́ tun ṣetan.",
+    "points_awarded": "O gba {points} pọ̀ntì nítorí sisunmọ̀ àkọsilẹ̀ rẹ.",
+    "wallet_settings_updated": "Àṣàlẹ̀ ewe rẹ ti ṣèyẹ́ tun ṣetan.",
+    "payment_method_added": "Ọ̀nà ìgbá ènìkan ({methodType}) ti farasin sí ewe rẹ.",
+    "withdrawal_processed": "Ìgbá {amount} {currency} ti ṣèyẹ́ iṣẹ́ lori ewe rẹ."
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Votre profil de chauffeur a été créé avec succès, {name}.",
+    "updated": "Votre profil de chauffeur a été mis à jour avec succès, {name}.",
+    "certification_uploaded": "Certification ({certType}) téléchargée avec succès.",
+    "verified": "Statut de vérification de votre profil : {status}.",
+    "country_updated": "Vos paramètres de pays ont été mis à jour vers {country}.",
+    "wallet_settings_updated": "Paramètres de votre portefeuille mis à jour avec succès.",
+    "payment_method_added": "Méthode de paiement ({methodType}) ajoutée à votre portefeuille.",
+    "withdrawal_processed": "Le retrait de {amount} {currency} a été traité avec succès."
+  }
+}

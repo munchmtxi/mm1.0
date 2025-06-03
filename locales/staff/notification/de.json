@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Ihr Mitarbeiterprofil wurde aktualisiert",
+    "profile_updated": "Ihr Profil wurde erfolgreich aktualisiert, Mitarbeiter‑ID: {staffId}.",
+    "profile_verified_subject": "Profilkonformität bestätigt",
+    "profile_verified": "Die Konformität Ihres Profils wurde erfolgreich bestätigt.",
+    "profile_compliance_failed_subject": "Profilkonformitätsprüfung fehlgeschlagen",
+    "profile_compliance_failed": "Prüfung fehlgeschlagen: {reason}.",
+    "task_assignment_subject": "Neue Aufgabe zugewiesen",
+    "task_assignment": "Ihnen wurde eine neue Aufgabe zugewiesen: {taskName}.",
+    "shift_update_subject": "Schichtplan aktualisiert",
+    "shift_update": "Ihr Schichtplan wurde aktualisiert: {shiftDetails}.",
+    "wallet_update_subject": "Brieftaschendetails aktualisiert",
+    "wallet_update": "Ihre Brieftaschendetails wurden erfolgreich aktualisiert.",
+    "training_reminder_subject": "Schulungserinnerung",
+    "training_reminder": "Bitte schließen Sie Ihre {trainingName}-Schulung bis {deadline} ab.",
+    "announcement_subject": "Wichtige Ankündigung",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Punkte vergeben",
+    "gamification_points_awarded": "Sie haben {points} Punkte für {actionName} erhalten!"
+  }
+}

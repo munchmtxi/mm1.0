@@ -1,0 +1,15 @@
+{
+  "driverManagement": {
+    "deliveryTaskAssigned": "Assigned delivery task for order {{orderNumber}}",
+    "complianceCheckFailed": "Driver compliance check failed",
+    "complianceCheckPassed": "Driver compliance check passed",
+    "gamificationPointsAwarded": "Earned {{points}} points for {{action}}",
+    "locationUpdated": "Driver location updated successfully",
+    "errors": {
+      "driverNotFound": "Driver not found or unavailable",
+      "orderNotReady": "Order not ready or not found",
+      "routeNotFound": "Route not found for order",
+      "complianceCheckFailed": "Compliance check failed"
+    }
+  }
+}

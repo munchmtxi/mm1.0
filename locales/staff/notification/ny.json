@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Mbiri Yanu Ya Ogwira Ntchito Yasintha",
+    "profile_updated": "Mbiri yanu yasintha bwino, ID ya ogwira ntchito: {staffId}.",
+    "profile_verified_subject": "Kutsimikizika kwa Kugwirizana Kwachitika",
+    "profile_verified": "Kutsimikizika kwachitika bwino.",
+    "profile_compliance_failed_subject": "Kutsimikizika Kwalephera",
+    "profile_compliance_failed": "Kutsimikizika kwalephera: {reason}.",
+    "task_assignment_subject": "Ntchito Yatsopano Yaperekedwa",
+    "task_assignment": "Mwaperekedwa ntchito yatsopano: {taskName}.",
+    "shift_update_subject": "Mapulogalamu A Maswiti Anasinthidwa",
+    "shift_update": "Mapulogalamu anu anasinthidwa: {shiftDetails}.",
+    "wallet_update_subject": "Zambiri Za Wallet Zasintha",
+    "wallet_update": "Zambiri za wallet zasinthidwa bwino.",
+    "training_reminder_subject": "Kumbutsiro Wophunzira",
+    "training_reminder": "Malizitsani maphunziro a {trainingName} pamaso pa {deadline}.",
+    "announcement_subject": "Chidziwitso Chofunika",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Mfundo Zopatsidwa",
+    "gamification_points_awarded": "Mwalandira mfundo {points} chifukwa cha {actionName}!"
+  }
+}

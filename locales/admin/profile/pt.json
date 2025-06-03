@@ -1,0 +1,10 @@
+{
+  "welcome_message": "Bem-vindo, {name}! Sua conta de administrador foi criada.",
+  "profile_updated_message": "Seu perfil foi atualizado com sucesso.",
+  "permissions_updated_message": "Suas permissões foram atualizadas.",
+  "account_suspended_message": "Sua conta foi suspensa. Motivo: {reason}",
+  "account_deleted_message": "Sua conta foi excluída.",
+  "points_awarded_message": "Você ganhou {points} pontos por {action}!",
+  "localization_updated_message": "Configurações de localização atualizadas com sucesso.",
+  "accessibility_updated_message": "Configurações de acessibilidade atualizadas com sucesso."
+}

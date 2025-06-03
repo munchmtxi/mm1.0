@@ -30,6 +30,8 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'staff_id',
         as: 'staff',
       });
+
+      Booking.hasMany(models.BookingPartyMember, { foreignKey: 'booking_id' });
     }
 
     format_date() {
@@ -121,6 +123,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       allowNull: true,
     },
+    selected_items: {
+  type: DataTypes.JSONB,
+  allowNull: true,
+  defaultValue: null
+}
     status: {
       type: DataTypes.ENUM('pending', 'approved', 'denied', 'seated', 'cancelled'),
       allowNull: false,
@@ -255,6 +262,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    payment_status: {
+  type: DataTypes.ENUM('unpaid', 'paid', 'refunded'),
+  allowNull: false,
+  defaultValue: 'unpaid',
+}
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,

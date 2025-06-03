@@ -1,0 +1,9 @@
+{
+  "security": {
+    "access_granted": "Access granted for staff {staffId} to {permission}.",
+    "access_denied": "Access denied for staff {staffId}.",
+    "access_updated": "Access rules updated for staff {staffId}.",
+    "access_audited": "Access attempt audited for staff {staffId}.",
+    "points_awarded": "Points awarded for secure access activities."
+  }
+}

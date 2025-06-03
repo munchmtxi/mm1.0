@@ -1,359 +1,372 @@
 'use strict';
 
-const { MerchantBranch, Merchant, Address, sequelize } = require('@models');
+/**
+ * Branch Profile Service
+ * Manages branch-specific operations, including branch details, settings, media uploads, and profile
+ * synchronization for the Merchant Role System. Integrates with merchantConstants.js for configuration
+ * and ensures compliance with security and localization requirements.
+ *
+ * Last Updated: May 15, 2025
+ */
+
+const { MerchantBranch, Merchant, Media } = require('@models');
+const merchantConstants = require('@constants/merchantConstants');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const imageService = require('@services/common/imageService');
+const locationService = require('@services/common/locationService');
+const auditService = require('@services/common/auditService');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const mapService = require('@services/common/mapService');
-const { v4: uuidv4 } = require('uuid');
-const NodeCache = require('node-cache');
+const { formatMessage } = require('@utils/localization/localization');
+const validation = require('@utils/validation');
+const catchAsync = require('@utils/catchAsync');
 
-const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // 5-minute cache
+/**
+ * Updates branch hours or location.
+ * @param {string} branchId - Branch ID.
+ * @param {Object} details - Branch details (e.g., operatingHours, location, contactPhone).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Updated branch.
+ */
+const updateBranchDetails = catchAsync(async (branchId, details, ipAddress) => {
+  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
+  if (!branch) {
+    throw new AppError(
+      'Branch not found',
+      404,
+      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+    );
+  }
+
+  const { operatingHours, location, contactPhone } = details;
+
+  // Validate operating hours
+  if (operatingHours && (!operatingHours.open || !operatingHours.close)) {
+    throw new AppError(
+      'Operating hours must include open and close times',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_OPERATING_HOURS
+    );
+  }
+
+  // Validate contact phone
+  if (contactPhone && !validation.validatePhone(contactPhone)) {
+    throw new AppError(
+      'Invalid contact phone number format',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_PHONE
+    );
+  }
+
+  // Validate and resolve location
+  let resolvedLocation = null;
+  if (location) {
+    resolvedLocation = await locationService.resolveLocation(location);
+    if (!merchantConstants.MERCHANT_SETTINGS.SUPPORTED_CITIES[resolvedLocation.countryCode]) {
+      throw new AppError(
+        'Unsupported location',
+        400,
+        merchantConstants.ERROR_CODES.UNSUPPORTED_LOCATION
+      );
+    }
+  }
+
+  // Update branch
+  const updatedFields = {
+    operating_hours: operatingHours || branch.operating_hours,
+    location: resolvedLocation ? resolvedLocation : branch.location,
+    contact_phone: contactPhone || branch.contact_phone,
+    updated_at: new Date(),
+  };
+
+  await branch.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPDATE_BRANCH_DETAILS,
+    userId: branch.merchant.user_id,
+    role: 'merchant',
+    details: updatedFields,
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { branchId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: branch.merchant.user_id,
+    merchant_id: branch.merchant_id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'branch',
+      branch.merchant.preferred_language,
+      'branch.updated',
+      { branchId }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
+    languageCode: branch.merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'branch:updated', {
+    userId: branch.merchant.user_id,
+    branchId,
+    updatedFields,
+  });
+
+  logger.info('Branch details updated successfully', { branchId });
+  return branch;
+});
+
+/**
+ * Configures branch-specific currency and language settings.
+ * @param {string} branchId - Branch ID.
+ * @param {Object} settings - Settings (e.g., currency, language).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Updated branch.
+ */
+const configureBranchSettings = catchAsync(async (branchId, settings, ipAddress) => {
+  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
+  if (!branch) {
+    throw new AppError(
+      'Branch not found',
+      404,
+      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+    );
+  }
+
+  const { currency, language } = settings;
+
+  // Validate currency
+  if (currency && !merchantConstants.MERCHANT_SETTINGS.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError(
+      'Unsupported currency',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_CURRENCY
+    );
+  }
+
+  // Validate language
+  if (language && !['en', 'fr', 'es'].includes(language)) {
+    throw new AppError(
+      'Unsupported language',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_LANGUAGE
+    );
+  }
+
+  // Update branch
+  const updatedFields = {
+    currency: currency || branch.currency,
+    preferred_language: language || branch.preferred_language,
+    updated_at: new Date(),
+  };
+
+  await branch.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.CONFIGURE_BRANCH_SETTINGS,
+    userId: branch.merchant.user_id,
+    role: 'merchant',
+    details: updatedFields,
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { branchId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: branch.merchant.user_id,
+    merchant_id: branch.merchant_id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'branch',
+      branch.merchant.preferred_language,
+      'branch.settings_updated',
+      { branchId }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: branch.merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'branch:settings_updated', {
+    userId: branch.merchant.user_id,
+    branchId,
+    settings: updatedFields,
+  });
+
+  logger.info('Branch settings configured successfully', { branchId });
+  return branch;
+});
+
+/**
+ * Uploads branch-specific media (e.g., photos, videos).
+ * @param {string} branchId - Branch ID.
+ * @param {Object} media - Media data (e.g., file, type).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<string>} URL of the uploaded media.
+ */
+const manageBranchMedia = catchAsync(async (branchId, media, ipAddress) => {
+  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
+  if (!branch) {
+    throw new AppError(
+      'Branch not found',
+      404,
+      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+    );
+  }
+
+  const { file, type } = media;
+
+  // Validate media type
+  if (!['menu_photos', 'promotional_media', 'branch_media', 'banner', 'promo_video'].includes(type)) {
+    throw new AppError(
+      'Invalid media type',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_MEDIA_TYPE
+    );
+  }
+
+  // Validate file
+  if (!file || !file.originalname) {
+    throw new AppError(
+      'Invalid file data',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_FILE_DATA
+    );
+  }
+
+  const imageUrl = await imageService.uploadImage(branch.id, file, type);
+
+  // Save media record
+  const mediaRecord = await Media.create({
+    branch_id: branchId,
+    merchant_id: branch.merchant_id,
+    type,
+    url: imageUrl,
+    created_at: new Date(),
+    updated_at: new Date(),
+  });
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPLOAD_BRANCH_MEDIA,
+    userId: branch.merchant.user_id,
+    role: 'merchant',
+    details: { branchId, type, url: imageUrl },
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { mediaId: mediaRecord.id },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: branch.merchant.user_id,
+    merchant_id: branch.merchant_id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_UPLOADED,
+    message: formatMessage(
+      'merchant',
+      'media',
+      branch.merchant.preferred_language,
+      'media.uploaded',
+      { branchId }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
+    languageCode: branch.merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'media:uploaded', {
+    userId: branch.merchant.user_id,
+    branchId,
+    mediaId: mediaRecord.id,
+    imageUrl,
+  });
+
+  logger.info('Branch media uploaded successfully', { branchId, mediaId: mediaRecord.id });
+  return imageUrl;
+});
+
+/**
+ * Ensures consistency across multiple branch profiles.
+ * @param {string} merchantId - Merchant ID.
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Array>} Updated branches.
+ */
+const syncBranchProfiles = catchAsync(async (merchantId, ipAddress) => {
+  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
+  if (!merchant) {
+    throw new AppError(
+      'Merchant not found',
+      404,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    );
+  }
+
+  const branches = await MerchantBranch.findAll({ where: { merchant_id: merchantId } });
+  if (!branches.length) {
+    throw new AppError(
+      'No branches found',
+      404,
+      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+    );
+  }
+
+  // Sync settings (e.g., currency, language) across branches
+  const updatedBranches = await Promise.all(
+    branches.map(async (branch) => {
+      const updatedFields = {
+        currency: merchant.currency || branch.currency,
+        preferred_language: merchant.preferred_language || branch.preferred_language,
+        updated_at: new Date(),
+      };
+      await branch.update(updatedFields);
+      return branch;
+    })
+  );
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.SYNC_BRANCH_PROFILES,
+    userId: merchant.user_id,
+    role: 'merchant',
+    details: { merchantId, branchCount: updatedBranches.length },
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'branch',
+      merchant.preferred_language,
+      'branch.synced',
+      { merchantId }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${merchant.user_id}`, 'branch:synced', {
+    userId: merchant.user_id,
+    merchantId,
+    branchCount: updatedBranches.length,
+  });
+
+  logger.info('Branch profiles synced successfully', { merchantId, branchCount: updatedBranches.length });
+  return updatedBranches;
+});
 
 module.exports = {
-  async createBranchProfile(merchantId, branchData, files = {}) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-      if (!branchData || typeof branchData !== 'object') {
-        throw new AppError('Invalid branch data', 400, 'INVALID_BRANCH_DATA');
-      }
-      if (!branchData.name || typeof branchData.name !== 'string') {
-        throw new AppError('Branch name is required', 400, 'MISSING_BRANCH_NAME');
-      }
-
-      const merchant = await Merchant.findByPk(merchantId, { transaction });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      const resolvedLocation = await mapService.resolveLocation({
-        placeId: branchData.placeId,
-        address: branchData.address,
-        coordinates: branchData.coordinates,
-      });
-
-      let address = await Address.findOne({
-        where: { placeId: resolvedLocation.placeId, user_id: merchant.user_id },
-        transaction
-      });
-
-      if (!address) {
-        address = await Address.create({
-          user_id: merchant.user_id,
-          formattedAddress: resolvedLocation.formattedAddress,
-          placeId: resolvedLocation.placeId,
-          latitude: resolvedLocation.latitude,
-          longitude: resolvedLocation.longitude,
-          components: resolvedLocation.components,
-          countryCode: resolvedLocation.countryCode,
-          validationStatus: 'VALID',
-          validatedAt: new Date(),
-        }, { transaction });
-      }
-
-      const operatingHours = branchData.operating_hours || {};
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const timeFormat = /^([01]\d|2[0-3]):([0-5]\d)$/;
-      for (const day of days) {
-        if (operatingHours[day]) {
-          if (!timeFormat.test(operatingHours[day].open) || !timeFormat.test(operatingHours[day].close)) {
-            throw new AppError(`Invalid time format for ${day}`, 400, 'INVALID_OPERATING_HOURS');
-          }
-        }
-      }
-
-      const media = { logo: null, banner: null, gallery: [] };
-      if (files.logo) {
-        media.logo = await imageService.uploadImage(merchantId, files.logo, 'logo');
-      }
-      if (files.banner) {
-        media.banner = await imageService.uploadBannerImage(merchantId, files.banner, 'banner');
-      }
-
-      const branch = await MerchantBranch.create({
-        merchant_id: merchantId,
-        address_id: address.id,
-        name: branchData.name,
-        branch_code: `BR-${uuidv4().slice(0, 8)}`,
-        contact_email: branchData.contact_email,
-        contact_phone: branchData.contact_phone,
-        address: resolvedLocation.formattedAddress,
-        location: { type: 'Point', coordinates: [resolvedLocation.longitude, resolvedLocation.latitude] },
-        operating_hours: operatingHours,
-        delivery_radius: branchData.delivery_radius,
-        payment_methods: branchData.payment_methods || [],
-        media,
-      }, { transaction });
-
-      // Invalidate cache
-      cache.del(`branch_list_${merchantId}`);
-      
-      await transaction.commit();
-      logger.logApiEvent('Branch profile created', { merchantId, branchId: branch.id });
-      return branch;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to create branch profile', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to create branch', 500, 'BRANCH_CREATION_FAILED');
-    }
-  },
-
-  async getBranchProfile(branchId) {
-    try {
-      // Validate input
-      if (!branchId || isNaN(branchId)) {
-        throw new AppError('Invalid branch ID', 400, 'INVALID_BRANCH_ID');
-      }
-
-      // Check cache
-      const cacheKey = `branch_profile_${branchId}`;
-      const cachedBranch = cache.get(cacheKey);
-      if (cachedBranch) {
-        logger.info('Returning cached branch profile', { branchId });
-        return cachedBranch;
-      }
-
-      const branch = await MerchantBranch.findByPk(branchId, {
-        include: [
-          { model: Merchant, as: 'merchant', attributes: ['id', 'business_name'] },
-          { 
-            model: Address, 
-            as: 'addressRecord', 
-            attributes: ['id', 'formattedAddress', 'latitude', 'longitude'] 
-          },
-        ],
-      });
-
-      if (!branch) {
-        throw new AppError('Branch not found', 404, 'BRANCH_NOT_FOUND');
-      }
-
-      const result = branch.toJSON();
-      cache.set(cacheKey, result);
-
-      logger.logApiEvent('Branch profile retrieved', { branchId });
-      return result;
-    } catch (error) {
-      logger.logErrorEvent('Failed to retrieve branch profile', { error: error.message, branchId });
-      throw error instanceof AppError ? error : new AppError('Failed to retrieve branch', 500, 'BRANCH_RETRIEVAL_FAILED');
-    }
-  },
-
-  async updateBranchProfile(branchId, branchData, files = {}) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Validate input
-      if (!branchId || isNaN(branchId)) {
-        throw new AppError('Invalid branch ID', 400, 'INVALID_BRANCH_ID');
-      }
-      if (!branchData || typeof branchData !== 'object') {
-        throw new AppError('Invalid branch data', 400, 'INVALID_BRANCH_DATA');
-      }
-
-      const branch = await MerchantBranch.findByPk(branchId, { transaction });
-      if (!branch) {
-        throw new AppError('Branch not found', 404, 'BRANCH_NOT_FOUND');
-      }
-
-      let resolvedLocation;
-      if (branchData.address || branchData.placeId || branchData.coordinates) {
-        resolvedLocation = await mapService.resolveLocation({
-          placeId: branchData.placeId,
-          address: branchData.address,
-          coordinates: branchData.coordinates,
-        });
-        branchData.address = resolvedLocation.formattedAddress;
-        branchData.location = { type: 'Point', coordinates: [resolvedLocation.longitude, resolvedLocation.latitude] };
-
-        const merchant = await Merchant.findByPk(branch.merchant_id, { transaction });
-        let address = await Address.findOne({
-          where: { placeId: resolvedLocation.placeId, user_id: merchant.user_id },
-          transaction
-        });
-
-        if (!address) {
-          address = await Address.create({
-            user_id: merchant.user_id,
-            formattedAddress: resolvedLocation.formattedAddress,
-            placeId: resolvedLocation.placeId,
-            latitude: resolvedLocation.latitude,
-            longitude: resolvedLocation.longitude,
-            components: resolvedLocation.components,
-            countryCode: resolvedLocation.countryCode,
-            validationStatus: 'VALID',
-            validatedAt: new Date(),
-          }, { transaction });
-        }
-        branchData.address_id = address.id;
-      }
-
-      if (branchData.operating_hours) {
-        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-        const timeFormat = /^([01]\d|2[0-3]):([0-5]\d)$/;
-        for (const day of days) {
-          if (branchData.operating_hours[day]) {
-            if (!timeFormat.test(branchData.operating_hours[day].open) || !timeFormat.test(branchData.operating_hours[day].close)) {
-              throw new AppError(`Invalid time format for ${day}`, 400, 'INVALID_OPERATING_HOURS');
-            }
-          }
-        }
-      }
-
-      const media = branch.media;
-      if (files.logo) {
-        if (media.logo) await imageService.deleteImage(branch.merchant_id, 'logo');
-        media.logo = await imageService.uploadImage(branch.merchant_id, files.logo, 'logo');
-      }
-      if (files.banner) {
-        if (media.banner) await imageService.deleteBannerImage(media.banner);
-        media.banner = await imageService.uploadBannerImage(branch.merchant_id, files.banner, 'banner');
-      }
-      branchData.media = media;
-
-      await branch.update(branchData, { transaction });
-
-      // Invalidate cache
-      cache.del(`branch_profile_${branchId}`);
-      cache.del(`branch_list_${branch.merchant_id}`);
-
-      await transaction.commit();
-      logger.logApiEvent('Branch profile updated', { branchId, updatedFields: Object.keys(branchData) });
-      return branch;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to update branch profile', { error: error.message, branchId });
-      throw error instanceof AppError ? error : new AppError('Failed to update branch', 500, 'BRANCH_UPDATE_FAILED');
-    }
-  },
-
-  async deleteBranchProfile(branchId) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Validate input
-      if (!branchId || isNaN(branchId)) {
-        throw new AppError('Invalid branch ID', 400, 'INVALID_BRANCH_ID');
-      }
-
-      const branch = await MerchantBranch.findByPk(branchId, { transaction });
-      if (!branch) {
-        throw new AppError('Branch not found', 404, 'BRANCH_NOT_FOUND');
-      }
-
-      if (branch.media.logo) await imageService.deleteImage(branch.merchant_id, 'logo');
-      if (branch.media.banner) await imageService.deleteBannerImage(branch.media.banner);
-
-      await branch.destroy({ transaction });
-
-      // Invalidate cache
-      cache.del(`branch_profile_${branchId}`);
-      cache.del(`branch_list_${branch.merchant_id}`);
-
-      await transaction.commit();
-      logger.logApiEvent('Branch profile deleted', { branchId });
-      return true;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to delete branch profile', { error: error.message, branchId });
-      throw error instanceof AppError ? error : new AppError('Failed to delete branch', 500, 'BRANCH_DELETION_FAILED');
-    }
-  },
-
-  async listBranchProfiles(merchantId) {
-    try {
-      logger.info('Listing branch profiles', { merchantId, type: 'api' });
-
-      const branches = await MerchantBranch.findAll({
-        where: { merchant_id: merchantId },
-        attributes: ['id', 'name', 'address', 'contact_email', 'contact_phone', 'is_active'],
-        include: [
-          {
-            model: Address,
-            as: 'addressRecord',
-            attributes: ['id', 'formattedAddress', 'latitude', 'longitude'],
-          },
-        ],
-      });
-
-      // Convert to plain objects to avoid cloning issues
-      const plainBranches = branches.map(branch => branch.get({ plain: true }));
-
-      logger.logApiEvent('Branch profiles listed', { merchantId, count: plainBranches.length });
-      return plainBranches;
-    } catch (error) {
-      logger.logErrorEvent('Failed to list branch profiles', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to list branches', 500, 'BRANCH_LIST_FAILED');
-    }
-  },
-
-  async bulkUpdateBranches(merchantId, updateData) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-      if (!Array.isArray(updateData) || updateData.length === 0) {
-        throw new AppError('Invalid update data', 400, 'INVALID_UPDATE_DATA');
-      }
-
-      const merchant = await Merchant.findByPk(merchantId, { transaction });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      const allowedFields = ['operating_hours', 'payment_methods', 'delivery_radius', 'is_active'];
-      const updatedBranches = [];
-
-      for (const update of updateData) {
-        const { branchId, ...data } = update;
-        if (!branchId || isNaN(branchId)) {
-          throw new AppError('Invalid branch ID', 400, 'INVALID_BRANCH_ID');
-        }
-
-        const branch = await MerchantBranch.findByPk(branchId, { transaction });
-        if (!branch || branch.merchant_id !== merchantId) {
-          throw new AppError(`Invalid branch ID: ${branchId}`, 400, 'INVALID_BRANCH');
-        }
-
-        const filteredData = {};
-        for (const [key, value] of Object.entries(data)) {
-          if (allowedFields.includes(key)) {
-            filteredData[key] = value;
-          }
-        }
-
-        if (filteredData.operating_hours) {
-          const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-          const timeFormat = /^([01]\d|2[0-3]):([0-5]\d)$/;
-          for (const day of days) {
-            if (filteredData.operating_hours[day]) {
-              if (!timeFormat.test(filteredData.operating_hours[day].open) || !timeFormat.test(filteredData.operating_hours[day].close)) {
-                throw new AppError(`Invalid time format for ${day} in branch ${branchId}`, 400, 'INVALID_OPERATING_HOURS');
-              }
-            }
-          }
-        }
-
-        await branch.update(filteredData, { transaction });
-        updatedBranches.push(branch);
-
-        // Invalidate cache for individual branch
-        cache.del(`branch_profile_${branchId}`);
-      }
-
-      // Invalidate cache for branch list
-      cache.del(`branch_list_${merchantId}`);
-
-      await transaction.commit();
-      logger.logApiEvent('Branches bulk updated', { merchantId, count: updatedBranches.length });
-      return updatedBranches;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to bulk update branches', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to bulk update branches', 500, 'BRANCH_BULK_UPDATE_FAILED');
-    }
-  },
+  updateBranchDetails,
+  configureBranchSettings,
+  manageBranchMedia,
+  syncBranchProfiles,
 };

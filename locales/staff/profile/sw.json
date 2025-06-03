@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Profaili yako ya wafanyakazi imetengenezwa kwa mafanikio, {name}.",
+    "bank_details_updated": "Maelezo yako ya benki yameboreshwa kwa mafanikio.",
+    "branch_updated": "Tawi ulilolipewa limebadilishwa kuwa {branchName}.",
+    "geofence_updated": "Mtiririko wako wa eneo umebadilishwa kuwa {geofenceName}.",
+    "country_updated": "Mipangilio ya nchi yako imesasishwa kuwa {country}.",
+    "wallet_settings_updated": "Mipangilio ya mkoba wako imesasishwa kwa mafanikio.",
+    "payment_method_added": "Njia ya malipo ({methodType}) imeongezwa kwenye mkoba wako.",
+    "withdrawal_processed": "Utoaji wa {amount} {currency} umefanikiwa.",
+    "error": {
+      "invalid_email": "Anwani ya barua pepe iliyotolewa si sahihi.",
+      "invalid_phone": "Nambari ya simu iliyotolewa si sahihi.",
+      "invalid_position": "Nafasi iliyochaguliwa si sahihi.",
+      "invalid_certifications": "Moja au zaidi ya vyeti si sahihi.",
+      "missing_certifications": "Vyeti vinavyohitajika vimekosekana: {certifications}.",
+      "invalid_branch": "Tawi lililochaguliwa si sahihi au haliruhusiwi.",
+      "invalid_geofence": "Mtiririko wa eneo uliyochagua si sahihi.",
+      "invalid_currency": "Sarafu ya maelezo ya benki lazima iwe sawa na sarafu ya muuzaji ({currency}).",
+      "incomplete_profile": "Profaili haijakamilika: {fields} yamekosekana.",
+      "incomplete_branch_profile": "Saa za uendeshaji tawi hazijakamilika."
+    }
+  }
+}

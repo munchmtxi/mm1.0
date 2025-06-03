@@ -4,10 +4,12 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Ride extends Model {
     static associate(models) {
-      this.belongsTo(models.Customer, {
-        foreignKey: 'customerId',
-        as: 'customer',
-      });
+      this.belongsToMany(models.Customer, {
+  through: 'RideCustomer',
+  foreignKey: 'rideId',
+  otherKey: 'customerId',
+  as: 'customer',
+});
       this.belongsTo(models.Driver, {
         foreignKey: 'driverId',
         as: 'driver',
@@ -23,6 +25,8 @@ module.exports = (sequelize, DataTypes) => {
       this.hasOne(models.Route, {
         foreignKey: 'rideId',
         as: 'route', // Added Route association
+
+
       });
     }
   }

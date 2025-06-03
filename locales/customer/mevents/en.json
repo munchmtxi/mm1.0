@@ -1,0 +1,37 @@
+{
+  "event": {
+    "created": "Event '{title}' created successfully.",
+    "invitation": "You've been invited to '{title}' by user #{creatorId}.",
+    "bill_split_request": "Please pay {amount} {currency} for '{eventTitle}'.",
+    "chat_enabled": "Group chat started for '{eventTitle}'."
+  },
+  "tracking": {
+    "points_awarded": "You earned {points} points for your interaction.",
+    "engagement_summary": "You had {totalInteractions} interactions and {eventCount} events in the last period."
+  },
+  "errors": {
+    "invalid_customer": "Customer not found.",
+    "invalid_event": "Invalid event or interaction type.",
+    "invalid_payment_type": "Invalid payment type.",
+    "invalid_participant": "Invalid participant ID.",
+    "event_not_found": "Event not found.",
+    "invalid_service": "Invalid service ID.",
+    "max_participants_exceeded": "Maximum participants exceeded.",
+    "max_services_exceeded": "Maximum services exceeded.",
+    "insufficient_funds": "Insufficient funds in wallet.",
+    "event_creation_failed": "Failed to create event.",
+    "group_bookings_failed": "Failed to manage group bookings.",
+    "chat_facilitation_failed": "Failed to enable group chat.",
+    "interaction_tracking_failed": "Failed to track interaction.",
+    "engagement_analysis_failed": "Failed to analyze engagement.",
+    "max_interactions_exceeded": "Daily interaction limit exceeded.",
+    "insufficient_interactions": "Insufficient interactions for analysis."
+  },
+  "success": {
+    "event_created": "Event created successfully.",
+    "bill_processed": "Transaction processed successfully.",
+    "chat_enabled": "Group chat enabled successfully.",
+    "interaction_tracked": "Interaction tracked successfully.",
+    "engagement_analyzed": "Engagement analyzed successfully."
+  }
+}

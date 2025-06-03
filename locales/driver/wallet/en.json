@@ -1,0 +1,16 @@
+{
+  "balance": {
+    "earning_added": "Earned {amount} {currency} added to wallet.",
+    "tip_added": "Tip of {amount} {currency} added to wallet."
+  },
+  "transaction": {
+    "earning_recorded": "Earned {amount} {currency} for task #{taskId}.",
+    "tip_recorded": "Tip of {amount} {currency} received for task #{taskId}.",
+    "payout_recorded": "Payout of {amount} {currency} processed for task #{taskId}.",
+    "refund_recorded": "Refund of {amount} {currency} processed for task #{taskId}.",
+    "reversed": "Transaction #{transactionId} reversed: {amount} {currency}."
+  },
+  "tip": {
+    "received": "Received a tip of {amount} {currency} for task #{taskId}."
+  }
+}

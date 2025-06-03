@@ -1,0 +1,9 @@
+{
+  "table": {
+    "assigned": "Table #{tableNumber} has been assigned to your booking.",
+    "adjusted": "Your table has been adjusted to #{tableNumber}."
+  },
+  "points": {
+    "awarded": "You earned {points} points for {action}!"
+  }
+}

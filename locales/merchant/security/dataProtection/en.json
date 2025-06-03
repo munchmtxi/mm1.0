@@ -1,0 +1,15 @@
+
+{
+  "dataProtection": {
+    "dataEncrypted": "Data type {{dataType}} encrypted successfully",
+    "regulationsComplied": "Complied with regulations: {{standards}}",
+    "accessRestricted": "Data access restricted for user {{userId}} with permission {{permission}}",
+    "securityAudited": "Security audit completed with {{auditCount}} logs",
+    "errors": {
+      "invalidMerchant": "Invalid merchant",
+      "invalidStandards": "Invalid compliance standards",
+      "invalidPermission": "Invalid permission level",
+      "invalidUser": "Invalid user"
+    }
+  }
+}

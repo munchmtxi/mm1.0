@@ -1,0 +1,97 @@
+{
+  "booking": {
+    "created": "Your reservation for table {tableId} at branch {branchId} on {date} at {time} has been created.",
+    "updated": "Your reservation for table {tableId} at branch {branchId} on {date} at {time} has been updated.",
+    "cancelled": "Your reservation for table {tableId} at branch {branchId} has been cancelled.",
+    "party_member_invited": "You have been invited to join booking {bookingId} by {inviterName}."
+  },
+  "check_in": {
+    "confirmed": "Check-in confirmed for booking {bookingId}."
+  },
+  "order": {
+    "created": "Order #{id} created with total amount {total_amount}.",
+    "pre_order": {
+      "created": "Pre-order #{id} created with total amount {total_amount}."
+    },
+    "updated": "Order #{id} updated with total amount {total_amount}.",
+    "cancelled": "Order #{id} cancelled."
+  },
+  "feedback": {
+    "submitted": "Feedback submitted for booking {bookingId} with rating {rating}."
+  },
+  "payment": {
+    "confirmed": "Payment of {amount} {currency} has been confirmed.",
+    "refund": {
+      "processed": "Refund of {amount} {currency} has been processed."
+    },
+    "requested": "A payment request of {amount} has been sent for booking {bookingId}."
+  },
+  "promotion": {
+    "redeemed": "Promotion #{id} redeemed with discount {discount_amount}."
+  },
+  "support": {
+    "ticket": {
+      "created": "Support ticket #{ticketNumber} created.",
+      "escalated": "Support ticket #{id} escalated."
+    }
+  },
+  "errors": {
+    "invalid_customer": "Customer not found.",
+    "invalid_booking_details": "Invalid booking details.",
+    "invalid_party_size": "Invalid party size.",
+    "invalid_dietary_filter": "Invalid dietary preferences.",
+    "table_not_available": "Table not available.",
+    "max_bookings_exceeded": "Maximum bookings reached.",
+    "payment_failed": "Payment processing failed.",
+    "booking_not_found": "Booking not found.",
+    "cancellation_window_expired": "Cancellation window expired.",
+    "booking_creation_failed": "Failed to create booking.",
+    "booking_update_failed": "Failed to update booking.",
+    "booking_cancellation_failed": "Failed to cancel booking.",
+    "check_in_failed": "Failed to process check-in.",
+    "booking_history_failed": "Failed to retrieve booking history.",
+    "feedback_submission_failed": "Failed to submit feedback.",
+    "cart_update_failed": "Failed to update cart.",
+    "order_creation_failed": "Failed to create order.",
+    "order_update_failed": "Failed to update order.",
+    "order_cancellation_failed": "Failed to cancel order.",
+    "order_status_tracking_failed": "Failed to track order status.",
+    "payment_processing_failed": "Failed to process payment.",
+    "refund_processing_failed": "Failed to process refund.",
+    "invalid_type": "Invalid type specified.",
+    "promotion_not_available": "Promotion not available.",
+    "invalid_promotion": "Invalid promotion.",
+    "promotion_redemption_failed": "Failed to redeem promotion.",
+    "promotions_retrieval_failed": "Failed to retrieve promotions.",
+    "promotion_engagement_analysis_failed": "Failed to analyze promotion engagement.",
+    "invalid_ticket_details": "Invalid ticket details.",
+    "ticket_not_found": "Ticket not found.",
+    "support_ticket_creation_failed": "Failed to create support ticket.",
+    "ticket_status_tracking_failed": "Failed to track ticket status.",
+    "ticket_escalation_failed": "Failed to escalate ticket.",
+    "party_member_addition_failed": "Failed to add party member."
+  },
+  "success": {
+    "booking_created": "Success",
+    "booking_updated": "Success",
+    "booking_cancelled": "Success",
+    "check_in_confirmed_success": "Success",
+    "booking_history_retrieved": "Success",
+    "feedback_submitted": "Success",
+    "cart_updated": "Success",
+    "order_created": "Success",
+    "pre_order_created": "Success",
+    "order_updated": "Success",
+    "order_cancelled": "Success",
+    "order_status_tracked_success": "Success",
+    "payment_processed": "Success",
+    "refund_processed": "Success",
+    "promotion_redeemed": "Success",
+    "promotions_retrieved": "Success",
+    "promotion_engagement_analyzed": "Success",
+    "support_ticket_created": "Success",
+    "ticket_status_tracked": "Success",
+    "ticket_escalated": "Success",
+    "party_member_added": "Success"
+  }
+}

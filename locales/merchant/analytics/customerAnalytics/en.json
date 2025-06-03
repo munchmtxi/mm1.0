@@ -1,0 +1,12 @@
+{
+  "analytics": {
+    "branch_data_aggregated": "Aggregated data for {branchCount} branches.",
+    "branch_performance_compared": "Compared performance for {branchCount} branches.",
+    "multi_branch_reports_generated": "Generated reports for {branchCount} branches.",
+    "resources_allocated": "Allocated resources for {branchCount} branches.",
+    "customer_behavior_tracked": "Tracked behavior with {orderCount} orders.",
+    "spending_trends_analyzed": "Analyzed spending trends with total {totalSpent}.",
+    "recommendations_provided": "Provided {itemCount} item recommendations.",
+    "analytics_points_awarded": "Awarded {points} points for analytics engagement."
+  }
+}

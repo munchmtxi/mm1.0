@@ -1,0 +1,16 @@
+{
+  "support": {
+    "ticket": {
+      "created": "Support ticket #{ticketNumber} has been created.",
+      "assigned": "You have been assigned to ticket #{ticketNumber}.",
+      "resolved": "Support ticket #{ticketNumber} has been resolved.",
+      "escalated": "Support ticket #{ticketNumber} has been escalated."
+    },
+    "policies": {
+      "communicated": "Refund Policy: {refundPolicy}\nCancellation Policy: {cancellationPolicy}"
+    },
+    "points": {
+      "awarded": "You earned {points} points for {action}!"
+    }
+  }
+}

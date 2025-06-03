@@ -1,0 +1,11 @@
+{
+  "promotion": {
+    "created": "New promotion '{name}' created for your restaurant!",
+    "loyalty_updated": "Loyalty program updated with {count} tiers.",
+    "reward_redeemed": "You redeemed {reward} for {amount} MWK!",
+    "points_earned": "You earned {points} points for participating in a promotion!",
+    "gamification": {
+      "points_awarded": "You earned {points} points for promotion activity!"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "staff": {
+    "training_assigned": "New {category} training assigned.",
+    "performance_points_awarded": "Awarded {points} points for performance improvement."
+  }
+}

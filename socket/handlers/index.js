@@ -1,39 +1,45 @@
-'use strict';
+// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\socket\handlers\index.js
 
-// Import individual handler setup functions
-const { handleLogin, setupAuthHandlers } = require('./loginHandler');
-const { handleLogout, setupLogoutHandlers } = require('./logoutHandler');
-const { setupProfileHandlers: setupMerchantProfileHandlers } = require('./merchant/profile/profileHandler');
-const { setupProfileHandlers: setupCustomerProfileHandlers } = require('./customer/profile/profileHandler');
-const { setupProfileHandlers: setupDriverProfileHandlers } = require('./driver/profile/profileHandler');
-const { setupProfileHandlers: setupStaffProfileHandlers } = require('./staff/profile/staffProfileHandler');
-const { setupProfileHandlers: setupAdminProfileHandlers } = require('./admin/profile/adminProfileHandler');
+// Common Handlers
+const { handleLogin } = require('./common/loginHandler');
+const { handleLogout } = require('./common/logoutHandler');
+const { handleMfaEnabled, handleMfaVerified } = require('./common/mfaHandler');
+const { handleVerificationSubmitted, handleVerificationApproved } = require('./common/verificationHandler');
 
-// Define the login event handler
-const setupAuthHandlersInternal = (io, socket) => {
-  // Handle client-initiated login events
-  socket.on('auth:login', (data) => {
-    handleLogin(io, { id: socket.user.id, role: socket.user.role });
-  });
-};
+// Role-Specific Handlers
+const staffProfileHandler = require('./staff/profile/staffProfileHandler');
+const merchantProfileHandler = require('./merchant/profile/profileHandler');
+const driverProfileHandler = require('./driver/profile/profileHandler');
+const customerProfileHandler = require('./customer/profile/profileHandler');
 
-// Ensure setupAuthHandlers is either the imported function or the internal one
-const authHandlers = setupAuthHandlers || setupAuthHandlersInternal;
-
-// Register all main socket handlers
-const setupHandlers = (io, socket) => {
-  authHandlers(io, socket);
-  setupLogoutHandlers(io, socket);
-  setupMerchantProfileHandlers(io, socket);
-  setupCustomerProfileHandlers(io, socket);
-  setupDriverProfileHandlers(io, socket);
-  setupStaffProfileHandlers(io, socket);
-  setupAdminProfileHandlers(io, socket);
-};
+// Admin Sub-Handlers
+const adminStaffProfileHandler = require('./admin/profile/staffProfileHandler');
+const adminMerchantProfileHandler = require('./admin/profile/merchantProfileHandler');
+const adminDriverProfileHandler = require('./admin/profile/driverProfileHandler');
+const adminCustomerProfileHandler = require('./admin/profile/customerProfileHandler');
+const adminBranchProfileHandler = require('./admin/profile/branchProfileHandler');
+const adminAdminProfileHandler = require('./admin/profile/adminProfileHandler');
 
 module.exports = {
-  setupHandlers,
-  setupAuthHandlers: authHandlers,
+  // Common Auth Handlers
   handleLogin,
   handleLogout,
+  handleMfaEnabled,
+  handleMfaVerified,
+  handleVerificationSubmitted,
+  handleVerificationApproved,
+
+  // User Profile Handlers
+  staffProfileHandler,
+  merchantProfileHandler,
+  driverProfileHandler,
+  customerProfileHandler,
+
+  // Admin Panel Handlers
+  adminStaffProfileHandler,
+  adminMerchantProfileHandler,
+  adminDriverProfileHandler,
+  adminCustomerProfileHandler,
+  adminBranchProfileHandler,
+  adminAdminProfileHandler,
 };

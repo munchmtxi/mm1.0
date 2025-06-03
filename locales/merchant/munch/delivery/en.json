@@ -1,0 +1,14 @@
+{
+  "delivery": {
+    "assigned": "You have been assigned delivery for order #{orderNumber}. Please prepare to deliver.",
+    "message": "Message from merchant for order #{orderNumber}: {message}",
+    "status": {
+      "out_for_delivery": "Order #{orderNumber} is out for delivery.",
+      "completed": "Order #{orderNumber} has been delivered.",
+      "cancelled": "Order #{orderNumber} delivery was cancelled."
+    },
+    "gamification": {
+      "points_awarded": "You earned {points} points for completing a delivery!"
+    }
+  }
+}

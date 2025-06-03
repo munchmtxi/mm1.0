@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Your driver profile has been created successfully, {name}.",
+    "updated": "Your driver profile has been updated successfully, {name}.",
+    "certification_uploaded": "Certification ({certType}) uploaded successfully.",
+    "verified": "Your profile verification status: {status}.",
+    "country_updated": "Your country settings have been updated to {country}.",
+    "wallet_settings_updated": "Your wallet settings have been updated successfully.",
+    "payment_method_added": "Payment method ({methodType}) added to your wallet.",
+    "withdrawal_processed": "Withdrawal of {amount} {currency} processed successfully."
+  }
+}

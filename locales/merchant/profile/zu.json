@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Isiprofayela yakho yesithathimende isekwe ngempela, {name}.",
+    "updated": "Isiprofayela yakho yesithathimende isihlelwe ngempela, {name}.",
+    "country_updated": "Izilungiselelo zakho zemali zibuyiselwe ku-{country}.",
+    "media_uploaded": "Imidiya ({mediaType}) ikhutshulwe ngempela.",
+    "wallet_settings_updated": "Izilungiselelo zakho ze-wallet izihlehlwe ngempela.",
+    "payment_method_added": "Indlela yokukhokha ({methodType}) ikhutshulwe ku-wallet yakho.",
+    "withdrawal_processed": "Ukuhamba kuka-{amount} {currency} kwenziwe ngempela."
+  }
+}

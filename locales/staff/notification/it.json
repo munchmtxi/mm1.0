@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Il Tuo Profilo Staff È Stato Aggiornato",
+    "profile_updated": "Il tuo profilo staff è stato aggiornato con successo, ID staff: {staffId}.",
+    "profile_verified_subject": "Conformità del Profilo Verificata",
+    "profile_verified": "La conformità del tuo profilo è stata verificata con successo.",
+    "profile_compliance_failed_subject": "Verifica della Conformità Fallita",
+    "profile_compliance_failed": "La verifica è fallita: {reason}.",
+    "task_assignment_subject": "Nuovo Compito Assegnato",
+    "task_assignment": "Ti è stato assegnato un nuovo compito: {taskName}.",
+    "shift_update_subject": "Programma Turni Aggiornato",
+    "shift_update": "Il tuo programma è stato aggiornato: {shiftDetails}.",
+    "wallet_update_subject": "Dettagli Portafoglio Aggiornati",
+    "wallet_update": "Dettagli del portafoglio aggiornati con successo.",
+    "training_reminder_subject": "Promemoria Formazione",
+    "training_reminder": "Per favore completa la formazione {trainingName} entro {deadline}.",
+    "announcement_subject": "Annuncio Importante",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Punti Assegnati",
+    "gamification_points_awarded": "Hai guadagnato {points} punti per {actionName}!"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "delivery": {
+    "assigned": "Delivery for order {orderNumber} assigned to driver.",
+    "package_ready": "Delivery package for order {orderNumber} is ready."
+  },
+  "inventory": {
+    "restock_alert": "Restock alert for {itemCount} items at branch {branchId}."
+  },
+  "order": {
+    "confirmed": "Takeaway order {orderNumber} confirmed.",
+    "preparing": "Order {orderNumber} is being prepared.",
+    "completed": "Order {orderNumber} completed."
+  },
+  "support": {
+    "inquiry_created": "Support inquiry {ticketNumber} created.",
+    "resolved": "Support inquiry {ticketNumber} resolved.",
+    "escalated": "Support inquiry {ticketNumber} escalated."
+  },
+  "coordination": {
+    "pickup_coordinated": "Driver {driverName} coordinated for order {orderNumber} pickup.",
+    "credentials_verified": "Driver {driverName} credentials verified.",
+    "pickup_logged": "Pickup time logged for order {orderNumber}."
+  }
+}

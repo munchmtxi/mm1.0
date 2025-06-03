@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "country_updated": "Country updated to {country}.",
+    "language_updated": "Language updated to {language}.",
+    "accessibility_updated": "Accessibility settings updated.",
+    "privacy_updated": "Privacy settings updated."
+  }
+}

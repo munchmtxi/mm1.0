@@ -1,0 +1,13 @@
+{
+  "branch": {
+    "created": "Tawi ({name}) limeundwa kwa mafanikio.",
+    "updated": "Tawi ({name}) limehaririwa kwa mafanikio.",
+    "settings_updated": "Mipangilio ya tawi imehaririwa kwa mafanikio.",
+    "country_updated": "Mipangilio ya nchi ya tawi imebadilishwa kuwa {country}.",
+    "geofence_updated": "Mipangilio ya geofence ya tawi imehaririwa kwa mafanikio.",
+    "media_uploaded": "Vipande vya habari ({mediaType}) vya tawi vilipakuliwa kwa mafanikio.",
+    "wallet_settings_updated": "Mipangilio ya mkoba wa tawi imehaririwa kwa mafanikio.",
+    "payment_method_added": "Njia ya malipo ({methodType}) imeongezwa kwenye mkoba wa tawi.",
+    "withdrawal_processed": "Kutoa {amount} {currency} kimefanikiwa kutendwa kutoka kwenye mkoba wa tawi."
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "branch": {
+    "created": "Lisolo ({name}) limapoto bwino.",
+    "updated": "Lisolo ({name}) likhala bwino.",
+    "settings_updated": "Zosindikira za lisolo zikhala bwino.",
+    "country_updated": "Zosindikira za dziko la lisolo zachitidwe ku {country}.",
+    "geofence_updated": "Zosindikira za geofence za lisolo zikhala bwino.",
+    "media_uploaded": "Madia ({mediaType}) a lisolo amapoto bwino.",
+    "wallet_settings_updated": "Zosindikira za pokera ya lisolo zikhala bwino.",
+    "payment_method_added": "Mwayi wa kulipira ({methodType}) wadzipoto mu pokera ya lisolo.",
+    "withdrawal_processed": "Kulipitsa {amount} {currency} wachitidwe bwino kuchokera mu pokera ya lisolo."
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Profaili Yako Ya Wafanyakazi Imesasishwa",
+    "profile_updated": "Profaili yako ya wafanyakazi imesasishwa kwa mafanikio, ID ya mfanyakazi: {staffId}.",
+    "profile_verified_subject": "Uthibitisho Wa Uzingatiaji Umethibitishwa",
+    "profile_verified": "Uthibitisho wa uzingatiaji wa profaili yako umetimia kwa mafanikio.",
+    "profile_compliance_failed_subject": "Uthibitisho Wa Uzingatiaji Umeshindikana",
+    "profile_compliance_failed": "Uthibitisho umefaulu: {reason}.",
+    "task_assignment_subject": "Kazi Mpya Imepangiwa",
+    "task_assignment": "Umepewa kazi mpya: {taskName}.",
+    "shift_update_subject": "Ratiba Yako Ya Zamu Imeboreshwa",
+    "shift_update": "Ratiba yako imeboreshwa: {shiftDetails}.",
+    "wallet_update_subject": "Maelezo Ya Mkoba Imesasishwa",
+    "wallet_update": "Maelezo ya mkoba wako imesasishwa kwa mafanikio.",
+    "training_reminder_subject": "Kikumbusho Cha Mafunzo",
+    "training_reminder": "Tafadhali kamilisha mafunzo ya {trainingName} kabla ya {deadline}.",
+    "announcement_subject": "Tangazo Muhimu",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Pointi Zilizopokelewa",
+    "gamification_points_awarded": "Umepata pointi {points} kwa {actionName}!"
+  }
+}

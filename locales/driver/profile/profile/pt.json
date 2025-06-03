@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Seu perfil de motorista foi criado com sucesso, {name}.",
+    "updated": "Seu perfil de motorista foi atualizado com sucesso, {name}.",
+    "certification_uploaded": "Certificação ({certType}) carregada com sucesso.",
+    "verified": "Status da verificação do seu perfil: {status}.",
+    "country_updated": "As configurações do seu país foram atualizadas para {country}.",
+    "wallet_settings_updated": "Configurações da sua carteira foram atualizadas com sucesso.",
+    "payment_method_added": "Método de pagamento ({methodType}) adicionado à sua carteira.",
+    "withdrawal_processed": "Saque de {amount} {currency} processado com sucesso."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "inventory": {
+    "restock_alert": "Restocking needed for: {items}. Please address promptly.",
+    "stock_levels": {
+      "title": "Inventory Stock Levels",
+      "description": "Current stock levels for restaurant inventory.",
+      "low_stock": "Low stock for {item}: {quantity} remaining.",
+      "sufficient": "{item}: {quantity} in stock."
+    },
+    "update": {
+      "title": "Inventory Update",
+      "description": "Inventory adjusted after order {orderNumber}.",
+      "adjusted": "{item} stock adjusted to {quantity}."
+    },
+    "gamification": {
+      "points_awarded": "You earned {points} points for updating inventory!"
+    }
+  }
+}

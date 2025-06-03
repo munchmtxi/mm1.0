@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "आपकी स्टाफ प्रोफ़ाइल अपडेट हो गई है",
+    "profile_updated": "आपकी स्टाफ प्रोफ़ाइल सफलतापूर्वक अपडेट की गई है, स्टाफ आईडी: {staffId}।",
+    "profile_verified_subject": "स्टाफ अनुपालन सत्यापित",
+    "profile_verified": "आपकी स्टाफ अनुपालन सफलतापूर्वक सत्यापित हो गई है।",
+    "profile_compliance_failed_subject": "अनुपालन सत्यापन विफल",
+    "profile_compliance_failed": "सत्यापन विफल: {reason}।",
+    "task_assignment_subject": "नया कार्य सौंपा गया",
+    "task_assignment": "आपको नया कार्य सौंपा गया है: {taskName}।",
+    "shift_update_subject": "शिफ्ट अनुसूची अपडेट की गई",
+    "shift_update": "आपकी शिफ्ट अपडेट की गई है: {shiftDetails}।",
+    "wallet_update_subject": "वॉलेट विवरण अपडेट हुआ",
+    "wallet_update": "वॉलेट विवरण सफलतापूर्वक अपडेट किए गए हैं।",
+    "training_reminder_subject": "प्रशिक्षण अनुस्मारक",
+    "training_reminder": "कृपया {trainingName} प्रशिक्षण {deadline} तक पूरा करें।",
+    "announcement_subject": "महत्वपूर्ण घोषणा",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "अंक प्राप्त हुए",
+    "gamification_points_awarded": "आपने {points} अंक अर्जित किए {actionName} के लिए!"
+  }
+}

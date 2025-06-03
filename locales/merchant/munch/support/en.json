@@ -1,0 +1,9 @@
+{
+  "support": {
+    "inquiry_submitted": "Your inquiry for order #{orderNumber} (Ticket #{ticketNumber}) has been submitted.",
+    "ticket_assigned": "Ticket #{ticketNumber} for order #{orderNumber} assigned to you.",
+    "dispute_resolved": "Dispute for ticket #{ticketNumber} resolved with {resolution}.",
+    "order_policies": "Refund and order policies for order #{orderNumber}: Refunds available within 24 hours for cancellations; contact support for details.",
+    "points_earned": "You earned {points} points for your support interaction!"
+  }
+}

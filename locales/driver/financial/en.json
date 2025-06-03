@@ -1,0 +1,14 @@
+{
+  "payout": {
+    "requested": "Payout of {amount} {currency} requested via {method}.",
+    "scheduled": "Recurring payout scheduled: {amount} {currency} {frequency} via {method}."
+  },
+  "tax": {
+    "calculated": "Tax calculated for {period}: {taxAmount} {currency}.",
+    "report_generated": "Tax report generated for {period}.",
+    "settings_updated": "Tax settings updated: filing frequency {filingFrequency}."
+  },
+  "financial": {
+    "summary_viewed": "Financial summary viewed for {period}."
+  }
+}

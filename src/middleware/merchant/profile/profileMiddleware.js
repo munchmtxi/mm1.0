@@ -1,123 +1,109 @@
 'use strict';
 
-const { Merchant, MerchantBranch } = require('@models');
-const AppError = require('@utils/AppError');
+/**
+ * Merchant Profile Middleware
+ * Provides middleware for merchant profile routes, including authentication, role-based
+ * access control, and request validation. Integrates with authentication middleware
+ * and merchantConstants for permissions.
+ *
+ * Last Updated: May 14, 2025
+ */
+
+const { authenticate, restrictTo, checkPermissions } = require('@middleware/common/authMiddleware');
+const merchantConstants = require('@constants/merchantConstants');
 const logger = require('@utils/logger');
-const profileValidator = require('@validators/merchant/profile/profileValidator');
-const { authenticate, restrictTo } = require('@middleware/common/authMiddleware');
-const Joi = require('joi');
-const catchAsync = require('@utils/catchAsync');
+const AppError = require('@utils/AppError');
+
+/**
+ * Validates merchant ID in request parameters.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const validateMerchantId = (req, res, next) => {
+  const { merchantId } = req.params;
+  if (!merchantId || isNaN(parseInt(merchantId))) {
+    logger.warn('Invalid merchantId provided', { merchantId });
+    return next(new AppError(
+      'Invalid merchant ID',
+      400,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    ));
+  }
+  next();
+};
+
+/**
+ * Validates branch ID in request parameters.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const validateBranchId = (req, res, next) => {
+  const { branchId, restaurantId } = req.params;
+  const id = branchId || restaurantId;
+  if (!id || isNaN(parseInt(id))) {
+    logger.warn('Invalid branchId or restaurantId provided', { branchId, restaurantId });
+    return next(new AppError(
+      'Invalid branch ID',
+      400,
+      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+    ));
+  }
+  next();
+};
+
+/**
+ * Validates media ID in request parameters.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const validateMediaId = (req, res, next) => {
+  const { mediaId } = req.params;
+  if (!mediaId || isNaN(parseInt(mediaId))) {
+    logger.warn('Invalid mediaId provided', { mediaId });
+    return next(new AppError(
+      'Invalid media ID',
+      400,
+      merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND
+    ));
+  }
+  next();
+};
+
+/**
+ * Ensures the authenticated user has access to the merchant profile.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @param {Function} next - Express next middleware function.
+ */
+const restrictToOwnMerchant = (req, res, next) => {
+  const { user, params } = req;
+  const { merchantId } = params;
+
+  if (user.merchantId !== parseInt(merchantId)) {
+    logger.warn('Unauthorized access to merchant profile', { userId: user.id, merchantId });
+    return next(new AppError(
+      'Unauthorized access to merchant profile',
+      403,
+      merchantConstants.ERROR_CODES.PERMISSION_DENIED
+    ));
+  }
+  next();
+};
 
 module.exports = {
-  protect: [authenticate, restrictTo('merchant')],
-
-  verifyMerchantProfile: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
-    logger.info('verifyMerchantProfile middleware', { userId });
-
-    const merchant = await Merchant.findOne({ where: { user_id: userId } });
-    if (!merchant) {
-      logger.logWarnEvent('Merchant profile not found', { userId });
-      throw new AppError('Merchant profile not found', 404, 'MERCHANT_NOT_FOUND');
-    }
-
-    req.merchant = merchant;
-    next();
-  }),
-
-  verifyBranchOwnership: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
-    const branchId = parseInt(req.params.branchId, 10);
-
-    if (isNaN(branchId)) {
-      throw new AppError('Invalid branch ID', 400, 'INVALID_BRANCH_ID');
-    }
-
-    const branch = await MerchantBranch.findByPk(branchId);
-    if (!branch) {
-      logger.logWarnEvent('Branch not found', { branchId, userId });
-      throw new AppError('Branch not found', 404, 'BRANCH_NOT_FOUND');
-    }
-
-    const merchant = await Merchant.findOne({ where: { user_id: userId } });
-    if (branch.merchant_id !== merchant.id) {
-      logger.logWarnEvent('Unauthorized branch access', {
-        userId,
-        branchId,
-        merchantId: branch.merchant_id,
-        message: 'The branch does not belong to the merchant',
-      });
-      throw new AppError('You do not own this branch', 403, 'UNAUTHORIZED_BRANCH');
-    }
-
-    req.branch = branch;
-    next();
-  }),
-
-  validate: (validatorName) => catchAsync(async (req, res, next) => {
-    if (!profileValidator[validatorName]) {
-      throw new AppError('Invalid validator', 500, 'INVALID_VALIDATOR');
-    }
-
-    logger.debug('Validating request data', {
-      validatorName,
-      body: req.body,
-      params: req.params,
-      query: req.query,
-    });
-
-    const schema = profileValidator[validatorName];
-
-    // For array-based validators like bulkUpdateBranches, validate req.body directly
-    let error;
-    if (validatorName === 'bulkUpdateBranches') {
-      ({ error } = schema.validate(req.body, { abortEarly: false }));
-    } else {
-      const data = {
-        ...req.body,
-        ...req.params,
-        ...req.query,
-      };
-      ({ error } = schema.validate(data, { abortEarly: false }));
-    }
-
-    if (error) {
-      const errorMessages = error.details.map((detail) => detail.message).join(', ');
-      logger.error('Validation failed', {
-        userId: req.user.id,
-        validatorName,
-        errors: errorMessages,
-      });
-      throw new AppError(`Validation failed: ${errorMessages}`, 400, 'VALIDATION_FAILED');
-    }
-
-    next();
-  }),
-
-  verifyBulkBranches: catchAsync(async (req, res, next) => {
-    const userId = req.user.id;
-    const updateData = req.body;
-
-    logger.debug('Verifying bulk branches', { userId, updateData });
-
-    const merchant = await Merchant.findOne({ where: { user_id: userId } });
-    if (!merchant) {
-      throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-    }
-
-    for (const update of updateData) {
-      const branch = await MerchantBranch.findByPk(update.branchId);
-      if (!branch || branch.merchant_id !== merchant.id) {
-        logger.logWarnEvent('Invalid or unauthorized branch in bulk update', {
-          branchId: update.branchId,
-          userId,
-          status: 'unauthorized',
-          message: `Branch ${update.branchId} is either not found or does not belong to the merchant`,
-        });
-        throw new AppError(`Invalid or unauthorized branch ID: ${update.branchId}`, 400, 'INVALID_BRANCH');
-      }
-    }
-
-    next();
-  }),
+  authenticateMerchant: authenticate,
+  restrictToMerchantTypes: restrictTo(
+    merchantConstants.MERCHANT_TYPES.RESTAURANT,
+    merchantConstants.MERCHANT_TYPES.BUTCHER,
+    merchantConstants.MERCHANT_TYPES.CAFE,
+    merchantConstants.MERCHANT_TYPES.GROCERY
+  ),
+  checkProfileUpdatePermission: checkPermissions('manage_merchant'),
+  validateMerchantId,
+  validateBranchId,
+  validateMediaId,
+  restrictToOwnMerchant,
 };

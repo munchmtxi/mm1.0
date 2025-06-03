@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Akọsilẹ Iṣẹ́ Rẹ Ti Ni Imudojuiwọn",
+    "profile_updated": "Akọsilẹ iṣẹ́ rẹ ti ni imudojuiwọn ni aṣeyọri, ID ọmọṣẹ́: {staffId}.",
+    "profile_verified_subject": "Ìmúlò Akọsilẹ Iṣẹ́ Ti jẹ́jẹ́wẹ́",
+    "profile_verified": "Ìmúlò akọsilẹ iṣẹ́ rẹ ti jẹ́jẹ́wẹ́ ni aṣeyọri.",
+    "profile_compliance_failed_subject": "Ìmúlò Akọsilẹ Iṣẹ́ Kò Ṣeéwọ́",
+    "profile_compliance_failed": "Ìmúlò kò ṣèéwọ́: {reason}.",
+    "task_assignment_subject": "Ọmọṣẹ́ Tuntun Ti A Yan",
+    "task_assignment": "A ti yan ọ fún iṣẹ́ tuntun: {taskName}.",
+    "shift_update_subject": "Àtúnṣe Ìsapá",
+    "shift_update": "Àtúnṣe ìsapá rẹ jẹ́: {shiftDetails}.",
+    "wallet_update_subject": "Ìmúdájú Apótí Owo",
+    "wallet_update": "Apótí owó rẹ ti ni imudojuiwọn ni aṣeyọri.",
+    "training_reminder_subject": "Ìkìlọ́ Ikẹ́kọ̀ọ́",
+    "training_reminder": "Jọ̀wọ́ parí ikẹ́kọ̀ọ́ {trainingName} rẹ kí ìpẹ́yà {deadline}.",
+    "announcement_subject": "Ìkìlọ́ Pátá",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Àwọn Kọ́ọ̀nìti Ti A San",
+    "gamification_points_awarded": "O gba {points} kọ́ọ̀nìti fún {actionName}!"
+  }
+}

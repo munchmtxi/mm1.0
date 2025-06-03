@@ -1,0 +1,21 @@
+{
+  "dispute": {
+    "created": "Dispute created for service {reference}. Issue: {issue}.",
+    "resolved": "Dispute resolved with {resolutionType}: {resolution}."
+  },
+  "errors": {
+    "invalid_customer": "Customer not found.",
+    "invalid_service": "Service not found.",
+    "unauthorized_dispute": "You are not authorized to dispute this service.",
+    "invalid_issue": "Invalid issue type or description too long.",
+    "max_disputes_exceeded": "Maximum disputes per day exceeded.",
+    "dispute_not_found": "Dispute not found.",
+    "dispute_already_resolved": "Dispute already resolved.",
+    "dispute_creation_failed": "Failed to create dispute.",
+    "dispute_resolution_failed": "Failed to resolve dispute."
+  },
+  "success": {
+    "dispute_created": "Dispute created successfully.",
+    "dispute_resolved": "Dispute resolved successfully."
+  }
+}

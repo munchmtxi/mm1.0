@@ -1,0 +1,8 @@
+{
+  "menu": {
+    "menu_created": "Menu created with {itemCount} items.",
+    "menu_updated": "Menu item {itemName} updated.",
+    "dynamic_pricing_applied": "Dynamic pricing applied to {itemName}.",
+    "menu_points_awarded": "Awarded {points} points for ordering a new menu item."
+  }
+}

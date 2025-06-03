@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Your staff profile has been created successfully, {name}.",
+    "bank_details_updated": "Your bank details have been updated successfully.",
+    "branch_updated": "Your assigned branch has been updated to {branchName}.",
+    "geofence_updated": "Your geofence has been updated to {geofenceName}.",
+    "country_updated": "Your country settings have been updated to {country}.",
+    "wallet_settings_updated": "Your wallet settings have been updated successfully.",
+    "payment_method_added": "Payment method ({methodType}) added to your wallet.",
+    "withdrawal_processed": "Withdrawal of {amount} {currency} processed successfully.",
+    "error": {
+      "invalid_email": "The provided email address is invalid.",
+      "invalid_phone": "The provided phone number is invalid.",
+      "invalid_position": "The selected position is invalid.",
+      "invalid_certifications": "One or more certifications are invalid.",
+      "missing_certifications": "Missing required certifications: {certifications}.",
+      "invalid_branch": "The selected branch is invalid or unauthorized.",
+      "invalid_geofence": "The selected geofence is invalid.",
+      "invalid_currency": "Bank details currency must match merchant currency ({currency}).",
+      "incomplete_profile": "Profile is incomplete: missing {fields}.",
+      "incomplete_branch_profile": "Branch operating hours are incomplete."
+    }
+  }
+}

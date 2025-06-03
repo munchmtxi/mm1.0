@@ -1,0 +1,56 @@
+{
+  "error": {
+    "customer_not_found": "Customer not found",
+    "restaurant_not_found": "Restaurant not found",
+    "invalid_order_items": "Invalid order items",
+    "menu_item_not_found": "Menu item not found or unavailable",
+    "invalid_dietary_filter": "Invalid dietary filter",
+    "insufficient_funds": "Insufficient wallet funds",
+    "order_not_found": "Order not found",
+    "cannot_update_order": "Cannot update order in current status",
+    "order_already_cancelled": "Order already cancelled",
+    "cannot_cancel_order": "Cannot cancel order in current status",
+    "wallet_not_found": "Wallet not found",
+    "cart_not_found": "Cart not found",
+    "insufficient_stock": "Insufficient stock for item",
+    "no_driver_assigned": "No driver assigned",
+    "invalid_subscription_plan": "Invalid subscription plan",
+    "subscription_already_active": "Subscription already active",
+    "subscription_not_found": "Subscription not found",
+    "invalid_subscription_action": "Invalid subscription action",
+    "invalid_upgrade_plan": "Invalid upgrade plan",
+    "invalid_downgrade_plan": "Invalid downgrade plan",
+    "invalid_pause_duration": "Invalid pause duration",
+    "invalid_issue_type": "Invalid issue type",
+    "ticket_not_found": "Ticket not found",
+    "ticket_already_escalated": "Ticket already escalated",
+    "cannot_escalate_ticket": "Cannot escalate ticket",
+    "promotion_not_found": "Promotion not found",
+    "invalid_promotion": "Invalid or expired promotion",
+    "promotion_already_redeemed": "Promotion already redeemed"
+  },
+  "order": {
+    "confirmed": "Order {orderId} confirmed successfully",
+    "updated": "Order {orderId} updated successfully",
+    "cancelled": "Order {orderId} cancelled successfully"
+  },
+  "driver": {
+    "message_sent": "Message sent for order {orderId}: {message}"
+  },
+  "subscription": {
+    "enrolled": "Enrolled in {planId} plan successfully",
+    "upgrade": "Subscription {subscriptionId} upgraded successfully",
+    "downgrade": "Subscription {subscriptionId} downgraded successfully",
+    "pause": "Subscription {subscriptionId} paused successfully",
+    "cancel": "Subscription {subscriptionId} cancelled successfully"
+  },
+  "support": {
+    "ticket": {
+      "created": "Support ticket {ticketNumber} created successfully",
+      "escalated": "Support ticket {ticketNumber} escalated successfully"
+    }
+  },
+  "promotion": {
+    "redeemed": "Promotion {promotionId} redeemed successfully"
+  }
+}

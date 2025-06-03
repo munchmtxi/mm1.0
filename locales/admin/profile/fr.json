@@ -1,0 +1,10 @@
+{
+  "welcome_message": "Bienvenue, {name} ! Votre compte administrateur a été créé.",
+  "profile_updated_message": "Votre profil a été mis à jour avec succès.",
+  "permissions_updated_message": "Vos autorisations ont été mises à jour.",
+  "account_suspended_message": "Votre compte a été suspendu. Raison : {reason}",
+  "account_deleted_message": "Votre compte a été supprimé.",
+  "points_awarded_message": "Vous avez gagné {points} points pour {action} !",
+  "localization_updated_message": "Paramètres de localisation mis à jour avec succès.",
+  "accessibility_updated_message": "Paramètres d'accessibilité mis à jour avec succès."
+}

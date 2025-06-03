@@ -1,0 +1,10 @@
+{
+  "performance": {
+    "report_generated": "Performance report {reportId} generated."
+  },
+  "gamification": {
+    "points_logged": "{points} points awarded for {action}.",
+    "customer_points_synced": "{points} customer points synced.",
+    "report_generated": "Gamification report {reportId} generated."
+  }
+}

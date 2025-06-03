@@ -1,86 +1,105 @@
 'use strict';
 
+/**
+ * Driver Profile Controller
+ * Manages HTTP requests for driver profile operations, including updates, certification uploads,
+ * profile retrieval, and verification. Integrates with profileService.js for business logic.
+ *
+ * Last Updated: May 16, 2025
+ */
+
 const profileService = require('@services/driver/profile/profileService');
-const catchAsync = require('@utils/catchAsync');
+const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
+const driverConstants = require('@constants/driverConstants');
+const catchAsync = require('@utils/catchAsync');
 
+/**
+ * Updates driver profile.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
+const updateProfile = catchAsync(async (req, res) => {
+  const { driverId } = req.params;
+  const details = req.body;
+
+  const driver = await profileService.updateProfile(driverId, details);
+  logger.info('Driver profile updated via HTTP', { driverId });
+
+  res.status(200).json({
+    status: 'success',
+    message: driverConstants.SUCCESS_MESSAGES.PROFILE_UPDATED,
+    data: { driver },
+  });
+});
+
+/**
+ * Uploads driver certification.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
+const uploadCertification = catchAsync(async (req, res) => {
+  const { driverId } = req.params;
+  const { type } = req.body;
+  const file = req.file;
+
+  if (!file || !type) {
+    throw new AppError(
+      'Missing file or certification type',
+      400,
+      driverConstants.ERROR_CODES.INVALID_FILE_DATA
+    );
+  }
+
+  const imageUrl = await profileService.uploadCertification(driverId, { file, type });
+  logger.info('Driver certification uploaded via HTTP', { driverId, type });
+
+  res.status(200).json({
+    status: 'success',
+    message: driverConstants.SUCCESS_MESSAGES.CERTIFICATION_UPLOADED,
+    data: { imageUrl },
+  });
+});
+
+/**
+ * Retrieves driver profile.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
 const getProfile = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const profile = await profileService.getProfile(userId);
-  logger.info('Driver profile retrieved', { userId });
-  res.status(200).json({ status: 'success', data: profile });
+  const { driverId } = req.params;
+
+  const driver = await profileService.getProfile(driverId);
+  logger.info('Driver profile retrieved via HTTP', { driverId });
+
+  res.status(200).json({
+    status: 'success',
+    message: driverConstants.SUCCESS_MESSAGES.PROFILE_RETRIEVED,
+    data: { driver },
+  });
 });
 
-const updatePersonalInfo = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const updateData = req.body;
-  const updatedProfile = await profileService.updatePersonalInfo(userId, updateData);
-  logger.info('Driver personal info updated', { userId });
-  res.status(200).json({ status: 'success', data: updatedProfile });
-});
+/**
+ * Verifies driver profile compliance.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ */
+const verifyProfile = catchAsync(async (req, res) => {
+  const { driverId } = req.params;
 
-const updateVehicleInfo = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const vehicleData = req.body;
-  const updatedDriver = await profileService.updateVehicleInfo(userId, vehicleData);
-  logger.info('Driver vehicle info updated', { userId });
-  res.status(200).json({ status: 'success', data: updatedDriver });
-});
+  const complianceStatus = await profileService.verifyProfile(driverId);
+  logger.info('Driver profile verified via HTTP', { driverId });
 
-const changePassword = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const { currentPassword, newPassword } = req.body;
-  await profileService.changePassword(userId, currentPassword, newPassword);
-  logger.info('Driver password changed', { userId });
-  res.status(200).json({ status: 'success', message: 'Password changed successfully' });
-});
-
-const updateProfilePicture = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const file = req.file;
-  const profilePictureUrl = await profileService.updateProfilePicture(userId, file);
-  logger.info('Driver profile picture updated', { userId });
-  res.status(200).json({ status: 'success', data: { profilePictureUrl } });
-});
-
-const deleteProfilePicture = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  await profileService.deleteProfilePicture(userId);
-  logger.info('Driver profile picture deleted', { userId });
-  res.status(200).json({ status: 'success', message: 'Profile picture deleted successfully' });
-});
-
-const updateLicensePicture = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const file = req.file;
-  const licensePictureUrl = await profileService.updateLicensePicture(userId, file);
-  logger.info('Driver license picture updated', { userId });
-  res.status(200).json({ status: 'success', data: { licensePictureUrl } });
-});
-
-const deleteLicensePicture = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  await profileService.deleteLicensePicture(userId);
-  logger.info('Driver license picture deleted', { userId });
-  res.status(200).json({ status: 'success', message: 'License picture deleted successfully' });
-});
-
-const manageAddresses = catchAsync(async (req, res) => {
-  const userId = req.user.id;
-  const { action, addressData } = req.body;
-  const result = await profileService.manageAddresses(userId, action, addressData);
-  logger.info('Driver address managed', { userId, action });
-  res.status(200).json({ status: 'success', data: result });
+  res.status(200).json({
+    status: 'success',
+    message: driverConstants.SUCCESS_MESSAGES.PROFILE_VERIFIED,
+    data: { complianceStatus },
+  });
 });
 
 module.exports = {
+  updateProfile,
+  uploadCertification,
   getProfile,
-  updatePersonalInfo,
-  updateVehicleInfo,
-  changePassword,
-  updateProfilePicture,
-  deleteProfilePicture,
-  updateLicensePicture,
-  deleteLicensePicture,
-  manageAddresses,
+  verifyProfile,
 };

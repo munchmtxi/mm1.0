@@ -1,0 +1,8 @@
+{
+  "compliance": {
+    "certification_updated": "Certification {certType} updated successfully.",
+    "staff_compliance_issue": "Staff compliance issue detected. Update certifications.",
+    "driver_compliance_issue": "Driver compliance issue detected. Update certifications.",
+    "compliance_issue": "Merchant compliance issue detected. Update certifications."
+  }
+}

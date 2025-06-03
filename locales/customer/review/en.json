@@ -1,0 +1,31 @@
+{
+  "error": {
+    "invalid_customer": "Invalid customer ID",
+    "order_not_found": "Order not found",
+    "booking_not_found": "Booking not found",
+    "ride_not_found": "Ride not found",
+    "invalid_service_type": "Invalid service type",
+    "invalid_order_status": "Order must be completed to be reviewed",
+    "invalid_booking_status": "Booking must be seated to be reviewed",
+    "invalid_ride_status": "Ride must be completed to be reviewed",
+    "invalid_rating": "Rating must be between 1 from and 5",
+    "review_already_submitted": "Review already submitted",
+    "review_submission_failed": "Failed to submit review",
+    "review_not_found": "Review not found",
+    "review_not_approved": "Review is not approved",
+    "invalid_action": "Invalid interaction type",
+    "already_upgraded": "You have already upvoted this review",
+    "comment_required": "Comment is required for commenting",
+    "review_interaction_failed": "Failed to process interaction",
+    "unauthorized": "Unauthorized to perform this action",
+    "review_not_editable": "Review cannot be edited",
+    "invalid_photos": "Invalid photo URLs"
+  },
+  "reviews": {
+    "review_submitted": "Your review for {serviceType} {serviceId} has been submitted with rating {rating}.",
+    "review_updated": "Your review {reviewId} has been updated.",
+    "review_deleted": "Your review {review_id} has been deleted.",
+    "review_upvoted": "Your review {reviewId} has been upvoted.",
+    "review_commented": "Your review {reviewId} has received a new comment."
+  }
+}

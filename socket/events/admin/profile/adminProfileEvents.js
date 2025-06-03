@@ -1,9 +1,19 @@
 'use strict';
 
-module.exports = {
-  UPDATE_PROFILE: 'admin:profile:update',
+/**
+ * Socket.IO Events for Admin Profile
+ * Defines event names for real-time admin profile operations.
+ */
+
+const adminProfileEvents = {
   PROFILE_UPDATED: 'admin:profile:updated',
-  UPDATE_STATUS: 'admin:profile:status',
-  STATUS_CHANGED: 'admin:profile:statusChanged',
-  ERROR: 'admin:profile:error',
+  PERMISSIONS_UPDATED: 'admin:profile:permissions_updated',
+  ACCOUNT_SUSPENDED: 'admin:profile:suspended',
+  ACCOUNT_DELETED: 'admin:profile:deleted',
+  POINTS_AWARDED: 'admin:profile:points_awarded',
+  LOCALIZATION_UPDATED: 'admin:profile:localization_updated',
+  ACCESSIBILITY_UPDATED: 'admin:profile:accessibility_updated',
+  NOTIFICATION: 'admin:profile:notification',
 };
+
+module.exports = adminProfileEvents;

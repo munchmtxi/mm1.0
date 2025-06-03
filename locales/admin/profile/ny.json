@@ -1,0 +1,10 @@
+{
+  "welcome_message": "Takulandirani, {name}! Akaunti yanu ya admin yapangidwa.",
+  "profile_updated_message": "Profaili yanu yasinthidwa bwino.",
+  "permissions_updated_message": "Malire anu asinthidwa.",
+  "account_suspended_message": "Akaunti yanu yachotsedwa ntchito. Chifukwa: {reason}",
+  "account_deleted_message": "Akaunti yanu yatengedwa.",
+  "points_awarded_message": "Mwapeza mfundo {points} chifukwa cha {action}!",
+  "localization_updated_message": "Zikhazikiko za kumanga zinathandizidwa bwino.",
+  "accessibility_updated_message": "Zikhazikiko za kupezeka zinathandizidwa bwino."
+}

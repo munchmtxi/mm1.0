@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Ihr Händlerprofil wurde erfolgreich erstellt, {name}.",
+    "updated": "Ihr Händlerprofil wurde erfolgreich aktualisiert, {name}.",
+    "country_updated": "Die Länder-Einstellungen wurden auf {country} geändert.",
+    "media_uploaded": "Medien ({mediaType}) erfolgreich hochgeladen.",
+    "wallet_settings_updated": "Ihre Wallet-Einstellungen wurden erfolgreich aktualisiert.",
+    "payment_method_added": "Zahlungsmethode ({methodType}) wurde Ihrem Wallet hinzugefügt.",
+    "withdrawal_processed": "Abhebung von {amount} {currency} wurde erfolgreich bearbeitet."
+  }
+}

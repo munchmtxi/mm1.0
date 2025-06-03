@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "आपका ड्राइवर प्रोफ़ाइल सफलतापूर्वक बनाई गई है, {name}.",
+    "updated": "आपका ड्राइवर प्रोफ़ाइल सफलतापूर्वक अपडेट की गई है, {name}.",
+    "certification_uploaded": "प्रमाणन ({certType}) सफलतापूर्वक अपलोड किया गया।",
+    "verified": "आपके प्रोफ़ाइल सत्यापन की स्थिति: {status}.",
+    "country_updated": "आपके देश की सेटिंग्स {country} पर अपडेट कर दी गईं।",
+    "wallet_settings_updated": "आपकी वॉलेट सेटिंग्स सफलतापूर्वक अपडेट की गईं।",
+    "payment_method_added": "भुगतान विधि ({methodType}) आपकी वॉलेट में जोड़ दी गई।",
+    "withdrawal_processed": "{amount} {currency} की निकासी सफलतापूर्वक प्रसंस्कृत हुई।"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "notification": {
+    "profile_updated_subject": "Iphrofayela Yakho Yabasebenzi Isibuyekeziwe",
+    "profile_updated": "Iphrofayela yakho yabasebenzi isibuyekeziwe ngempumelelo, i-ID yabasebenzi: {staffId}.",
+    "profile_verified_subject": "Ukuhambisana Kwephrofayela Yabasebenzi Kuqinisekisiwe",
+    "profile_verified": "Ukuhambisana kwephrofayela yakho yabasebenzi kuqinisekisiwe ngempumelelo.",
+    "profile_compliance_failed_subject": "Ukuhlola Ukuhambisana Kwephrofayela Kuhlulekile",
+    "profile_compliance_failed": "Ukuhlolwa kokuhambisana kwehlulekile: {reason}.",
+    "task_assignment_subject": "Umsebenzi Omusha Wabelwe",
+    "task_assignment": "Ubelwa ngomsebenzi omusha: {taskName}.",
+    "shift_update_subject": "Uhlelo Lwesabelo Luvuselelwe",
+    "shift_update": "Uhlelo lwakho lwesabelo luvuselelwe: {shiftDetails}.",
+    "wallet_update_subject": "Imininingwane Ye-wallet Ivuselelwe",
+    "wallet_update": "Imininingwane ye-wallet yakho isibuyekeziwe ngempumelelo.",
+    "training_reminder_subject": "Isikhumbuzo Sokuqeqeshwa",
+    "training_reminder": "Sicela uqedele ukuqeqeshwa kwe-{trainingName} ngaphambi kuka-{deadline}.",
+    "announcement_subject": "Isimemezelo Esibalulekile",
+    "announcement": "{message}",
+    "gamification_points_awarded_subject": "Amaphoyinti Abikwa",
+    "gamification_points_awarded": "Uzuze amaphoyinti ayi-{points} ngenxa ye-{actionName}!"
+  }
+}

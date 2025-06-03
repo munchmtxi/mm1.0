@@ -1,0 +1,13 @@
+{
+  "profile": {
+    "created": "Your merchant profile has been created successfully, {name}.",
+    "updated": "Your merchant profile has been updated successfully, {name}.",
+    "country_updated": "Your country settings have been updated to {country}.",
+    "media_uploaded": "Media ({mediaType}) uploaded successfully.",
+    "wallet_settings_updated": "Your wallet settings have been updated successfully.",
+    "payment_method_added": "Payment method ({methodType}) added to your wallet.",
+    "withdrawal_processed": "Withdrawal of {amount} {currency} processed successfully.",
+    "business_updated": "Your business profile has been updated successfully for merchant ({merchantId}).",
+    "localization_updated": "Your localization settings have been updated to {language}."
+  }
+}

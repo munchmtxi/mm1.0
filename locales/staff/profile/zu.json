@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Iphrofayela yakho yabasebenzi isidalwe ngempumelelo, {name}.",
+    "bank_details_updated": "Imininingwane yakho yasebhange isibuyekeziwe ngempumelelo.",
+    "branch_updated": "Igatsha olinikwe lona selishintshwe laba {branchName}.",
+    "geofence_updated": "Umkhawulo wakho wendawo usushintshwe yaba {geofenceName}.",
+    "country_updated": "Izilungiselelo zezwe lakho sezivuselelwe zaba {country}.",
+    "wallet_settings_updated": "Izilungiselelo ze-wallet zakho sezivuselelwe ngempumelelo.",
+    "payment_method_added": "Indlela yokukhokha ({methodType}) ifakiwe ku-wallet yakho.",
+    "withdrawal_processed": "Ukukhipha kwe-{amount} {currency} sekuphothuliwe ngempumelelo.",
+    "error": {
+      "invalid_email": "Ikheli le-imeyili elinikeziwe alilungile.",
+      "invalid_phone": "Inombolo yocingo elinikeziwe ayilungile.",
+      "invalid_position": "Isikhundla esikhethiwe asilungile.",
+      "invalid_certifications": "Esinye noma zonke izitifiketi azilungile.",
+      "missing_certifications": "Izitifiketi ezidingekayo zilahlekile: {certifications}.",
+      "invalid_branch": "Igatsha elikhethiwe alilungile noma alinagunyaziwe.",
+      "invalid_geofence": "Umkhawulo wendawo okhethiwe awulungile.",
+      "invalid_currency": "I-mali yemininingwane yasebhange kumele ihambisane nemali yomthengisi ({currency}).",
+      "incomplete_profile": "Iphrofayela ayiphelele: kukhona okushodayo {fields}.",
+      "incomplete_branch_profile": "Amahora okusebenza kwegatsha awaphelele."
+    }
+  }
+}

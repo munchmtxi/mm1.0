@@ -1,228 +1,303 @@
 'use strict';
 
-const { User, Driver, Address, Route } = require('@models');
-const AppError = require('@utils/AppError');
-const bcrypt = require('bcryptjs');
-const logger = require('@utils/logger');
-const libphonenumber = require('google-libphonenumber');
+/**
+ * Driver Profile Service
+ * Manages driver profile operations, including updates, certification uploads, profile retrieval,
+ * and compliance verification for the Driver Role System. Integrates with driverConstants.js for
+ * configuration and ensures compliance with security and localization requirements.
+ *
+ * Last Updated: May 16, 2025
+ */
+
+const { Driver, User } = require('@models');
+const driverConstants = require('@constants/driverConstants');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
 const imageService = require('@services/common/imageService');
-const mapService = require('@services/common/mapService');
-const tokenService = require('@services/common/tokenService');
-const { sequelize } = require('@models');
-const { ACTIONS } = require('@constants/driver/profileConstants');
+const AppError = require('@utils/AppError');
+const logger = require('@utils/logger');
+const { formatMessage } = require('@utils/localization/localization');
+const validation = require('@utils/validation');
+const auditService = require('@services/common/auditService');
+const catchAsync = require('@utils/catchAsync');
 
-const fetchUserAndDriver = async (userId) => {
-  const user = await User.findByPk(userId, {
-    include: [{ model: Driver, as: 'driver_profile' }],
-  });
-  const driver = user?.driver_profile;
-  if (!user || !driver) {
-    throw new AppError('User or driver profile not found', 404, 'PROFILE_NOT_FOUND');
+/**
+ * Updates driver personal or vehicle information.
+ * @param {string} driverId - Driver ID.
+ * @param {Object} details - Driver details (e.g., name, vehicleType).
+ * @returns {Promise<Object>} Updated driver profile.
+ */
+const updateProfile = catchAsync(async (driverId, details) => {
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError(
+      'Driver not found',
+      404,
+      driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
+    );
   }
-  return { user, driver };
-};
 
-const getProfile = async (userId) => {
-  const user = await User.findByPk(userId, {
-    include: [
-      { model: Driver, as: 'driver_profile', include: [{ model: Route, as: 'activeRoute' }] },
-      { model: Address, as: 'addresses', where: { user_id: userId }, required: false },
+  const { name, email, phone, vehicleType } = details;
+
+  // Validate inputs
+  if (email && !validation.validateEmail(email)) {
+    throw new AppError(
+      'Invalid email format',
+      400,
+      driverConstants.ERROR_CODES.ERR_INVALID_EMAIL
+    );
+  }
+  if (phone && !validation.validatePhone(phone)) {
+    throw new AppError(
+      'Invalid phone format',
+      400,
+      driverConstants.ERROR_CODES.ERR_INVALID_PHONE
+    );
+  }
+  if (vehicleType && !Object.values(driverConstants.PROFILE_CONSTANTS.VEHICLE_TYPES).includes(vehicleType)) {
+    throw new AppError(
+      'Invalid vehicle type',
+      400,
+      driverConstants.ERROR_CODES.INVALID_VEHICLE_TYPE
+    );
+  }
+
+  // Update driver profile
+  const updatedFields = {
+    name: name || driver.name,
+    email: email || driver.email,
+    phone: phone || driver.phone,
+    vehicle_type: vehicleType || driver.vehicle_type,
+    updated_at: new Date(),
+  };
+
+  await driver.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: 'UPDATE_DRIVER_PROFILE',
+    userId: driver.user_id,
+    details: `Driver profile updated for driver_id: ${driverId}`,
+  });
+
+  // Notify user
+  await notificationService.sendNotification({
+    userId: driver.user_id,
+    type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_UPDATED,
+    message: formatMessage(
+      'driver',
+      'profile',
+      driver.preferred_language,
+      'profile.updated',
+      { driverId }
+    ),
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`driver:${driver.user_id}`, 'profile:updated', {
+    userId: driver.user_id,
+    driverId,
+    updatedFields,
+  });
+
+  logger.info('Driver profile updated successfully', { driverId });
+  return driver;
+});
+
+/**
+ * Submits certifications (e.g., driver’s license, insurance).
+ * @param {string} driverId - Driver ID.
+ * @param {Object} certData - Certification data (e.g., file, type).
+ * @returns {Promise<string>} URL of the uploaded certification.
+ */
+const uploadCertification = catchAsync(async (driverId, certData) => {
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError(
+      'Driver not found',
+      404,
+      driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
+    );
+  }
+
+  const { file, type } = certData;
+
+  // Validate certification type
+  if (!['driver_license', 'insurance'].includes(type)) {
+    throw new AppError(
+      'Invalid certification type',
+      400,
+      driverConstants.ERROR_CODES.INVALID_CERTIFICATION_TYPE
+    );
+  }
+
+  // Validate file
+  if (!file || !file.originalname) {
+    throw new AppError(
+      'Invalid file data',
+      400,
+      driverConstants.ERROR_CODES.INVALID_FILE_DATA
+    );
+  }
+
+  const imageType = type === 'driver_license' ? 'driver_license' : 'driver_insurance';
+  const imageUrl = await imageService.uploadImage(driver.user_id, file, imageType);
+
+  // Update driver with certification URL
+  const updateField = type === 'driver_license' ? { license_picture_url: imageUrl } : { insurance_picture_url: imageUrl };
+  await driver.update({
+    ...updateField,
+    updated_at: new Date(),
+  });
+
+  // Log audit event
+  await auditService.logAction({
+    action: 'UPLOAD_DRIVER_CERTIFICATION',
+    userId: driver.user_id,
+    details: `${type} uploaded for driver_id: ${driverId}, image_url: ${imageUrl}`,
+  });
+
+  // Notify user
+  await notificationService.sendNotification({
+    userId: driver.user_id,
+    type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_UPDATED,
+    message: formatMessage(
+      'driver',
+      'profile',
+      driver.preferred_language,
+      'profile.certification_updated',
+      { type }
+    ),
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`driver:${driver.user_id}`, 'profile:certification_updated', {
+    userId: driver.user_id,
+    driverId,
+    type,
+    imageUrl,
+  });
+
+  logger.info('Driver certification uploaded successfully', { driverId, type, imageUrl });
+  return imageUrl;
+});
+
+/**
+ * Retrieves the driver’s profile details.
+ * @param {string} driverId - Driver ID.
+ * @returns {Promise<Object>} Driver profile.
+ */
+const getProfile = catchAsync(async (driverId) => {
+  const driver = await Driver.findByPk(driverId, {
+    attributes: [
+      'id',
+      'user_id',
+      'name',
+      'email',
+      'phone',
+      'preferred_language',
+      'vehicle_type',
+      'license_number',
+      'license_picture_url',
+      'insurance_picture_url',
+      'status',
+      'created_at',
+      'updated_at',
     ],
   });
-  if (!user) throw new AppError('User not found', 404, 'USER_NOT_FOUND');
-  return user;
-};
 
-const updatePersonalInfo = async (userId, updateData) => {
-  const { first_name, last_name, email, phone } = updateData;
-  const { user, driver } = await fetchUserAndDriver(userId);
-  const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
-
-  if (phone && phone !== user.phone) {
-    try {
-      const number = phoneUtil.parse(phone);
-      if (!phoneUtil.isValidNumber(number)) {
-        throw new AppError('Invalid phone number format', 400, 'INVALID_PHONE');
-      }
-      const existingUser = await User.findOne({ where: { phone } });
-      if (existingUser && existingUser.id !== user.id) {
-        throw new AppError('Phone number already in use', 400, 'DUPLICATE_PHONE');
-      }
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError('Invalid phone number format', 400, 'INVALID_PHONE');
-    }
+  if (!driver) {
+    throw new AppError(
+      'Driver not found',
+      404,
+      driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
+    );
   }
 
-  const userUpdates = {
-    first_name: first_name || user.first_name,
-    last_name: last_name || user.last_name,
-    email: email || user.email,
-    phone: phone || user.phone,
-  };
-
-  const driverUpdates = {
-    name: `${userUpdates.first_name} ${userUpdates.last_name}`,
-    phone_number: phone || driver.phone_number,
-  };
-
-  await sequelize.transaction(async (t) => {
-    await user.update(userUpdates, { transaction: t });
-    await driver.update(driverUpdates, { transaction: t });
+  // Log audit event
+  await auditService.logAction({
+    action: 'GET_DRIVER_PROFILE',
+    userId: driver.user_id,
+    details: `Profile retrieved for driver_id: ${driverId}`,
   });
 
-  logger.info('Driver personal info updated', { userId, updatedFields: Object.keys(updateData) });
-  return { user, driver };
-};
-
-const updateVehicleInfo = async (userId, vehicleData) => {
-  const { driver } = await fetchUserAndDriver(userId);
-  const { type, model, year } = vehicleData;
-
-  const updatedVehicleInfo = {
-    type: type || driver.vehicle_info.type,
-    model: model || driver.vehicle_info.model,
-    year: year || driver.vehicle_info.year,
-  };
-
-  await driver.update({ vehicle_info: updatedVehicleInfo });
-
-  logger.info('Driver vehicle info updated', { userId });
+  logger.info('Driver profile retrieved successfully', { driverId });
   return driver;
-};
+});
 
-const changePassword = async (userId, currentPassword, newPassword) => {
-  logger.info('Changing driver password', { userId });
+/**
+ * Validates driver profile data for compliance.
+ * @param {string} driverId - Driver ID.
+ * @returns {Promise<Object>} Compliance status.
+ */
+const verifyProfile = catchAsync(async (driverId) => {
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError(
+      'Driver not found',
+      404,
+      driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
+    );
+  }
 
-  const user = await User.scope(null).findByPk(userId, {
-    attributes: ['id', 'password'],
+  // Check required fields
+  const requiredFields = ['name', 'email', 'phone', 'vehicle_type', 'license_number', 'license_picture_url'];
+  const missingFields = requiredFields.filter(field => !driver[field]);
+  if (missingFields.length > 0) {
+    throw new AppError(
+      `Missing required fields: ${missingFields.join(', ')}`,
+      400,
+      driverConstants.ERROR_CODES.INCOMPLETE_PROFILE
+    );
+  }
+
+  // Placeholder for compliance checks (e.g., KYC, license verification)
+  const complianceStatus = {
+    isCompliant: true,
+    details: 'All required fields and certifications provided.',
+  };
+
+  // Update driver status if compliant
+  if (complianceStatus.isCompliant) {
+    await driver.update({
+      status: driverConstants.DRIVER_STATUSES.ACTIVE,
+      updated_at: new Date(),
+    });
+  }
+
+  // Log audit event
+  await auditService.logAction({
+    action: 'VERIFY_DRIVER_PROFILE',
+    userId: driver.user_id,
+    details: `Profile verified for driver_id: ${driverId}, compliant: ${complianceStatus.isCompliant}`,
   });
-  if (!user) throw new AppError('User not found', 404, 'USER_NOT_FOUND');
 
-  if (!user.password) throw new AppError('Password data unavailable', 500, 'PASSWORD_UNAVAILABLE');
-
-  const isMatch = await bcrypt.compare(currentPassword, user.password);
-  if (!isMatch) throw new AppError('Current password is incorrect', 401, 'INVALID_PASSWORD');
-
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
-  await user.update({ password: hashedPassword });
-
-  await tokenService.logoutUser(userId, null, true);
-
-  logger.info('Password changed', { userId });
-  return true;
-};
-
-const updateProfilePicture = async (userId, file) => {
-  if (!file) throw new AppError('No file uploaded', 400, 'NO_FILE_UPLOADED');
-  const { driver } = await fetchUserAndDriver(userId);
-
-  return await sequelize.transaction(async (t) => {
-    const profilePictureUrl = await imageService.uploadImage(userId, file, 'driver_profile');
-    await driver.update({ profile_picture_url: profilePictureUrl }, { transaction: t });
-    logger.info('Driver profile picture updated', { userId });
-    return profilePictureUrl;
+  // Notify user
+  await notificationService.sendNotification({
+    userId: driver.user_id,
+    type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_VERIFIED,
+    message: formatMessage(
+      'driver',
+      'profile',
+      driver.preferred_language,
+      'profile.verified'
+    ),
   });
-};
 
-const deleteProfilePicture = async (userId) => {
-  const { driver } = await fetchUserAndDriver(userId);
-
-  return await sequelize.transaction(async (t) => {
-    if (!driver.profile_picture_url) {
-      throw new AppError('No profile picture to delete', 400, 'NO_PROFILE_PICTURE');
-    }
-    await imageService.deleteImage(userId, 'driver_profile');
-    await driver.update({ profile_picture_url: null }, { transaction: t });
-    logger.info('Driver profile picture deleted', { userId });
-    return true;
+  // Emit real-time event
+  await socketService.emitToRoom(`driver:${driver.user_id}`, 'profile:verified', {
+    userId: driver.user_id,
+    driverId,
+    complianceStatus,
   });
-};
 
-const updateLicensePicture = async (userId, file) => {
-  if (!file) throw new AppError('No file uploaded', 400, 'NO_FILE_UPLOADED');
-  const { driver } = await fetchUserAndDriver(userId);
-
-  return await sequelize.transaction(async (t) => {
-    const licensePictureUrl = await imageService.uploadImage(userId, file, 'driver_license');
-    await driver.update({ license_picture_url: licensePictureUrl }, { transaction: t });
-    logger.info('Driver license picture updated', { userId });
-    return licensePictureUrl;
-  });
-};
-
-const deleteLicensePicture = async (userId) => {
-  const { driver } = await fetchUserAndDriver(userId);
-
-  return await sequelize.transaction(async (t) => {
-    if (!driver.license_picture_url) {
-      throw new AppError('No license picture to delete', 400, 'NO_LICENSE_PICTURE');
-    }
-    await imageService.deleteImage(userId, 'driver_license');
-    await driver.update({ license_picture_url: null }, { transaction: t });
-    logger.info('Driver license picture deleted', { userId });
-    return true;
-  });
-};
-
-const manageAddresses = async (userId, action, addressData) => {
-  const { driver } = await fetchUserAndDriver(userId);
-
-  return await sequelize.transaction(async (t) => {
-    if (action === ACTIONS.ADDRESS.ADD) {
-      let resolvedLocation;
-      try {
-        resolvedLocation = await mapService.resolveLocation(addressData);
-      } catch (error) {
-        logger.error('Address resolution failed', { userId, error: error.message });
-        throw new AppError('Failed to resolve address', 400, 'ADDRESS_RESOLUTION_FAILED');
-      }
-
-      const { placeId, formattedAddress, latitude, longitude, components, countryCode } = resolvedLocation;
-
-      let address = await Address.findOne({
-        where: { placeId, user_id: userId },
-        transaction: t,
-      });
-
-      if (!address) {
-        address = await Address.create({
-          user_id: userId,
-          placeId,
-          formattedAddress,
-          latitude,
-          longitude,
-          components,
-          countryCode,
-          validationStatus: 'PENDING',
-        }, { transaction: t });
-      }
-
-      logger.info('Address added', { userId, addressId: address.id });
-      return address;
-    } else if (action === ACTIONS.ADDRESS.REMOVE) {
-      const addressId = addressData.id;
-      const address = await Address.findByPk(addressId, { transaction: t });
-      if (!address) throw new AppError('Address not found', 404, 'ADDRESS_NOT_FOUND');
-      if (address.user_id !== userId) throw new AppError('Unauthorized to remove this address', 403, 'ADDRESS_UNAUTHORIZED');
-
-      await Address.destroy({ where: { id: addressId }, transaction: t });
-      logger.info('Address removed', { userId, addressId });
-      return null;
-    } else {
-      throw new AppError('Invalid action', 400, 'INVALID_ACTION');
-    }
-  });
-};
+  logger.info('Driver profile verified successfully', { driverId, isCompliant: complianceStatus.isCompliant });
+  return complianceStatus;
+});
 
 module.exports = {
+  updateProfile,
+  uploadCertification,
   getProfile,
-  updatePersonalInfo,
-  updateVehicleInfo,
-  changePassword,
-  updateProfilePicture,
-  deleteProfilePicture,
-  updateLicensePicture,
-  deleteLicensePicture,
-  manageAddresses,
+  verifyProfile,
 };

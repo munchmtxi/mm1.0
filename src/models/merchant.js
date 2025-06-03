@@ -13,7 +13,11 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.MenuInventory, { foreignKey: 'merchant_id', as: 'menu_items' });
       this.hasMany(models.Booking, { foreignKey: 'merchant_id', as: 'bookings' });
       this.hasMany(models.Payment, { foreignKey: 'merchant_id', as: 'payments' });
-      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
+      // Media Association: support media uploads
+      this.hasMany(models.Media, { foreignKey: 'merchant_id', as: 'media' });
+      // Remove incorrect Notification association; rely on User.notifications via merchant.user_id
+      // this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
+
       this.belongsTo(models.Geofence, { foreignKey: 'geofence_id', as: 'geofence' });
       this.hasMany(models.PasswordHistory, {
         foreignKey: 'user_id',
@@ -113,7 +117,27 @@ module.exports = (sequelize, DataTypes) => {
     password_lock_until: { type: DataTypes.DATE, allowNull: true },
     currency: { type: DataTypes.STRING, allowNull: false, defaultValue: 'MWK' },
     time_zone: { type: DataTypes.STRING, allowNull: false, defaultValue: 'Africa/Blantyre' },
-    business_hours: { type: DataTypes.JSON, allowNull: true },
+    // Preferred language for localization support
+    preferred_language: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'en',
+      validate: {
+        isIn: [['en', 'fr', 'es']], // add supported languages
+      },
+    },
+    // Business hours with validation
+    business_hours: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      validate: {
+        isValidHours(value) {
+          if (value && (!value.open || !value.close)) {
+            throw new Error('Business hours must include open and close times');
+          }
+        },
+      },
+    },
     notification_preferences: { type: DataTypes.JSON, allowNull: true },
     whatsapp_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     logo_url: { type: DataTypes.STRING, allowNull: true },

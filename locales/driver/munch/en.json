@@ -1,0 +1,9 @@
+{
+  "delivery": {
+    "assigned": "Delivery #{deliveryId} has been assigned to a driver.",
+    "status_updated": "Delivery #{deliveryId} status updated to {status}.",
+    "message_received": "Message from driver: {message}",
+    "batch_assigned": "Delivery #{deliveryId} added to batch #{batchId}.",
+    "batch_status_updated": "Batch #{batchId} delivery #{deliveryId} status updated to {status}."
+  }
+}

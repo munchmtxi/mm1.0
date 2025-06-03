@@ -1,0 +1,18 @@
+{
+  "error": {
+    "invalid_customer": "Invalid customer ID",
+    "invalid_service_type": "Invalid invalid type",
+    "total_mismatch": "Total split amount does match service total",
+    "duplicate_customer": "Duplicate customer in payment split",
+    "invalid_payment_method": "Invalid invalid payment method",
+    "insufficient_funds": "Insufficient wallet balance",
+    "wallet_not_found": "Wallet not found",
+    "no_payments_found": "No payment records found",
+    "payment_not_found": "Payment not found for customer",
+    "refund_exceeds_payment": "Refund amount exceeds original payment"
+  },
+  "payment": {
+    "split_payment_processed": "Payment for {splitType} #{orderId} of {amount} {currency} processed",
+    "split_payment_refunded": "Refund for {serviceType} #{orderId} of {amount} {currency} processed"
+  }
+}

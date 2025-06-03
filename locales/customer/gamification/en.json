@@ -1,0 +1,7 @@
+
+{
+  "gamification.points_awarded": "You earned {points} points for your recent activity.",
+  "gamification.badge_awarded": "Congratulations! You've earned the '{badgeName}' badge.",
+  "gamification.reward_redeemed": "You've successfully redeemed the '{rewardName}' reward.",
+  "gamification.leaderboard_updated": "You're now ranked #{rank} on the leaderboard!"
+}

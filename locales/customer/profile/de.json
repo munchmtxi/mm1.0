@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Ihr Profil wurde erfolgreich erstellt, {name}.",
+    "updated": "Ihr Profil wurde erfolgreich aktualisiert, {name}.",
+    "language_updated": "Ihre Oberflächensprache wurde auf {languageCode} gesetzt.",
+    "dietary_updated": "Ihre Ernährungsgewohnheiten wurden erfolgreich aktualisiert.",
+    "points_awarded": "Sie haben {points} Punkte erhalten für das Vervollständigen Ihres Profils.",
+    "wallet_settings_updated": "Ihre Geldbörseinstellungen wurden erfolgreich aktualisiert.",
+    "payment_method_added": "Zahlungsmethode ({methodType}) wurde Ihrer Geldbörse hinzugefügt.",
+    "withdrawal_processed": "Abhebung von {amount} {currency} wurde erfolgreich verarbeitet."
+  }
+}

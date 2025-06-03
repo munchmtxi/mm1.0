@@ -20,6 +20,9 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'branch_id',
         as: 'branch'
       });
+
+      // User association for role assignment tracking
+      this.belongsTo(models.User, { foreignKey: 'assigned_by', as: 'assignedBy' });
     }
   }
 
@@ -65,16 +68,13 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         isValidPermissions(value) {
           if (!value) return;
-          const { PERMISSIONS } = require('./branchRole');
-          
-          const invalidPermissions = value.filter(
-            perm => !Object.values(PERMISSIONS).includes(perm)
-          );
-          
+          // Ensure 'manage_merchant' permission and others from branchRole
+          const PERMISSIONS = ['manage_merchant', /* add others from branchRole.js */];
+          const invalidPermissions = value.filter(perm => !PERMISSIONS.includes(perm));
           if (invalidPermissions.length > 0) {
             throw new Error(`Invalid permissions: ${invalidPermissions.join(', ')}`);
           }
-        }
+        },
       }
     },
     assigned_by: {

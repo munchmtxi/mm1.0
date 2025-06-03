@@ -13,7 +13,7 @@ const validate = (req, res, next) => {
     throw new AppError(
       errors.array().map((e) => e.msg).join('. '),
       400,
-      'VALIDATION_ERROR'
+      authConstants.ERROR_CODES.VALIDATION_ERROR
     );
   }
   next();
@@ -35,26 +35,18 @@ const registerValidations = [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password')
     .isString()
-    .isLength({ min: 8, max: 100 })
+    .isLength({ min: authConstants.PASSWORD_CONSTANTS.MIN_LENGTH, max: authConstants.PASSWORD_CONSTANTS.MAX_LENGTH })
     .custom((value) => {
       const schema = new (require('password-validator'))();
       schema
-        .is()
-        .min(8)
-        .is()
-        .max(100)
-        .has()
-        .uppercase()
-        .has()
-        .lowercase()
-        .has()
-        .digits()
-        .has()
-        .symbols();
+        .is().min(authConstants.PASSWORD_CONSTANTS.MIN_LENGTH)
+        .is().max(authConstants.PASSWORD_CONSTANTS.MAX_LENGTH)
+        .has().uppercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.UPPERCASE ? 1 : 0)
+        .has().lowercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.LOWERCASE ? 1 : 0)
+        .has().digits(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.NUMBER ? 1 : 0)
+        .has().symbols(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.SPECIAL_CHAR ? 1 : 0);
       if (!schema.validate(value)) {
-        throw new Error(
-          'Password must be 8-100 characters with uppercase, lowercase, digit, and symbol'
-        );
+        throw new Error('Password does not meet complexity requirements');
       }
       return true;
     }),
@@ -70,27 +62,31 @@ const registerValidations = [
       }
     }),
   body('country')
-    .isIn(authConstants.VALID_COUNTRIES)
-    .withMessage('Country must be malawi, zambia, mozambique, or tanzania'),
+    .isIn(authConstants.AUTH_SETTINGS.SUPPORTED_COUNTRIES)
+    .withMessage('Invalid country'),
   body('merchant_type')
     .optional()
-    .isIn(authConstants.MERCHANT_TYPES)
-    .withMessage('Merchant type must be grocery or restaurant'),
+    .isIn(['grocery', 'restaurant', 'cafe'])
+    .withMessage('Merchant type must be grocery, restaurant, or cafe'),
   body('role')
     .optional()
-    .isIn(Object.values(authConstants.ROLES))
+    .isIn(authConstants.AUTH_SETTINGS.SUPPORTED_ROLES)
     .withMessage('Invalid role'),
+  body('mfa_method')
+    .optional()
+    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .withMessage('Invalid MFA method'),
 ];
 
 const registerNonCustomerValidations = [
-  ...registerValidations.slice(0, -1),
+  ...registerValidations.slice(0, -2),
   body('role')
-    .isIn(
-      Object.values(authConstants.ROLES).filter(
-        (r) => r !== authConstants.ROLES.CUSTOMER
-      )
-    )
+    .isIn(authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.filter((r) => r !== authConstants.AUTH_SETTINGS.DEFAULT_ROLE))
     .withMessage('Role must be admin, driver, staff, or merchant'),
+  body('mfa_method')
+    .optional()
+    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .withMessage('Invalid MFA method'),
 ];
 
 const loginValidations = [
@@ -114,8 +110,13 @@ const loginValidations = [
     .withMessage('Platform must be web, ios, or android'),
   body('role')
     .optional()
-    .isIn(Object.values(authConstants.ROLES))
+    .isIn(authConstants.AUTH_SETTINGS.SUPPORTED_ROLES)
     .withMessage('Invalid role'),
+  body('mfa_code')
+    .optional()
+    .isString()
+    .isLength({ min: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH, max: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH })
+    .withMessage(`MFA code must be ${authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH} characters`),
 ];
 
 const logoutValidations = [
@@ -147,6 +148,19 @@ const googleOAuthCallbackValidations = [
     .withMessage('State must be a string'),
 ];
 
+const verifyMfaValidations = [
+  body('user_id')
+    .isInt()
+    .withMessage('User ID must be an integer'),
+  body('mfa_code')
+    .isString()
+    .isLength({ min: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH, max: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH })
+    .withMessage(`MFA code must be ${authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH} characters`),
+  body('mfa_method')
+    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .withMessage('Invalid MFA method'),
+];
+
 module.exports = {
   validate,
   registerValidations,
@@ -155,4 +169,5 @@ module.exports = {
   logoutValidations,
   refreshTokenValidations,
   googleOAuthCallbackValidations,
+  verifyMfaValidations,
 };

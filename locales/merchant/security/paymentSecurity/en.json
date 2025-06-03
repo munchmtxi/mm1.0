@@ -1,0 +1,17 @@
+
+{
+  "paymentSecurity": {
+    "paymentTokenized": "Payment of {{amount}} {{currency}} tokenized successfully",
+    "mfaEnforced": "MFA enforced with method {{method}}",
+    "fraudDetected": "Detected {{count}} suspicious transactions",
+    "pointsAwarded": "Awarded {{points}} points for secure payment activity",
+    "errors": {
+      "invalidMerchant": "Invalid merchant",
+      "invalidCustomer": "Invalid customer",
+      "invalidPaymentMethod": "Invalid payment method",
+      "invalidCurrency": "Invalid currency",
+      "walletNotFound": "Wallet not found",
+      "mfaAlreadyEnabled": "MFA already enabled"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+
+{
+  "accessibility": {
+    "screenReaderEnabled": "Screen reader support enabled",
+    "fontAdjusted": "Font size adjusted to {{fontSize}}",
+    "languageSupported": "UI language set to {{language}}",
+    "pointsAwarded": "Awarded {{points}} points for accessibility settings",
+    "errors": {
+      "invalidMerchant": "Invalid merchant",
+      "invalidCustomer": "Invalid customer",
+      "screenReaderAlreadyEnabled": "Screen reader already enabled",
+      "invalidFontSize": "Invalid font size",
+      "invalidLanguage": "Invalid language",
+      "languageAlreadySet": "Language already set",
+      "noAccessibilitySettings": "No accessibility settings found"
+    }
+  }
+}

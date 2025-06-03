@@ -1,0 +1,9 @@
+{
+  "wallet": {
+    "created": "Merchant wallet #{walletId} created successfully!",
+    "payment_received": "Received payment of {amount} {currency} to your wallet.",
+    "payout_received": "You received a payout of {amount} {currency} from the merchant.",
+    "balance": "Your wallet balance is {amount} {currency}.",
+    "transaction_history": "Transaction history retrieved with {count} records."
+  }
+}

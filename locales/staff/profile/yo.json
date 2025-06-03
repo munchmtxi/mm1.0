@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Akọsilẹ iṣẹ́ rẹ ti ṣẹda ni aṣeyọri, {name}.",
+    "bank_details_updated": "Awọn alaye banki rẹ ti ni imudojuiwọn ni aṣeyọri.",
+    "branch_updated": "Ẹka ti a yan ti yipada si {branchName}.",
+    "geofence_updated": "Apapọ agbegbe rẹ ti yipada si {geofenceName}.",
+    "country_updated": "Awọn eto orílẹ̀-èdè rẹ ti ni imudojuiwọn si {country}.",
+    "wallet_settings_updated": "Awọn eto apamọwọ rẹ ti ni imudojuiwọn ni aṣeyọri.",
+    "payment_method_added": "Ọna ìsanwó ({methodType}) ti fi kun si apamọwọ rẹ.",
+    "withdrawal_processed": "Iyọkuro ti {amount} {currency} ti pari ni aṣeyọri.",
+    "error": {
+      "invalid_email": "Adirẹsi imeeli ti a pese ko tọ.",
+      "invalid_phone": "Nọ́ńbà fóònù ti a pese ko tọ.",
+      "invalid_position": "Ipo t’ a yan ko tọ.",
+      "invalid_certifications": "Ọkan tabi diẹ ninu awọn iwe-ẹri ko tọ.",
+      "missing_certifications": "Awọn iwe-ẹri ti o nilo sọnu: {certifications}.",
+      "invalid_branch": "Ẹka ti a yan ko tọ tabi a ko fun ni aṣẹ.",
+      "invalid_geofence": "Apapọ agbegbe ti a yan ko tọ.",
+      "invalid_currency": "Owó ninu awọn alaye bẹ̀ńkì gbọ́dọ̀ ba owo oníṣòwò mu ({currency}).",
+      "incomplete_profile": "Akọsilẹ ko pe: {fields} ṣọ̀dá.",
+      "incomplete_branch_profile": "Àkókò iṣẹ́ ẹka kìí pé."
+    }
+  }
+}

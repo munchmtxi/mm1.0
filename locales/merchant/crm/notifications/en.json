@@ -1,0 +1,11 @@
+{
+  "notifications": {
+    "order_update": "Order update: {content}",
+    "booking_update": "Booking update: {content}",
+    "task_assignment": "Task assigned: {content}",
+    "schedule_update": "Schedule updated: {content}",
+    "delivery_assignment": "Delivery task assigned: {content}",
+    "delivery_update": "Delivery update: {content}",
+    "notification_points_awarded": "Awarded {points} points for notification interaction."
+  }
+}

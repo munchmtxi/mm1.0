@@ -1,323 +1,371 @@
 'use strict';
 
+/**
+ * Merchant Profile Handler
+ * Handles WebSocket events for merchant profile operations, including business details,
+ * country settings, localization, gamification, media, and branch management. Integrates
+ * with merchant profile services for business logic and socketService for real-time communication.
+ *
+ * Last Updated: May 14, 2025
+ */
+
 const merchantProfileService = require('@services/merchant/profile/merchantProfileService');
-const branchProfileService = require('@services/merchant/profile/branchProfileService');
 const merchantMediaService = require('@services/merchant/profile/merchantMediaService');
-const mapService = require('@services/common/mapService');
+const branchProfileService = require('@services/merchant/profile/branchProfileService');
+const socketService = require('@services/common/socketService');
 const profileEvents = require('@socket/events/merchant/profile/profileEvents');
-const merchantRooms = require('@socket/rooms/merchantRooms');
-const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const profileValidator = require('@validators/merchant/profile/profileValidator');
-const Joi = require('joi');
+const merchantConstants = require('@constants/merchantConstants');
+const AppError = require('@utils/AppError');
 
-const setupProfileHandlers = (io, socket) => {
-  const emitError = (event, error) => {
-    socket.emit(profileEvents.ERROR, {
-      message: error.message,
-      code: error.code || 'SOCKET_ERROR',
-    });
-    logger.logErrorEvent('Socket error emitted', {
-      event,
-      userId: socket.user.id,
-      error: error.message,
-    });
-  };
+/**
+ * Registers WebSocket event handlers for merchant profile operations.
+ * @param {Object} io - Socket.IO server instance.
+ */
+const registerMerchantProfileHandlers = (io) => {
+  io.on('connection', (socket) => {
+    logger.info('New WebSocket connection established', { socketId: socket.id });
 
-  const validateData = async (validatorName, data) => {
-    if (!profileValidator[validatorName]) {
-      throw new AppError('Invalid validator', 500, 'INVALID_VALIDATOR');
-    }
-    const { error } = profileValidator[validatorName].validate(data, { abortEarly: false });
-    if (error) {
-      const message = error.details.map((d) => d.message).join(', ');
-      throw new AppError(`Validation failed: ${message}`, 400, 'VALIDATION_FAILED');
-    }
-  };
-
-  socket.on(profileEvents.UPDATE_PROFILE, async (data, callback) => {
-    try {
-      await validateData('updateProfile', data);
-      const merchant = await merchantProfileService.updateProfile(socket.user.id, data);
-      const updatedFields = Object.keys(data);
-
-      // Emit to merchant's room
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.PROFILE_UPDATED, {
-        merchant,
-        updatedFields,
-      });
-
-      // Notify admins
-      io.to(merchantRooms.ADMIN_ROOM).emit(profileEvents.PROFILE_UPDATED, {
-        merchantId: socket.user.id,
-        updatedFields,
-      });
-
-      logger.logApiEvent('Socket: Merchant profile updated', {
-        userId: socket.user.id,
-        updatedFields,
-      });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: merchant });
-      }
-    } catch (error) {
-      emitError(profileEvents.UPDATE_PROFILE, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.UPDATE_NOTIFICATIONS, async (data, callback) => {
-    try {
-      await validateData('updateNotificationPreferences', data);
-      const preferences = await merchantProfileService.updateNotificationPreferences(socket.user.id, data);
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.NOTIFICATIONS_UPDATED, {
-        preferences,
-      });
-
-      logger.logApiEvent('Socket: Notification preferences updated', { userId: socket.user.id });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: preferences });
-      }
-    } catch (error) {
-      emitError(profileEvents.UPDATE_NOTIFICATIONS, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.CHANGE_PASSWORD, async (data, callback) => {
-    try {
-      await validateData('changePassword', data);
-      const clientIp = socket.handshake.address;
-      await merchantProfileService.changePassword(socket.user.id, data, clientIp);
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.PASSWORD_CHANGED, {
-        message: 'Password changed successfully',
-      });
-
-      io.to(merchantRooms.ADMIN_ROOM).emit(profileEvents.PASSWORD_CHANGED, {
-        merchantId: socket.user.id,
-        timestamp: new Date(),
-      });
-
-      logger.logSecurityEvent('Socket: Password changed', { userId: socket.user.id, clientIp });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', message: 'Password changed' });
-      }
-    } catch (error) {
-      emitError(profileEvents.CHANGE_PASSWORD, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.UPDATE_GEOLOCATION, async (data, callback) => {
-    try {
-      await validateData('updateGeolocation', data);
-      const result = await merchantProfileService.updateGeolocation(socket.user.id, data);
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.GEOLOCATION_UPDATED, {
-        address: result.address,
-        location: result.merchant.location,
-      });
-
-      logger.logApiEvent('Socket: Geolocation updated', { userId: socket.user.id });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: result });
-      }
-    } catch (error) {
-      emitError(profileEvents.UPDATE_GEOLOCATION, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.UPDATE_MEDIA, async (data, callback) => {
-    try {
-      await validateData('updateMerchantMedia', data);
-      // Note: File uploads not supported via sockets; use HTTP for logo/banner
-      const updates = await merchantMediaService.updateMerchantMedia(socket.user.id, data, {});
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.MEDIA_UPDATED, {
-        updates,
-      });
-
-      logger.logApiEvent('Socket: Media updated', { userId: socket.user.id });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: updates });
-      }
-    } catch (error) {
-      emitError(profileEvents.UPDATE_MEDIA, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.CREATE_BRANCH, async (data, callback) => {
-    try {
-      await validateData('createBranchProfile', data);
-      const branch = await branchProfileService.createBranchProfile(socket.user.id, data, {});
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.BRANCH_CREATED, {
-        branch,
-      });
-
-      io.to(merchantRooms.getBranchRoom(branch.id)).emit(profileEvents.BRANCH_CREATED, {
-        branch,
-      });
-
-      io.to(merchantRooms.ADMIN_ROOM).emit(profileEvents.BRANCH_CREATED, {
-        merchantId: socket.user.id,
-        branchId: branch.id,
-      });
-
-      logger.logApiEvent('Socket: Branch created', { userId: socket.user.id, branchId: branch.id });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: branch });
-      }
-    } catch (error) {
-      emitError(profileEvents.CREATE_BRANCH, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.UPDATE_BRANCH, async (data, callback) => {
-    try {
-      await validateData('updateBranchProfile', { branchId: data.branchId, ...data });
-      const branch = await branchProfileService.updateBranchProfile(data.branchId, data, {});
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.BRANCH_UPDATED, {
-        branch,
-      });
-
-      io.to(merchantRooms.getBranchRoom(branch.id)).emit(profileEvents.BRANCH_UPDATED, {
-        branch,
-      });
-
-      logger.logApiEvent('Socket: Branch updated', { userId: socket.user.id, branchId: branch.id });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: branch });
-      }
-    } catch (error) {
-      emitError(profileEvents.UPDATE_BRANCH, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.DELETE_BRANCH, async (data, callback) => {
-    try {
-      await validateData('deleteBranchProfile', { branchId: data.branchId });
-      await branchProfileService.deleteBranchProfile(data.branchId);
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.BRANCH_DELETED, {
-        branchId: data.branchId,
-      });
-
-      io.to(merchantRooms.getBranchRoom(data.branchId)).emit(profileEvents.BRANCH_DELETED, {
-        branchId: data.branchId,
-      });
-
-      logger.logApiEvent('Socket: Branch deleted', { userId: socket.user.id, branchId: data.branchId });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', message: 'Branch deleted' });
-      }
-    } catch (error) {
-      emitError(profileEvents.DELETE_BRANCH, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
-      }
-    }
-  });
-
-  socket.on(profileEvents.BULK_UPDATE_BRANCHES, async (data, callback) => {
-    try {
-      await validateData('bulkUpdateBranches', data);
-      const branches = await branchProfileService.bulkUpdateBranches(socket.user.id, data);
-
-      io.to(merchantRooms.getMerchantRoom(socket.user.id)).emit(profileEvents.BRANCHES_BULK_UPDATED, {
-        branches,
-      });
-
-      branches.forEach((branch) => {
-        io.to(merchantRooms.getBranchRoom(branch.id)).emit(profileEvents.BRANCH_UPDATED, {
-          branch,
+    // Join merchant-specific room
+    socket.on('join:merchant', ({ merchantId, userId }) => {
+      if (!merchantId || !userId) {
+        logger.warn('Invalid merchantId or userId for joining merchant room', { merchantId, userId });
+        socket.emit(profileEvents.ERROR, {
+          message: 'Invalid merchantId or userId',
+          code: merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND,
         });
-      });
-
-      logger.logApiEvent('Socket: Branches bulk updated', {
-        userId: socket.user.id,
-        count: branches.length,
-      });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: branches });
+        return;
       }
-    } catch (error) {
-      emitError(profileEvents.BULK_UPDATE_BRANCHES, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
+
+      const room = `merchant:${userId}`;
+      socket.join(room);
+      logger.info('Merchant joined room', { merchantId, userId, room });
+    });
+
+    // Handle business details update
+    socket.on(profileEvents.UPDATE_BUSINESS_DETAILS, async ({ merchantId, userId, details }) => {
+      try {
+        if (!merchantId || !userId) {
+          throw new AppError(
+            'Missing merchantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+          );
+        }
+
+        const updatedMerchant = await merchantProfileService.updateBusinessDetails(merchantId, details);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.BUSINESS_DETAILS_UPDATED,
+          { userId, merchantId, updatedFields: updatedMerchant }
+        );
+        logger.info('Business details update event processed', { merchantId, userId });
+      } catch (error) {
+        logger.error('Error handling business details update', { error: error.message, merchantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.COMPLIANCE_VIOLATION,
+        });
       }
-    }
-  });
+    });
 
-  socket.on(profileEvents.GET_PLACE_DETAILS, async (data, callback) => {
-    try {
-      await validateData('getPlaceDetails', data);
-      const details = await mapService.getPlaceDetails(data.placeId, data.sessionToken);
+    // Handle country settings update
+    socket.on(profileEvents.SET_COUNTRY_SETTINGS, async ({ merchantId, userId, country }) => {
+      try {
+        if (!merchantId || !userId || !country) {
+          throw new AppError(
+            'Missing merchantId, userId, or country',
+            400,
+            merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+          );
+        }
 
-      socket.emit(profileEvents.PLACE_DETAILS_RECEIVED, { details });
-
-      logger.logApiEvent('Socket: Place details retrieved', { userId: socket.user.id, placeId: data.placeId });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: details });
+        const updatedMerchant = await merchantProfileService.setCountrySettings(merchantId, country);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.COUNTRY_SETTINGS_UPDATED,
+          { userId, merchantId, country }
+        );
+        logger.info('Country settings update event processed', { merchantId, userId });
+      } catch (error) {
+        logger.error('Error handling country settings update', { error: error.message, merchantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.UNSUPPORTED_COUNTRY,
+        });
       }
-    } catch (error) {
-      emitError(profileEvents.GET_PLACE_DETAILS, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
+    });
+
+    // Handle localization settings update
+    socket.on(profileEvents.MANAGE_LOCALIZATION, async ({ merchantId, userId, settings }) => {
+      try {
+        if (!merchantId || !userId) {
+          throw new AppError(
+            'Missing merchantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+          );
+        }
+
+        const updatedMerchant = await merchantProfileService.manageLocalization(merchantId, settings);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.LOCALIZATION_UPDATED,
+          { userId, merchantId, language: settings.language }
+        );
+        logger.info('Localization settings update event processed', { merchantId, userId });
+      } catch (error) {
+        logger.error('Error handling localization settings update', { error: error.message, merchantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_LANGUAGE,
+        });
       }
-    }
-  });
+    });
 
-  socket.on(profileEvents.GET_ADDRESS_PREDICTIONS, async (data, callback) => {
-    try {
-      await validateData('getAddressPredictions', data);
-      const predictions = await mapService.getAddressPredictions(data.input, data.sessionToken);
+    // Handle gamification points tracking
+    socket.on(profileEvents.TRACK_PROFILE_GAMIFICATION, async ({ merchantId, userId }) => {
+      try {
+        if (!merchantId || !userId) {
+          throw new AppError(
+            'Missing merchantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+          );
+        }
 
-      socket.emit(profileEvents.ADDRESS_PREDICTIONS_RECEIVED, { predictions });
-
-      logger.logApiEvent('Socket: Address predictions retrieved', { userId: socket.user.id, input: data.input });
-
-      if (typeof callback === 'function') {
-        callback({ status: 'success', data: predictions });
+        const pointsRecord = await merchantProfileService.trackProfileGamification(merchantId);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.GAMIFICATION_POINTS_AWARDED,
+          { userId, merchantId, points: pointsRecord.points }
+        );
+        logger.info('Gamification points tracking event processed', { merchantId, userId });
+      } catch (error) {
+        logger.error('Error handling gamification points tracking', { error: error.message, merchantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND,
+        });
       }
-    } catch (error) {
-      emitError(profileEvents.GET_ADDRESS_PREDICTIONS, error);
-      if (typeof callback === 'function') {
-        callback({ status: 'error', message: error.message });
+    });
+
+    // Handle menu photos upload
+    socket.on(profileEvents.UPLOAD_MENU_PHOTOS, async ({ restaurantId, userId, photos }) => {
+      try {
+        if (!restaurantId || !userId) {
+          throw new AppError(
+            'Missing restaurantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+          );
+        }
+
+        const photoUrls = await merchantMediaService.uploadMenuPhotos(restaurantId, photos);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.MENU_PHOTOS_UPLOADED,
+          { userId, restaurantId, photoCount: photoUrls.length }
+        );
+        logger.info('Menu photos upload event processed', { restaurantId, userId });
+      } catch (error) {
+        logger.error('Error handling menu photos upload', { error: error.message, restaurantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_FILE_DATA,
+        });
       }
-    }
+    });
+
+    // Handle promotional media management
+    socket.on(profileEvents.MANAGE_PROMOTIONAL_MEDIA, async ({ restaurantId, userId, media }) => {
+      try {
+        if (!restaurantId || !userId) {
+          throw new AppError(
+            'Missing restaurantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+          );
+        }
+
+        const mediaUrl = await merchantMediaService.managePromotionalMedia(restaurantId, media);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.PROMOTIONAL_MEDIA_UPDATED,
+          { userId, restaurantId, mediaUrl }
+        );
+        logger.info('Promotional media management event processed', { restaurantId, userId });
+      } catch (error) {
+        logger.error('Error handling promotional media management', { error: error.message, restaurantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_MEDIA_TYPE,
+        });
+      }
+    });
+
+    // Handle media metadata update
+    socket.on(profileEvents.UPDATE_MEDIA_METADATA, async ({ mediaId, userId, metadata }) => {
+      try {
+        if (!mediaId || !userId) {
+          throw new AppError(
+            'Missing mediaId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND
+          );
+        }
+
+        const updatedMedia = await merchantMediaService.updateMediaMetadata(mediaId, metadata);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.MEDIA_METADATA_UPDATED,
+          { userId, mediaId, metadata }
+        );
+        logger.info('Media metadata update event processed', { mediaId, userId });
+      } catch (error) {
+        logger.error('Error handling media metadata update', { error: error.message, mediaId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_MEDIA_METADATA,
+        });
+      }
+    });
+
+    // Handle media deletion
+    socket.on(profileEvents.DELETE_MEDIA, async ({ mediaId, userId }) => {
+      try {
+        if (!mediaId || !userId) {
+          throw new AppError(
+            'Missing mediaId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND
+          );
+        }
+
+        await merchantMediaService.deleteMedia(mediaId);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.MEDIA_DELETED,
+          { userId, mediaId }
+        );
+        logger.info('Media deletion event processed', { mediaId, userId });
+      } catch (error) {
+        logger.error('Error handling media deletion', { error: error.message, mediaId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND,
+        });
+      }
+    });
+
+    // Handle branch details update
+    socket.on(profileEvents.UPDATE_BRANCH_DETAILS, async ({ branchId, userId, details }) => {
+      try {
+        if (!branchId || !userId) {
+          throw new AppError(
+            'Missing branchId or userId',
+            400,
+            merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+          );
+        }
+
+        const updatedBranch = await branchProfileService.updateBranchDetails(branchId, details);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.BRANCH_DETAILS_UPDATED,
+          { userId, branchId, updatedFields: updatedBranch }
+        );
+        logger.info('Branch details update event processed', { branchId, userId });
+      } catch (error) {
+        logger.error('Error handling branch details update', { error: error.message, branchId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND,
+        });
+      }
+    });
+
+    // Handle branch settings configuration
+    socket.on(profileEvents.CONFIGURE_BRANCH_SETTINGS, async ({ branchId, userId, settings }) => {
+      try {
+        if (!branchId || !userId) {
+          throw new AppError(
+            'Missing branchId or userId',
+            400,
+            merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+          );
+        }
+
+        const updatedBranch = await branchProfileService.configureBranchSettings(branchId, settings);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.BRANCH_SETTINGS_CONFIGURED,
+          { userId, branchId, settings }
+        );
+        logger.info('Branch settings configuration event processed', { branchId, userId });
+      } catch (error) {
+        logger.error('Error handling branch settings configuration', { error: error.message, branchId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_CURRENCY,
+        });
+      }
+    });
+
+    // Handle branch media management
+    socket.on(profileEvents.MANAGE_BRANCH_MEDIA, async ({ branchId, userId, media }) => {
+      try {
+        if (!branchId || !userId) {
+          throw new AppError(
+            'Missing branchId or userId',
+            400,
+            merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
+          );
+        }
+
+        const mediaUrl = await branchProfileService.manageBranchMedia(branchId, media);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.BRANCH_MEDIA_UPDATED,
+          { userId, branchId, mediaUrl }
+        );
+        logger.info('Branch media management event processed', { branchId, userId });
+      } catch (error) {
+        logger.error('Error handling branch media management', { error: error.message, branchId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.INVALID_MEDIA_TYPE,
+        });
+      }
+    });
+
+    // Handle branch profiles synchronization
+    socket.on(profileEvents.SYNC_BRANCH_PROFILES, async ({ merchantId, userId }) => {
+      try {
+        if (!merchantId || !userId) {
+          throw new AppError(
+            'Missing merchantId or userId',
+            400,
+            merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+          );
+        }
+
+        const updatedBranches = await branchProfileService.syncBranchProfiles(merchantId);
+        await socketService.emitToRoom(
+          `merchant:${userId}`,
+          profileEvents.BRANCH_PROFILES_SYNCED,
+          { userId, merchantId, branchCount: updatedBranches.length }
+        );
+        logger.info('Branch profiles sync event processed', { merchantId, userId });
+      } catch (error) {
+        logger.error('Error handling branch profiles sync', { error: error.message, merchantId });
+        socket.emit(profileEvents.ERROR, {
+          message: error.message,
+          code: error.code || merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND,
+        });
+      }
+    });
   });
 };
 
-module.exports = { setupProfileHandlers };
+module.exports = { registerMerchantProfileHandlers };

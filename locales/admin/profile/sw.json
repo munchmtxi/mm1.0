@@ -1,0 +1,10 @@
+{
+  "welcome_message": "Karibu, {name}! Akaunti yako ya msimamizi imeundwa.",
+  "profile_updated_message": "Profaili yako imesasishwa kwa mafanikio.",
+  "permissions_updated_message": "Ruhusa zako zimesasishwa.",
+  "account_suspended_message": "Akaunti yako imezuiliwa. Sababu: {reason}",
+  "account_deleted_message": "Akaunti yako imefutwa.",
+  "points_awarded_message": "Ulipata pointi {points} kwa {action}!",
+  "localization_updated_message": "Mipangilio ya eneo imesasishwa kwa mafanikio.",
+  "accessibility_updated_message": "Mipangilio ya ufikiaji imesasishwa kwa mafanikio."
+}

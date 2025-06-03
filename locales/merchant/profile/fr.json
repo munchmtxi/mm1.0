@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Votre profil marchand a été créé avec succès, {name}.",
+    "updated": "Votre profil marchand a été mis à jour avec succès, {name}.",
+    "country_updated": "Les paramètres du pays ont été mis à jour vers {country}.",
+    "media_uploaded": "Média ({mediaType}) téléchargé avec succès.",
+    "wallet_settings_updated": "Les paramètres de votre portefeuille ont été mis à jour.",
+    "payment_method_added": "Méthode de paiement ({methodType}) ajoutée à votre portefeuille.",
+    "withdrawal_processed": "Retrait de {amount} {currency} traité avec succès."
+  }
+}

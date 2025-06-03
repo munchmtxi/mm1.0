@@ -6,9 +6,9 @@ const authConstants = require('@constants/common/authConstants');
 
 const joinAuthRooms = async (socket, role) => {
   try {
-    if (!Object.values(authConstants.ROLES).includes(role)) {
+    if (!authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes(role)) {
       logger.warn('Invalid role for room join', { role });
-      throw new AppError('Invalid role', 400, 'INVALID_ROLE');
+      throw new AppError('Invalid role', 400, authConstants.ERROR_CODES.INVALID_ROLE);
     }
     const room = `role:${role}`;
     socket.join(room);

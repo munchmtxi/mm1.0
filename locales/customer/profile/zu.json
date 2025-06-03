@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Iphrofile yakho likhulumiwe ngempumelelo, {name}.",
+    "updated": "Iphrofile yakho ligcwalisekile ngempumelelo, {name}.",
+    "language_updated": "Ullu lwephethini lakho lugceniwe ku {languageCode}.",
+    "dietary_updated": "Imibandela yakho yokudla igcwalisekile ngempumelelo.",
+    "points_awarded": "Ufenile amaphoyinti angu-{points} ngenxa yokugcwalisa iphrofile yakho.",
+    "wallet_settings_updated": "Izicwangciso zewalethe zakho zigcwalisekile ngempumelelo.",
+    "payment_method_added": "Indlela yokulipa ({methodType}) yenxuswe kwewalethe yakho.",
+    "withdrawal_processed": "Ukulanda {amount} {currency} kusebenzela ngempumelelo."
+  }
+}

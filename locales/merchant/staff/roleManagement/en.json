@@ -1,0 +1,9 @@
+{
+  "staff": {
+    "role_assigned": "Role {role} assigned successfully.",
+    "permissions_updated": "Permissions updated: {permissions}.",
+    "compliance_verified": "Role compliance verified. No missing certifications.",
+    "compliance_failed": "Role compliance failed. Missing certifications: {missingCerts}.",
+    "gamification_points_awarded": "Awarded {points} points for role performance."
+  }
+}

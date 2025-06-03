@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Iphrofayela lakho lokushaya libekwe ngempumelelo, {name}.",
+    "updated": "Iphrofayela lakho lokushaya ligcwalisekile ngempumelelo, {name}.",
+    "certification_uploaded": "Isatifikethi ({certType}) lifakwe ngempumelelo.",
+    "verified": "Imeko yakho yokuvivinya iphrofayela: {status}.",
+    "country_updated": "Izicwangciso zomhlaba wakho ziguguliwe ku {country}.",
+    "wallet_settings_updated": "Izicwangciso zewalethe yakho sigcwalisekile ngempumelelo.",
+    "payment_method_added": "Indlela yokulipa ({methodType}) yenxuswe kwewalethe yakho.",
+    "withdrawal_processed": "Ukulanda {amount} {currency} kusebenzela ngempumelelo."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Ihr Mitarbeiterprofil wurde erfolgreich erstellt, {name}.",
+    "bank_details_updated": "Bankdaten wurden erfolgreich aktualisiert.",
+    "branch_updated": "Der zugewiesene Zweig wurde aktualisiert auf {branchName}.",
+    "geofence_updated": "Ihr Geofence wurde aktualisiert auf {geofenceName}.",
+    "country_updated": "Ihre Ländereinstellungen wurden aktualisiert auf {country}.",
+    "wallet_settings_updated": "Ihre Wallet-Einstellungen wurden erfolgreich aktualisiert.",
+    "payment_method_added": "Zahlungsmethode ({methodType}) zu Ihrer Wallet hinzugefügt.",
+    "withdrawal_processed": "Auszahlung von {amount} {currency} erfolgreich verarbeitet.",
+    "error": {
+      "invalid_email": "Die angegebene E-Mail-Adresse ist ungültig.",
+      "invalid_phone": "Die angegebene Telefonnummer ist ungültig.",
+      "invalid_position": "Die ausgewählte Position ist ungültig.",
+      "invalid_certifications": "Eine oder mehrere Zertifizierungen sind ungültig.",
+      "missing_certifications": "Fehlende erforderliche Zertifizierungen: {certifications}.",
+      "invalid_branch": "Der ausgewählte Zweig ist ungültig oder nicht autorisiert.",
+      "invalid_geofence": "Der ausgewählte Geofence ist ungültig.",
+      "invalid_currency": "Die Währung der Bankdaten muss mit der Händlerwährung ({currency}) übereinstimmen.",
+      "incomplete_profile": "Profil unvollständig: fehlende {fields}.",
+      "incomplete_branch_profile": "Die Öffnungszeiten des Zweigs sind unvollständig."
+    }
+  }
+}

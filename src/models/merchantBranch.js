@@ -6,6 +6,8 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
       this.belongsTo(models.Address, { foreignKey: 'address_id', as: 'addressRecord' });
+      this.hasMany(models.Media, { foreignKey: 'branch_id', as: 'media' });
+      this.hasMany(models.BranchStaffRole, { foreignKey: 'branch_id', as: 'staffRoles' });
     }
   }
 
@@ -31,17 +33,39 @@ module.exports = (sequelize, DataTypes) => {
     contact_phone: { type: DataTypes.STRING, allowNull: true },
     address: { type: DataTypes.STRING, allowNull: false },
     location: { type: DataTypes.GEOMETRY('POINT'), allowNull: true },
-    operating_hours: { type: DataTypes.JSON, allowNull: true },
+    operating_hours: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      validate: {
+        isValidHours(value) {
+          if (value && (!value.open || !value.close)) {
+            throw new Error('Operating hours must include open and close times');
+          }
+        },
+      },
+    },
     delivery_radius: { type: DataTypes.DECIMAL, allowNull: true },
     is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     payment_methods: { type: DataTypes.JSON, allowNull: true },
-    media: { type: DataTypes.JSON, allowNull: true },
     geofence_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
       references: { model: 'geofences', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL',
+    },
+    currency: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'MWK',
+    },
+    preferred_language: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'en',
+      validate: {
+        isIn: [['en', 'fr', 'es']],
+      },
     },
     created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
     updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },

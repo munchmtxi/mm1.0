@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Ihr Fahrerprofil wurde erfolgreich erstellt, {name}.",
+    "updated": "Ihr Fahrerprofil wurde erfolgreich aktualisiert, {name}.",
+    "certification_uploaded": "Zertifizierung ({certType}) wurde erfolgreich hochgeladen.",
+    "verified": "Ihr Verifizierungsstatus: {status}.",
+    "country_updated": "Ihre Länder-Einstellungen wurden auf {country} geändert.",
+    "wallet_settings_updated": "Ihre Geldbörseinstellungen wurden erfolgreich aktualisiert.",
+    "payment_method_added": "Zahlungsmethode ({methodType}) wurde Ihrer Geldbörse hinzugefügt.",
+    "withdrawal_processed": "Abhebung von {amount} {currency} wurde erfolgreich verarbeitet."
+  }
+}

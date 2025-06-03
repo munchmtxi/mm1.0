@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Tu perfil de conductor ha sido creado exitosamente, {name}.",
+    "updated": "Tu perfil de conductor ha sido actualizado exitosamente, {name}.",
+    "certification_uploaded": "Certificación ({certType}) cargada exitosamente.",
+    "verified": "Estado de verificación de tu perfil: {status}.",
+    "country_updated": "La configuración de tu país se ha actualizado a {country}.",
+    "wallet_settings_updated": "La configuración de tu billetera se ha actualizado exitosamente.",
+    "payment_method_added": "Método de pago ({methodType}) agregado a tu billetera.",
+    "withdrawal_processed": "Retiro de {amount} {currency} procesado exitosamente."
+  }
+}

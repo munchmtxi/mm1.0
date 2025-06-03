@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "आपकी स्टाफ प्रोफ़ाइल सफलतापूर्वक बनाई गई है, {name}.",
+    "bank_details_updated": "आपके बैंक विवरण सफलतापूर्वक अपडेट किए गए हैं.",
+    "branch_updated": "आपकी सौंपा गई शाखा अपडेट की गई है: {branchName}.",
+    "geofence_updated": "आपका जियोफेंस अपडेट किया गया है: {geofenceName}.",
+    "country_updated": "आपकी देश की सेटिंग्स अपडेट की गई हैं: {country}.",
+    "wallet_settings_updated": "आपकी वॉलेट सेटिंग्स सफलतापूर्वक अपडेट की गईं.",
+    "payment_method_added": "भुगतान विधि ({methodType}) आपके वॉलेट में जोड़ी गई.",
+    "withdrawal_processed": "{amount} {currency} की निकासी सफलतापूर्वक की गई.",
+    "error": {
+      "invalid_email": "प्रदान किया गया ईमेल पता अमान्य है.",
+      "invalid_phone": "प्रदान किया गया फोन नंबर अमान्य है.",
+      "invalid_position": "चयनित स्थिति अमान्य है.",
+      "invalid_certifications": "एक या अधिक प्रमाणपत्र अमान्य हैं.",
+      "missing_certifications": "अनिवार्य प्रमाणपत्र गायब: {certifications}.",
+      "invalid_branch": "चयनित शाखा अमान्य या अनधिकृत है.",
+      "invalid_geofence": "चयनित जियोफेंस अमान्य है.",
+      "invalid_currency": "बैंक विवरण मुद्रा को व्यापारी मुद्रा ({currency}) से मेल खाना चाहिए.",
+      "incomplete_profile": "प्रोफ़ाइल अधूरी है: गायब {fields}.",
+      "incomplete_branch_profile": "शाखा संचालन घंटे अधूरी हैं."
+    }
+  }
+}

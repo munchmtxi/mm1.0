@@ -1,0 +1,11 @@
+{
+  "profile": {
+    "created": "Mu profaili wanu wa nthawi ine chotchedwa bwino, {name}.",
+    "updated": "Mu profaili wanu wa nthawi ine chotseredwa bwino, {name}.",
+    "country_updated": "Zindlela zabwalo zamakwere amabweretsedwa ku {country}.",
+    "media_uploaded": "Midya ({mediaType}) idzapitiridwa mu efoli lanu.",
+    "wallet_settings_updated": "Zindlela zabwalo za efoli lanu zaseredwa bwino.",
+    "payment_method_added": "Ntchito ya kulipira ({methodType}) idzapitiridwa mu efoli lanu.",
+    "withdrawal_processed": "Kusintha kwa {amount} {currency} kumeza bwino."
+  }
+}

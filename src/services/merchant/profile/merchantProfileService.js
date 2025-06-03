@@ -1,386 +1,325 @@
 'use strict';
 
-const { Merchant, User, MerchantBranch, PasswordHistory, Notification, Address, Session, Sequelize } = require('@models');
-const { TYPES: BUSINESS_TYPES } = require('@constants/merchant/businessTypes');
-const bcrypt = require('bcryptjs');
-const { sequelize } = require('@models');
+/**
+ * Merchant Profile Service
+ * Manages core merchant profile operations, including business details, country settings, localization,
+ * and gamification for the Merchant Role System. Integrates with merchantConstants.js for configuration
+ * and ensures compliance with security and localization requirements.
+ *
+ * Last Updated: May 15, 2025
+ */
+
+const { Merchant, User } = require('@models');
+const merchantConstants = require('@constants/merchantConstants');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const gamificationService = require('@services/common/gamificationPointService');
+const auditService = require('@services/common/auditService');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const mapService = require('@services/common/mapService');
-const TokenService = require('@services/common/tokenService');
-const NodeCache = require('node-cache');
+const { formatMessage } = require('@utils/localization/localization');
+const validation = require('@utils/validation');
+const catchAsync = require('@utils/catchAsync');
 
-const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 }); // 5-minute cache
+/**
+ * Updates business details for the merchant.
+ * @param {string} merchantId - Merchant ID.
+ * @param {Object} details - Business details (e.g., name, phone, business hours).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Updated merchant profile.
+ */
+const updateBusinessDetails = catchAsync(async (merchantId, details, ipAddress) => {
+  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
+  if (!merchant) {
+    throw new AppError(
+      'Merchant not found',
+      404,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    );
+  }
+
+  const { businessName, phone, businessHours, businessType, businessTypeDetails } = details;
+
+  // Validate inputs
+  if (phone && !validation.validatePhone(phone)) {
+    throw new AppError(
+      'Invalid phone number format',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_PHONE
+    );
+  }
+  if (businessHours && (!businessHours.open || !businessHours.close)) {
+    throw new AppError(
+      'Business hours must include open and close times',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_OPERATING_HOURS
+    );
+  }
+  if (businessType && !merchantConstants.BUSINESS_TYPE_CODES.includes(businessType)) {
+    throw new AppError(
+      'Invalid business type',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_BUSINESS_TYPE
+    );
+  }
+  if (businessTypeDetails && !merchant.validateBusinessTypeDetails()) {
+    throw new AppError(
+      'Invalid business type details',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_BUSINESS_TYPE_DETAILS
+    );
+  }
+
+  // Prepare updated fields
+  const updatedFields = {
+    business_name: businessName || merchant.business_name,
+    phone_number: phone || merchant.phone_number,
+    business_hours: businessHours || merchant.business_hours,
+    business_type: businessType || merchant.business_type,
+    business_type_details: businessTypeDetails || merchant.business_type_details,
+    updated_at: new Date(),
+  };
+
+  // Update merchant profile
+  await merchant.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPDATE_MERCHANT_BUSINESS_DETAILS,
+    userId: merchant.user_id,
+    role: 'merchant',
+    details: updatedFields,
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  // Notify user
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'profile',
+      merchant.preferred_language,
+      'profile.business_updated',
+      { merchantId }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${merchant.user_id}`, 'profile:business_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    updatedFields,
+  });
+
+  logger.info('Merchant business details updated successfully', { merchantId });
+  return merchant;
+});
+
+/**
+ * Configures merchant country settings for currency and time formats.
+ * @param {string} merchantId - Merchant ID.
+ * @param {string} country - Country code (e.g., US, GB).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Updated merchant profile.
+ */
+const setCountrySettings = catchAsync(async (merchantId, country, ipAddress) => {
+  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
+  if (!merchant) {
+    throw new AppError(
+      'Merchant not found',
+      404,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    );
+  }
+
+  // Validate country code
+  if (!merchantConstants.MERCHANT_SETTINGS.SUPPORTED_COUNTRIES.includes(country)) {
+    throw new AppError(
+      'Unsupported country',
+      400,
+      merchantConstants.ERROR_CODES.UNSUPPORTED_COUNTRY
+    );
+  }
+
+  // Update merchant profile
+  const updatedFields = {
+    currency: merchantConstants.MERCHANT_SETTINGS.COUNTRY_CURRENCY_MAP[country] || merchantConstants.MERCHANT_SETTINGS.DEFAULT_CURRENCY,
+    updated_at: new Date(),
+  };
+
+  await merchant.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.SET_MERCHANT_COUNTRY,
+    userId: merchant.user_id,
+    role: 'merchant',
+    details: { country, currency: updatedFields.currency },
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'profile',
+      merchant.preferred_language,
+      'profile.country_updated',
+      { country }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${merchant.user_id}`, 'profile:country_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    country,
+  });
+
+  logger.info('Merchant country settings updated successfully', { merchantId, country });
+  return merchant;
+});
+
+/**
+ * Manages localization settings to align with customer localization.
+ * @param {string} merchantId - Merchant ID.
+ * @param {Object} settings - Localization settings (e.g., language).
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Updated merchant profile.
+ */
+const manageLocalization = catchAsync(async (merchantId, settings, ipAddress) => {
+  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
+  if (!merchant) {
+    throw new AppError(
+      'Merchant not found',
+      404,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    );
+  }
+
+  const { language } = settings;
+
+  // Validate language
+  if (language && !['en', 'fr', 'es'].includes(language)) {
+    throw new AppError(
+      'Unsupported language',
+      400,
+      merchantConstants.ERROR_CODES.INVALID_LANGUAGE
+    );
+  }
+
+  // Update merchant profile
+  const updatedFields = {
+    preferred_language: language || merchant.preferred_language,
+    updated_at: new Date(),
+  };
+
+  await merchant.update(updatedFields);
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.MANAGE_MERCHANT_LOCALIZATION,
+    userId: merchant.user_id,
+    role: 'merchant',
+    details: { preferred_language: updatedFields.preferred_language },
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PROFILE_UPDATED,
+    message: formatMessage(
+      'merchant',
+      'profile',
+      merchant.preferred_language,
+      'profile.localization_updated',
+      { language: updatedFields.preferred_language }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: merchant.preferred_language,
+  });
+
+  // Emit real-time event
+  await socketService.emitToRoom(`merchant:${merchant.user_id}`, 'profile:localization_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    language: updatedFields.preferred_language,
+  });
+
+  logger.info('Merchant localization settings updated successfully', { merchantId });
+  return merchant;
+});
+
+/**
+ * Awards gamification points for profile completion.
+ * @param {string} merchantId - Merchant ID.
+ * @param {string} ipAddress - IP address of the request.
+ * @returns {Promise<Object>} Gamification points record.
+ */
+const trackProfileGamification = catchAsync(async (merchantId, ipAddress) => {
+  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
+  if (!merchant) {
+    throw new AppError(
+      'Merchant not found',
+      404,
+      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
+    );
+  }
+
+  const pointsRecord = await gamificationService.awardPoints({
+    userId: merchant.user_id,
+    role: 'merchant',
+    action: merchantConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.PROFILE_COMPLETION.action,
+    languageCode: merchant.preferred_language,
+  });
+
+  // Log audit event
+  await auditService.logAction({
+    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.AWARD_MERCHANT_PROFILE_POINTS,
+    userId: merchant.user_id,
+    role: 'merchant',
+    details: { points: pointsRecord.points, action: 'PROFILE_COMPLETION' },
+    ipAddress: ipAddress || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  // Notify merchant
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.GAMIFICATION_UPDATE,
+    message: formatMessage(
+      'merchant',
+      'gamification',
+      merchant.preferred_language,
+      'gamification.points_awarded',
+      { points: pointsRecord.points }
+    ),
+    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
+    languageCode: merchant.preferred_language,
+  });
+
+  logger.info('Merchant profile completion points awarded successfully', { merchantId, points: pointsRecord.points });
+  return pointsRecord;
+});
 
 module.exports = {
-  async getProfile(merchantId, includeBranches = false, token) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Verify token
-      if (!token) {
-        throw new AppError('Token is required', 401, 'MISSING_TOKEN');
-      }
-      const payload = await TokenService.verifyToken(token);
-      if (payload.merchant_id !== merchantId) {
-        throw new AppError('Unauthorized access', 403, 'UNAUTHORIZED');
-      }
-
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-
-      // Check cache
-      const cacheKey = `merchant_profile_${merchantId}_${includeBranches}`;
-      const cachedProfile = cache.get(cacheKey);
-      if (cachedProfile) {
-        logger.info('Returning cached merchant profile', { merchantId });
-        await transaction.commit();
-        return cachedProfile;
-      }
-
-      // Define include for addressRecord and branches
-      const include = [
-        {
-          as: 'addressRecord',
-          model: Address,
-          attributes: ['id', 'formattedAddress', 'latitude', 'longitude'],
-          where: {
-            user_id: { [Sequelize.Op.eq]: Sequelize.col('Merchant.user_id') }
-          },
-          required: false
-        }
-      ];
-
-      if (includeBranches) {
-        include.push({
-          as: 'branches',
-          model: MerchantBranch,
-          attributes: ['id', 'name', 'address', 'is_active'],
-          include: [
-            {
-              as: 'addressRecord',
-              model: Address,
-              attributes: ['id', 'formattedAddress', 'latitude', 'longitude'],
-              required: false
-            }
-          ]
-        });
-      }
-
-      // Fetch merchant
-      const merchant = await Merchant.findByPk(merchantId, {
-        include,
-        attributes: [
-          'id',
-          'user_id',
-          'business_name',
-          'business_type',
-          'business_type_details',
-          'address',
-          'phone_number',
-          'currency',
-          'time_zone',
-          'business_hours',
-          'notification_preferences',
-          'whatsapp_enabled',
-          'logo_url',
-          'banner_url',
-          'storefront_url',
-          'delivery_area',
-          'service_radius'
-        ],
-        transaction
-      });
-
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      // Fetch user
-      const user = await User.findByPk(merchant.user_id, {
-        attributes: ['id', 'first_name', 'last_name', 'email'],
-        transaction
-      });
-
-      // Combine results
-      const result = merchant.toJSON();
-      result.user = user ? user.toJSON() : null;
-
-      // Cache the result
-      cache.set(cacheKey, result);
-
-      await transaction.commit();
-      logger.logApiEvent('Merchant profile retrieved', { merchantId, includeBranches });
-      return result;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to retrieve merchant profile', {
-        error: error.message,
-        merchantId,
-        stack: error.stack
-      });
-      throw error instanceof AppError
-        ? error
-        : new AppError('Failed to retrieve profile', 500, 'PROFILE_RETRIEVAL_FAILED');
-    }
-  },
-
-  async updateProfile(merchantId, updateData, token) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Verify token
-      if (!token) {
-        throw new AppError('Token is required', 401, 'MISSING_TOKEN');
-      }
-      const payload = await TokenService.verifyToken(token);
-      if (payload.merchant_id !== merchantId) {
-        throw new AppError('Unauthorized access', 403, 'UNAUTHORIZED');
-      }
-
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-
-      const merchant = await Merchant.findByPk(merchantId, { transaction });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      // Validate business type details
-      if (updateData.business_type_details) {
-        const typeConfig = BUSINESS_TYPES[updateData.business_type?.toUpperCase() || merchant.business_type.toUpperCase()];
-        if (!typeConfig) {
-          throw new AppError('Invalid business type', 400, 'INVALID_BUSINESS_TYPE');
-        }
-        const { requiredFields, allowedServiceTypes, requiredLicenses } = typeConfig;
-        const details = updateData.business_type_details;
-        const missingFields = requiredFields.filter((field) => !details[field]);
-        if (missingFields.length) {
-          throw new AppError(`Missing required fields: ${missingFields.join(', ')}`, 400, 'MISSING_FIELDS');
-        }
-        if (details.service_types && details.service_types.some((s) => !allowedServiceTypes.includes(s))) {
-          throw new AppError('Invalid service types', 400, 'INVALID_SERVICE_TYPES');
-        }
-        if (details.licenses && requiredLicenses.some((l) => !details.licenses.includes(l))) {
-          throw new AppError('Missing required licenses', 400, 'MISSING_LICENSES');
-        }
-      }
-
-      // Invalidate cache
-      cache.del(`merchant_profile_${merchantId}_true`);
-      cache.del(`merchant_profile_${merchantId}_false`);
-
-      await merchant.update(updateData, { transaction });
-      await transaction.commit();
-      logger.logSecurityEvent('Merchant profile updated', { merchantId, updatedFields: Object.keys(updateData) });
-      return merchant;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to update merchant profile', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to update profile', 500, 'PROFILE_UPDATE_FAILED');
-    }
-  },
-
-  async updateNotificationPreferences(merchantId, preferences, token) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Verify token
-      if (!token) {
-        throw new AppError('Token is required', 401, 'MISSING_TOKEN');
-      }
-      const payload = await TokenService.verifyToken(token);
-      if (payload.merchant_id !== merchantId) {
-        throw new AppError('Unauthorized access', 403, 'UNAUTHORIZED');
-      }
-
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-      if (!preferences || typeof preferences !== 'object') {
-        throw new AppError('Invalid preferences format', 400, 'INVALID_PREFERENCES');
-      }
-
-      const merchant = await Merchant.findByPk(merchantId, { transaction });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      const validKeys = ['orderUpdates', 'bookingNotifications', 'customerFeedback', 'marketingMessages'];
-      const invalidKeys = Object.keys(preferences).filter((k) => !validKeys.includes(k));
-      if (invalidKeys.length) {
-        throw new AppError(`Invalid notification preferences: ${invalidKeys.join(', ')}`, 400, 'INVALID_PREFERENCES');
-      }
-
-      // Invalidate cache
-      cache.del(`merchant_profile_${merchantId}_true`);
-      cache.del(`merchant_profile_${merchantId}_false`);
-
-      await merchant.update({ notification_preferences: preferences }, { transaction });
-      await transaction.commit();
-      logger.logApiEvent('Notification preferences updated', { merchantId, preferences });
-      return merchant.notification_preferences;
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to update notification preferences', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to update preferences', 500, 'PREFERENCES_UPDATE_FAILED');
-    }
-  },
-
-  async changePassword(userId, { oldPassword, newPassword, confirmNewPassword }, clientIp, deviceId, deviceType) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Validate input
-      if (!userId || isNaN(userId)) {
-        throw new AppError('Invalid user ID', 400, 'INVALID_USER_ID');
-      }
-      if (!oldPassword || !newPassword || !confirmNewPassword) {
-        throw new AppError('All password fields are required', 400, 'MISSING_PASSWORD_FIELDS');
-      }
-
-      const user = await User.findByPk(userId, {
-        attributes: ['id', 'password'],
-        transaction
-      });
-      if (!user) {
-        throw new AppError('User not found', 404, 'USER_NOT_FOUND');
-      }
-
-      if (!user.password || !(await bcrypt.compare(oldPassword, user.password))) {
-        throw new AppError('Incorrect old password', 400, 'INVALID_PASSWORD');
-      }
-
-      if (newPassword !== confirmNewPassword) {
-        throw new AppError('New passwords do not match', 400, 'PASSWORD_MISMATCH');
-      }
-
-      const passwordValidator = require('password-validator');
-      const schema = new passwordValidator();
-      schema.is().min(8).has().uppercase().has().lowercase().has().digits().has().symbols();
-      if (!schema.validate(newPassword)) {
-        throw new AppError('New password does not meet complexity requirements', 400, 'WEAK_PASSWORD');
-      }
-
-      const history = await PasswordHistory.findAll({
-        where: { user_id: userId },
-        attributes: ['id', 'password_hash'],
-        transaction
-      });
-      const isReused = history.length > 0
-        ? await Promise.all(
-            history.map((h) => bcrypt.compare(newPassword, h.password_hash))
-          ).then((results) => results.some((r) => r))
-        : false;
-      if (isReused) {
-        throw new AppError('Cannot reuse a previous password', 400, 'PASSWORD_REUSED');
-      }
-
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(newPassword, salt);
-      await user.update({ password: hashedPassword }, { transaction });
-      await PasswordHistory.create(
-        { user_id: userId, user_type: 'merchant', password_hash: hashedPassword },
-        { transaction }
-      );
-
-      const merchant = await Merchant.findOne({ where: { user_id: userId }, transaction });
-      await merchant.update({ last_password_update: new Date() }, { transaction });
-
-      await Session.update(
-        { isActive: false },
-        { where: { userId: userId, isActive: true }, transaction }
-      );
-
-      const { accessToken, jti } = await TokenService.generateAccessToken({
-        id: user.id,
-        role: 'merchant',
-        merchant_id: merchant.id,
-        deviceId,
-        deviceType,
-      });
-
-      // Invalidate cache
-      cache.del(`merchant_profile_${merchant.id}_true`);
-      cache.del(`merchant_profile_${merchant.id}_false`);
-
-      await transaction.commit();
-      logger.logSecurityEvent('Password changed and new token issued', { userId, clientIp });
-      return { success: true, accessToken, jti };
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to change password', { error: error.message, userId, clientIp });
-      throw error instanceof AppError ? error : new AppError('Failed to change password', 500, 'PASSWORD_CHANGE_FAILED');
-    }
-  },
-
-  async updateGeolocation(merchantId, locationData, token) {
-    const transaction = await sequelize.transaction();
-    try {
-      // Verify token
-      if (!token) {
-        throw new AppError('Token is required', 401, 'MISSING_TOKEN');
-      }
-      const payload = await TokenService.verifyToken(token);
-      if (payload.merchant_id !== merchantId) {
-        throw new AppError('Unauthorized access', 403, 'UNAUTHORIZED');
-      }
-
-      // Validate input
-      if (!merchantId || isNaN(merchantId)) {
-        throw new AppError('Invalid merchant ID', 400, 'INVALID_MERCHANT_ID');
-      }
-      if (!locationData || typeof locationData !== 'object') {
-        throw new AppError('Invalid location data', 400, 'INVALID_LOCATION_DATA');
-      }
-
-      const merchant = await Merchant.findByPk(merchantId, { transaction });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      const resolvedLocation = await mapService.resolveLocation(locationData);
-      const { formattedAddress, latitude, longitude, placeId, components, countryCode } = resolvedLocation;
-
-      let addressRecord = await Address.findOne({
-        where: { placeId, user_id: merchant.user_id },
-        transaction
-      });
-
-      if (!addressRecord) {
-        addressRecord = await Address.create({
-          user_id: merchant.user_id,
-          formattedAddress,
-          placeId,
-          latitude,
-          longitude,
-          components,
-          countryCode,
-          validationStatus: 'VALID',
-          validatedAt: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }, { transaction });
-      }
-
-      await merchant.update({
-        address: formattedAddress,
-        location: { type: 'Point', coordinates: [longitude, latitude] },
-        address_id: addressRecord.id,
-      }, { transaction });
-
-      // Invalidate cache
-      cache.del(`merchant_profile_${merchantId}_true`);
-      cache.del(`merchant_profile_${merchantId}_false`);
-
-      await transaction.commit();
-      logger.logApiEvent('Merchant geolocation updated', { merchantId, formattedAddress });
-      return { address: addressRecord, merchant };
-    } catch (error) {
-      await transaction.rollback();
-      logger.logErrorEvent('Failed to update geolocation', { error: error.message, merchantId });
-      throw error instanceof AppError ? error : new AppError('Failed to update geolocation', 500, 'GEOLOCATION_UPDATE_FAILED');
-    }
-  },
+  updateBusinessDetails,
+  setCountrySettings,
+  manageLocalization,
+  trackProfileGamification,
 };

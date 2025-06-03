@@ -1,7 +1,10 @@
 'use strict';
-const { Model } = require('sequelize');
+const { Model, DataTypes } = require('sequelize');
 const libphonenumber = require('google-libphonenumber');
 const bcrypt = require('bcryptjs');
+const authConstants = require('@constants/common/authConstants');
+const adminCoreConstants = require('@constants/admin/adminCoreConstants');
+const staffConstants = require('@constants/staff/staffSystemConstants');
 
 // Utility function for phone number validation
 const validatePhoneNumber = (value) => {
@@ -18,63 +21,41 @@ const validatePhoneNumber = (value) => {
   }
 };
 
-module.exports = (sequelize, DataTypes) => {
+module.exports = (sequelize) => {
   class User extends Model {
     static associate(models) {
-      this.belongsTo(models.Role, {
-        foreignKey: 'role_id',
-        as: 'role',
-      });
-      this.hasOne(models.Customer, {
-        foreignKey: 'user_id',
-        as: 'customer_profile',
-      });
-      this.hasOne(models.Merchant, {
-        foreignKey: 'user_id',
-        as: 'merchant_profile',
-      });
-      this.hasOne(models.Staff, {
-        foreignKey: 'user_id',
-        as: 'staff_profile',
-      });
-      this.hasOne(models.Driver, {
-        foreignKey: 'user_id',
-        as: 'driver_profile',
-      });
-      this.belongsTo(models.User, {
-        as: 'managed_by',
-        foreignKey: 'manager_id',
-      });
-      this.hasMany(models.Notification, {
-        foreignKey: 'user_id',
-        as: 'notifications',
-      });
-      this.hasMany(models.Payment, {
-        foreignKey: 'customer_id',
-        as: 'customer_payments',
-      });
-      this.hasMany(models.Payment, {
-        foreignKey: 'driver_id',
-        as: 'driver_payments',
-      });
-      this.hasMany(models.Report, {
-        foreignKey: 'generated_by',
-        as: 'reports',
-      });
-      this.hasMany(models.PasswordHistory, {
-        foreignKey: 'user_id',
-        as: 'password_history',
-      });
-
-      this.hasOne(models.admin, {
-        foreignKey: 'user_id',
-        as: 'admin_profile',
-      });
-
-      this.hasMany(models.Address, {
-        foreignKey: 'user_id',
-        as: 'addresses',
-      });
+      // Role association
+      this.belongsTo(models.Role, { foreignKey: 'role_id', as: 'role' });
+      // Admin profile
+      this.hasOne(models.admin, { foreignKey: 'user_id', as: 'admin_profile' });
+      // Customer, Merchant, Staff, Driver profiles
+      this.hasOne(models.Customer, { foreignKey: 'user_id', as: 'customer_profile' });
+      this.hasOne(models.Merchant, { foreignKey: 'user_id', as: 'merchant_profile' });
+      this.hasOne(models.Staff, { foreignKey: 'user_id', as: 'staff_profile' });
+      this.hasOne(models.Driver, { foreignKey: 'user_id', as: 'driver_profile' });
+      // Wallet association
+      this.hasOne(models.Wallet, { foreignKey: 'user_id', as: 'wallet' });
+      // User management
+      this.belongsTo(models.User, { as: 'managed_by', foreignKey: 'manager_id' });
+      // Notifications
+      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
+      // Payments
+      this.hasMany(models.Payment, { foreignKey: 'customer_id', as: 'customer_payments' });
+      this.hasMany(models.Payment, { foreignKey: 'driver_id', as: 'driver_payments' });
+      // Reports
+      this.hasMany(models.Report, { foreignKey: 'generated_by', as: 'reports' });
+      // Password history
+      this.hasMany(models.PasswordHistory, { foreignKey: 'user_id', as: 'password_history' });
+      // Sessions
+      this.hasMany(models.Session, { foreignKey: 'user_id', as: 'sessions' });
+      // Audit logs
+      this.hasMany(models.AuditLog, { foreignKey: 'user_id', as: 'audit_logs' });
+      // MFA tokens
+      this.hasMany(models.mfaTokens, { foreignKey: 'user_id', as: 'mfaTokens' });
+      // Gamification points
+      this.hasMany(models.GamificationPoints, { foreignKey: 'user_id', as: 'gamificationPoints' });
+      // Verifications
+      this.hasMany(models.Verification, { foreignKey: 'user_id', as: 'verifications' });
     }
 
     getFullName() {
@@ -111,7 +92,7 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
       email: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(255),
         allowNull: false,
         unique: { msg: 'Email address already in use!' },
         validate: {
@@ -127,12 +108,12 @@ module.exports = (sequelize, DataTypes) => {
             const passwordValidator = require('password-validator');
             const schema = new passwordValidator();
             schema
-              .is().min(8)
-              .is().max(100)
-              .has().uppercase()
-              .has().lowercase()
-              .has().digits()
-              .has().symbols();
+              .is().min(authConstants.PASSWORD_CONSTANTS.MIN_LENGTH)
+              .is().max(authConstants.PASSWORD_CONSTANTS.MAX_LENGTH)
+              .has().uppercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.UPPERCASE ? 1 : 0)
+              .has().lowercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.LOWERCASE ? 1 : 0)
+              .has().digits(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.NUMBER ? 1 : 0)
+              .has().symbols(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.SPECIAL_CHAR ? 1 : 0);
             if (!schema.validate(value)) {
               throw new Error('Password does not meet complexity requirements');
             }
@@ -142,82 +123,56 @@ module.exports = (sequelize, DataTypes) => {
       role_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'roles',
-          key: 'id',
-        },
+        references: { model: 'roles', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'RESTRICT',
       },
-      google_location: {
-        type: DataTypes.JSON,
-        allowNull: true,
+      preferred_language: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+        validate: {
+          isIn: {
+            args: [staffConstants.STAFF_SETTINGS.SUPPORTED_LANGUAGES],
+            msg: 'Invalid language',
+          },
+        },
       },
-      detected_location: {
-        type: DataTypes.JSONB,
-        allowNull: true,
-        comment: 'Automatically detected location from IP/GPS',
-      },
-      manual_location: {
-        type: DataTypes.JSONB,
-        allowNull: true,
-        comment: 'User-specified location override',
-      },
-      location_source: {
-        type: DataTypes.ENUM('ip', 'gps', 'manual'),
-        allowNull: true,
-        comment: 'Source of the current location data',
-      },
-      location_updated_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
+      google_location: { type: DataTypes.JSON, allowNull: true },
+      detected_location: { type: DataTypes.JSONB, allowNull: true, comment: 'Automatically detected location from IP/GPS' },
+      manual_location: { type: DataTypes.JSONB, allowNull: true, comment: 'User-specified location override' },
+      location_source: { type: DataTypes.ENUM('ip', 'gps', 'manual'), allowNull: true, comment: 'Source of the current location data' },
+      location_updated_at: { type: DataTypes.DATE, allowNull: true },
       phone: {
         type: DataTypes.STRING,
         unique: true,
         allowNull: true,
-        validate: {
-          isPhoneNumber(value) {
-            validatePhoneNumber(value);
-          },
-        },
+        validate: { isPhoneNumber: validatePhoneNumber },
       },
       country: {
-        type: DataTypes.ENUM('malawi', 'zambia', 'mozambique', 'tanzania'),
+        type: DataTypes.STRING,
         allowNull: false,
         validate: {
           notEmpty: { msg: 'Country is required' },
           isIn: {
-            args: [['malawi', 'zambia', 'mozambique', 'tanzania']],
-            msg: 'Country must be one of malawi, zambia, mozambique, tanzania',
+            args: [authConstants.AUTH_SETTINGS.SUPPORTED_COUNTRIES],
+            msg: 'Invalid country',
           },
         },
       },
       merchant_type: {
-        type: DataTypes.ENUM('grocery', 'restaurant'),
+        type: DataTypes.ENUM('restaurant', 'butcher', 'grocery', 'cafe', 'bakery'),
         allowNull: true,
-        validate: {
-          isIn: {
-            args: [['grocery', 'restaurant']],
-            msg: 'Merchant type must be either grocery or restaurant',
-          },
-        },
       },
-      is_verified: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-      },
+      is_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
       status: {
-        type: DataTypes.ENUM('active', 'inactive', 'suspended'),
-        defaultValue: 'active',
+        type: DataTypes.ENUM(...Object.values(authConstants.USER_STATUSES)),
+        defaultValue: authConstants.USER_STATUSES.ACTIVE,
       },
       manager_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'users',
-          key: 'id',
-        },
+        references: { model: 'users', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         validate: {
@@ -228,14 +183,17 @@ module.exports = (sequelize, DataTypes) => {
           },
         },
       },
-      two_factor_secret: {
-        type: DataTypes.STRING,
+      two_factor_secret: { type: DataTypes.STRING, allowNull: true },
+      mfa_method: {
+        type: DataTypes.ENUM(...Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS)),
         allowNull: true,
       },
-      password_reset_token: {
-        type: DataTypes.STRING,
-        allowNull: true,
+      mfa_status: {
+        type: DataTypes.ENUM(...Object.values(authConstants.MFA_CONSTANTS.MFA_STATUSES)),
+        defaultValue: authConstants.MFA_CONSTANTS.MFA_STATUSES.DISABLED,
       },
+      mfa_backup_codes: { type: DataTypes.JSONB, allowNull: true, comment: 'Encrypted backup codes for MFA' },
+      password_reset_token: { type: DataTypes.STRING, allowNull: true },
       password_reset_expires: {
         type: DataTypes.DATE,
         allowNull: true,
@@ -247,28 +205,54 @@ module.exports = (sequelize, DataTypes) => {
           },
         },
       },
-      avatar_url: {
-        type: DataTypes.STRING,
+      avatar_url: { type: DataTypes.STRING, allowNull: true },
+      last_login_at: { type: DataTypes.DATE, allowNull: true },
+      last_password_change: { type: DataTypes.DATE, allowNull: true, comment: 'Tracks last password change' },
+      failed_login_attempts: { type: DataTypes.INTEGER, defaultValue: 0, comment: 'Tracks failed login attempts' },
+      lockout_until: { type: DataTypes.DATE, allowNull: true, comment: 'Account lockout duration' },
+      notification_preferences: {
+        type: DataTypes.JSONB,
         allowNull: true,
+        defaultValue: {
+          email: true,
+          sms: false,
+          push: false,
+          whatsapp: false,
+        },
+        validate: {
+          isValidPreferences(value) {
+            const allowed = ['email', 'sms', 'push', 'whatsapp'];
+            if (value && Object.keys(value).some(key => !allowed.includes(key))) {
+              throw new Error('Invalid notification preference');
+            }
+          },
+        },
       },
-      last_login_at: {
-        type: DataTypes.DATE,
+      privacy_settings: {
+        type: DataTypes.JSONB,
         allowNull: true,
+        defaultValue: {
+          location_visibility: 'app_only',
+          data_sharing: 'analytics',
+        },
+        validate: {
+          isValidPrivacySettings(value) {
+            const allowedLocation = ['app_only', 'anonymized', 'none'];
+            const allowedDataSharing = ['analytics', 'marketing', 'none'];
+            if (value) {
+              if (!allowedLocation.includes(value.location_visibility)) {
+                throw new Error('Invalid location visibility setting');
+              }
+              if (!allowedDataSharing.includes(value.data_sharing)) {
+                throw new Error('Invalid data sharing setting');
+              }
+            }
+          },
+        },
       },
-      created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      },
-      updated_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      },
-      deleted_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      deleted_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,
@@ -278,22 +262,23 @@ module.exports = (sequelize, DataTypes) => {
       paranoid: true,
       defaultScope: {
         attributes: {
-          exclude: ['password', 'two_factor_secret', 'password_reset_token', 'password_reset_expires'],
+          exclude: ['password', 'two_factor_secret', 'mfa_backup_codes', 'password_reset_token', 'password_reset_expires'],
         },
       },
       hooks: {
         beforeCreate: async (user) => {
           if (user.password) {
-            const salt = await bcrypt.genSalt(10);
+            const salt = await bcrypt.genSalt(authConstants.PASSWORD_CONSTANTS.SALT_ROUNDS);
             user.password = await bcrypt.hash(user.password, salt);
+            user.last_password_change = new Date();
           }
         },
         beforeUpdate: async (user) => {
           if (user.changed('password')) {
-            // Only hash if not already a bcrypt hash
             if (!user.password.match(/^\$2[aby]\$/)) {
-              const salt = await bcrypt.genSalt(10);
+              const salt = await bcrypt.genSalt(authConstants.PASSWORD_CONSTANTS.SALT_ROUNDS);
               user.password = await bcrypt.hash(user.password, salt);
+              user.last_password_change = new Date();
             }
           }
         },

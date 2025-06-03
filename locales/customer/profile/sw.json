@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Wasifu wako umetengenezwa kwa mafanikio, {name}.",
+    "updated": "Wasifu wako umehaririwa kwa mafanikio, {name}.",
+    "language_updated": "Lugha ya kitanzi chako imekuwepo ku {languageCode}.",
+    "dietary_updated": "Mapendelezo yako ya chakula yamehaririwa kwa mafanikio.",
+    "points_awarded": "Umepokea hisabati {points} kwa kuteketeza wasifu wako.",
+    "wallet_settings_updated": "Mipangilio ya mkoba wako imehaririwa kwa mafanikio.",
+    "payment_method_added": "Njia ya malipo ({methodType}) imeongezwa kwenye mkoba wako.",
+    "withdrawal_processed": "Kutoa {amount} {currency} kimefanikiwa kutendwa."
+  }
+}

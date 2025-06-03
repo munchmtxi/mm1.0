@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "created": "Moto wako umapoto bwino, {name}.",
+    "updated": "Moto wako ulikhala bwino, {name}.",
+    "language_updated": "Chilolelo chake cha mtandau chimachitidwe ku {languageCode}.",
+    "dietary_updated": "Zochokera zake za ntchito zachitidwe bwino.",
+    "points_awarded": "Mupepete {points} mapulogalamu onse moto yanu imapoto bwino.",
+    "wallet_settings_updated": "Zosindikira za pokera yanu zikhala bwino.",
+    "payment_method_added": "Mwayi wa kulipira ({methodType}) wadzipoto mu pokera yanu.",
+    "withdrawal_processed": "Kulipitsa {amount} {currency} wachitidwe bwino."
+  }
+}

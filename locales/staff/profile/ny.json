@@ -1,0 +1,24 @@
+{
+  "profile": {
+    "created": "Mbiri yanu yothandizira idapangidwa bwino, {name}.",
+    "bank_details_updated": "Zambiri za banki zasinthidwa bwino.",
+    "branch_updated": "Gulu lomwe mwapatsidwa lawongolera kukhala {branchName}.",
+    "geofence_updated": "Malo anu owongolera atha kukhala {geofenceName}.",
+    "country_updated": "Zikhazikiko za dziko zasinthidwa kukhala {country}.",
+    "wallet_settings_updated": "Zikhazikiko za wallet zasinthidwa bwino.",
+    "payment_method_added": "Njira yolipirira ({methodType}) yaphatikizidwa mu wallet yanu.",
+    "withdrawal_processed": "Kukweza kwa {amount} {currency} kwachitika bwino.",
+    "error": {
+      "invalid_email": "Imelo yomwe yaperekedwa si yovomerezeka.",
+      "invalid_phone": "Nambala yafoni yomwe yaperekedwa si yovomerezeka.",
+      "invalid_position": "Udindo womwe wasankhidwa suwonetsa mdokezo.",
+      "invalid_certifications": "Chimodzi kapena zingapo mwa ziwerengero sizovomerezeka.",
+      "missing_certifications": "Zilolezo zofunikira zilipo: {certifications}.",
+      "invalid_branch": "Gulu losankhidwa silovomerezeka kapena sililolezedwa.",
+      "invalid_geofence": "Malo owongolera omwe wasankhidwa sali ovomerezeka.",
+      "invalid_currency": "Chiyero cha banki muyenera kufanana ndi cha malonda ({currency}).",
+      "incomplete_profile": "Profaili siyikwanira: {fields} zidasowa.",
+      "incomplete_branch_profile": "Maola ogwira ntchito a gulu sanakwaniritsidwe."
+    }
+  }
+}

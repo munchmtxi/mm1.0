@@ -1,0 +1,5 @@
+{
+  "staff": {
+    "shift_announcement": "Shift update: {content} for {date}."
+  }
+}

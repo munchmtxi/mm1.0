@@ -1,140 +1,164 @@
 'use strict';
 
+/**
+ * Customer Profile Socket Handler
+ * Handles socket events for customer profile operations, using event constants from profileEvents.js.
+ * Manages real-time updates, country/language settings, dietary preferences, profile retrieval,
+ * and gamification points awarding.
+ *
+ * Last Updated: May 15, 2025
+ */
+
 const profileService = require('@services/customer/profile/profileService');
+const socketService = require('@services/common/socketService');
 const profileEvents = require('@socket/events/customer/profile/profileEvents');
-const { PROFILE } = require('@constants/customer/profileConstants');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const catchAsyncSocket = require('@utils/catchAsyncSocket');
-const tokenService = require('@services/common/tokenService');
+const customerConstants = require('@constants/customer/customerConstants');
 
-const authenticateSocket = async (socket, next) => {
-  const token = socket.handshake.auth.token?.replace('Bearer ', '');
-  if (!token) {
-    logger.warn('No token provided for socket authentication', { socketId: socket.id });
-    return next(new AppError('Authentication required', 401, 'UNAUTHORIZED'));
+/**
+ * Handles profile update socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId and profileData.
+ */
+const handleProfileUpdate = async (socket, { userId, profileData }) => {
+  if (!userId || !profileData) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
   }
 
-  try {
-    const payload = await tokenService.verifyToken(token);
-    socket.user = { id: payload.id, role: payload.role };
-    logger.info('Socket authenticated', { socketId: socket.id, userId: socket.user.id });
-    next();
-  } catch (error) {
-    logger.error('Socket authentication failed', { socketId: socket.id, error: error.message });
-    next(error);
-  }
+  const customer = await profileService.updateProfile(userId, profileData);
+  await socketService.emitToRoom(`customer:${userId}`, profileEvents.PROFILE_UPDATED, {
+    userId,
+    customerId: customer.id,
+    updatedFields: profileData,
+  });
+
+  socket.emit(profileEvents.PROFILE_UPDATED, { success: true, customer });
 };
 
-const validateSocketData = (data, type) => {
-  const errors = [];
-  if (type === 'profile') {
-    if (data.first_name && (typeof data.first_name !== 'string' || data.first_name.length < 2 || data.first_name.length > 50)) {
-      errors.push('First name must be a string between 2 and 50 characters');
-    }
-    if (data.last_name && (typeof data.last_name !== 'string' || data.last_name.length < 2 || data.last_name.length > 50)) {
-      errors.push('Last name must be a string between 2 and 50 characters');
-    }
-    if (data.phone && !/^\+?\d{10,15}$/.test(data.phone)) {
-      errors.push('Invalid phone number');
-    }
-    if (data.socialSettings) {
-      if (data.socialSettings.profileVisibility && !Object.values(PROFILE.VISIBILITY).includes(data.socialSettings.profileVisibility)) {
-        errors.push(`Profile visibility must be one of: ${Object.values(PROFILE.VISIBILITY).join(', ')}`);
-      }
-      if (data.socialSettings.friendRequests && !Object.values(PROFILE.FRIEND_REQUEST_STATUS).includes(data.socialSettings.friendRequests)) {
-        errors.push(`Friend request status must be one of: ${Object.values(PROFILE.FRIEND_REQUEST_STATUS).join(', ')}`);
-      }
-      if (data.socialSettings.shareActivity !== undefined && typeof data.socialSettings.shareActivity !== 'boolean') {
-        errors.push('Share activity must be a boolean');
-      }
-    }
-    if (data.privacySettings) {
-      if (data.privacySettings.showOnlineStatus !== undefined && typeof data.privacySettings.showOnlineStatus !== 'boolean') {
-        errors.push('Show online status must be a boolean');
-      }
-      if (data.privacySettings.allowPublicPosts !== undefined && typeof data.privacySettings.allowPublicPosts !== 'boolean') {
-        errors.push('Allow public posts must be a boolean');
-      }
-      if (data.privacySettings.shareProfileDetails && !Object.values(PROFILE.VISIBILITY).includes(data.privacySettings.shareProfileDetails)) {
-        errors.push(`Share profile details must be one of: ${Object.values(PROFILE.VISIBILITY).join(', ')}`);
-      }
-      if (data.privacySettings.allowFriendSuggestions !== undefined && typeof data.privacySettings.allowFriendSuggestions !== 'boolean') {
-        errors.push('Allow friend suggestions must be a boolean');
-      }
-    }
-  } else if (type === 'friend') {
-    if (!data.action || !Object.values(PROFILE.ACTIONS.FRIEND).includes(data.action)) {
-      errors.push(`Action must be one of: ${Object.values(PROFILE.ACTIONS.FRIEND).join(', ')}`);
-    }
-    if (!data.friendId || !Number.isInteger(data.friendId) || data.friendId < 1) {
-      errors.push('Friend ID must be a valid user ID');
-    }
-  } else if (type === 'address') {
-    if (!data.action || !Object.values(PROFILE.ACTIONS.ADDRESS).includes(data.action)) {
-      errors.push(`Action must be one of: ${Object.values(PROFILE.ACTIONS.ADDRESS).join(', ')}`);
-    }
-    if (data.action === PROFILE.ACTIONS.ADDRESS.ADD && (!data.addressData || typeof data.addressData !== 'object')) {
-      errors.push('Address data is required for add action');
-    }
-    if ([PROFILE.ACTIONS.ADDRESS.REMOVE, PROFILE.ACTIONS.ADDRESS.SET_DEFAULT].includes(data.action) &&
-        (!data.addressData?.id || !Number.isInteger(data.addressData.id) || data.addressData.id < 1)) {
-      errors.push('Address ID is required for remove or setDefault actions');
-    }
+/**
+ * Handles set country socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId and countryCode.
+ */
+const handleSetCountry = async (socket, { userId, countryCode }) => {
+  if (!userId || !countryCode) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
   }
-  if (errors.length > 0) {
-    throw new AppError('Validation failed', 400, 'VALIDATION_FAILED', errors);
-  }
+
+  const customer = await profileService.setCountry(userId, countryCode);
+  await socketService.emitToRoom(`customer:${userId}`, profileEvents.COUNTRY_UPDATED, {
+    userId,
+    customerId: customer.id,
+    countryCode,
+  });
+
+  socket.emit(profileEvents.COUNTRY_UPDATED, { success: true, customer });
 };
 
-const setupProfileHandlers = (io, socket) => {
-  logger.info('Setting up profile socket handlers', { socketId: socket.id, userId: socket.user?.id });
+/**
+ * Handles set language socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId and languageCode.
+ */
+const handleSetLanguage = async (socket, { userId, languageCode }) => {
+  if (!userId || !languageCode) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
+  }
 
-  socket.on(
-    'profile:update',
-    catchAsyncSocket(async (data) => {
-      validateSocketData(data, 'profile');
-      const userId = socket.user.id;
-      const updatedProfile = await profileService.updateProfile(userId, data);
-      socket.emit('profile:update:success', { status: 'success', data: updatedProfile });
-      profileEvents.emitProfileUpdated(io, userId, Object.keys(data));
-    }, socket)
-  );
+  const customer = await profileService.setLanguage(userId, languageCode);
+  await socketService.emitToRoom(`customer:${userId}`, profileEvents.LANGUAGE_UPDATED, {
+    userId,
+    customerId: customer.id,
+    languageCode,
+  });
 
-  socket.on(
-    'friend:manage',
-    catchAsyncSocket(async (data) => {
-      validateSocketData(data, 'friend');
-      const userId = socket.user.id;
-      const { action, friendId } = data;
-      const updatedConnections = await profileService.manageFriends(userId, action, friendId);
-      socket.emit('friend:manage:success', { status: 'success', data: updatedConnections });
-
-      if (action === PROFILE.ACTIONS.FRIEND.ADD) {
-        profileEvents.emitFriendRequestSent(io, userId, farmerId);
-      } else if (action === PROFILE.ACTIONS.FRIEND.ACCEPT) {
-        profileEvents.emitFriendRequestAccepted(io, userId, friendId);
-      } else if (action === PROFILE.ACTIONS.FRIEND.REJECT) {
-        profileEvents.emitFriendRequestRejected(io, userId, friendId);
-      } else if (action === PROFILE.ACTIONS.FRIEND.REMOVE) {
-        profileEvents.emitFriendRemoved(io, userId, friendId);
-      } else if (action === PROFILE.ACTIONS.FRIEND.BLOCK) {
-        profileEvents.emitFriendBlocked(io, userId, friendId);
-      }
-    }, socket)
-  );
-
-  socket.on(
-    'address:manage',
-    catchAsyncSocket(async (data) => {
-      validateSocketData(data, 'address');
-      const userId = socket.user.id;
-      const { action, addressData } = data;
-      const savedAddresses = await profileService.manageAddresses(userId, action, addressData);
-      socket.emit('address:manage:success', { status: 'success', data: savedAddresses });
-      profileEvents.emitAddressUpdated(io, userId, action);
-    }, socket)
-  );
+  socket.emit(profileEvents.LANGUAGE_UPDATED, { success: true, customer });
 };
 
-module.exports = { setupProfileHandlers, authenticateSocket };
+/**
+ * Handles set dietary preferences socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId and preferences.
+ */
+const handleSetDietaryPreferences = async (socket, { userId, preferences }) => {
+  if (!userId || !preferences) {
+    throw new AppError(
+      'Missing required fields',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
+  }
+
+  const customer = await profileService.setDietaryPreferences(userId, preferences);
+  await socketService.emitToRoom(`customer:${userId}`, profileEvents.DIETARY_UPDATED, {
+    userId,
+    customerId: customer.id,
+    preferences,
+  });
+
+  socket.emit(profileEvents.DIETARY_UPDATED, { success: true, customer });
+};
+
+/**
+ * Handles profile get socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId.
+ */
+const handleGetProfile = async (socket, { userId }) => {
+  if (!userId) {
+    throw new AppError(
+      'Missing user ID',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
+  }
+
+  const customer = await profileService.getProfile(userId);
+  socket.emit(profileEvents.PROFILE_GET, { success: true, customer });
+};
+
+/**
+ * Handles award profile points socket event.
+ * @param {Object} socket - Socket instance.
+ * @param {Object} payload - Contains userId.
+ */
+const handleAwardProfilePoints = async (socket, { userId }) => {
+  if (!userId) {
+    throw new AppError(
+      'Missing user ID',
+      400,
+      customerConstants.ERROR_CODES.INVALID_CUSTOMER
+    );
+  }
+
+  const pointsRecord = await profileService.awardProfilePoints(userId);
+  await socketService.emitToRoom(`customer:${userId}`, profileEvents.POINTS_AWARDED, {
+    userId,
+    customerId: pointsRecord.customerId,
+    points: pointsRecord.points,
+  });
+
+  socket.emit(profileEvents.POINTS_AWARDED, { success: true, pointsRecord });
+};
+
+module.exports = {
+  handleProfileUpdate,
+  handleSetCountry,
+  handleSetLanguage,
+  handleSetDietaryPreferences,
+  handleGetProfile,
+  handleAwardProfilePoints,
+};

@@ -1,0 +1,21 @@
+{
+  "eventManagement": {
+    "eventCreated": "Event {{title}} created successfully",
+    "servicesManaged": "Managed {{serviceCount}} services for event {{eventId}}",
+    "chatEnabled": "Group chat enabled for event {{eventTitle}}",
+    "pointsAwarded": "Awarded {{points}} points for event participation",
+    "billSplitRequest": "Split payment of {{amount}} {{currency}} requested for event {{eventTitle}}",
+    "errors": {
+      "eventNotFound": "Event not found or cancelled",
+      "invalidMerchant": "Invalid merchant",
+      "invalidCustomer": "Invalid customer",
+      "invalidParticipant": "Invalid participant",
+      "invalidService": "Invalid service",
+      "maxParticipantsExceeded": "Maximum participants exceeded",
+      "maxServicesExceeded": "Maximum services exceeded",
+      "invalidEvent": "Invalid event details",
+      "invalidPaymentType": "Invalid payment type",
+      "insufficientFunds": "Insufficient funds for payment"
+    }
+  }
+}

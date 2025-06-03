@@ -1,17 +1,22 @@
+// src/routes/index.js (main)
 'use strict';
-
 const express = require('express');
 const router = express.Router();
-const merchantProfileRoutes = require('@routes/merchant/profile/profileRoutes');
-const customerProfileRoutes = require('@routes/customer/profile/profileRoutes');
-const driverProfileRoutes = require('@routes/driver/profile/profileRoutes');
-const staffProfileRoutes = require('@routes/staff/profile/staffProfileRoutes');
-const adminProfileRoutes = require('@routes/admin/profile/adminProfileRoutes');
 
-router.use('/merchant', merchantProfileRoutes);
-router.use('/customer', customerProfileRoutes);
-router.use('/driver', driverProfileRoutes);
-router.use('/staff', staffProfileRoutes);
-router.use('/admin', adminProfileRoutes);
+// Import domain routers
+const commonRoutes = require('./common');
+const adminRoutes = require('./admin');
+const customerRoutes = require('./customer');
+const driverRoutes = require('./driver');
+const merchantRoutes = require('./merchant');
+const staffRoutes = require('./staff');
+
+// Mount at base paths
+router.use('/common', commonRoutes);
+router.use('/admin-api', adminRoutes);
+router.use('/customers', customerRoutes);
+router.use('/drivers', driverRoutes);
+router.use('/merchants', merchantRoutes);
+router.use('/staff', staffRoutes);
 
 module.exports = router;
