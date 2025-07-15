@@ -1,6 +1,10 @@
 'use strict';
 
+/**
+ * Socket event constants for customer tip module
+ */
+
 module.exports = {
-  TIP_SENT: 'tip:sent',
-  TIP_UPDATED: 'tip:updated',
+  TIP_RECEIVED: 'TIP_RECEIVED',
+  TIP_UPDATED: 'TIP_UPDATED',
 };

@@ -1,0 +1,27 @@
+
+{
+  "staff": {
+    "shift_announcement": "Shift announcement: {content} for {date}",
+    "training_assigned": "New training assigned: {category}",
+    "performance_points_awarded": "You earned {points} points for performance!",
+    "role_assigned": "Role {role} assigned successfully",
+    "permissions_updated": "Permissions updated: {permissions}",
+    "compliance_verified": "Role compliance verified, no issues found",
+    "compliance_failed": "Role compliance failed, missing certifications: {missingCerts}",
+    "schedule_created": "New shift created: {shiftType} on {date}",
+    "shift_reminder": "Reminder: Your {shiftType} shift on {date}",
+    "schedule_updated": "Shift updated: {shiftType} on {date}",
+    "task_allocated": "New task assigned: {taskType}, due by {dueDate}",
+    "task_delayed": "Task {taskType} is delayed, due on {dueDate}",
+    "task_points_awarded": "You earned {points} points for task completion!",
+    "errors": {
+      "INVALID_STAFF_TYPE": "Invalid staff type provided",
+      "STAFF_NOT_FOUND": "Staff member not found",
+      "INVALID_BRANCH": "Invalid branch or channel",
+      "INVALID_SHIFT": "Invalid shift details",
+      "INVALID_CERTIFICATION": "Invalid training category",
+      "PERMISSION_DENIED": "Invalid or unauthorized permissions",
+      "TASK_ASSIGNMENT_FAILED": "Task assignment failed"
+    }
+  }
+}

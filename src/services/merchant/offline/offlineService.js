@@ -1,297 +1,314 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\services\merchant\offline\offlineService.js
 'use strict';
 
-const { sequelize, User, Merchant, MerchantBranch, Order, Booking, OfflineCache, Customer } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const customerConstants = require('@constants/customerConstants');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const gamificationService = require('@services/common/gamificationService');
-const { formatMessage } = require('@utils/localization');
-const AppError = require('@utils/AppError');
-const { handleServiceError } = require('@utils/errorHandling');
+const { sequelize, User, Merchant, MerchantBranch, Order, Booking, ParkingBooking, OfflineCache, Customer, Wallet, WalletTransaction, Staff, Table, Shift, SupportTicket } = require('@models');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const mtablesConstants = require('@constants/common/mtablesConstants');
+const mparkConstants = require('@constants/common/mparkConstants');
+const staffConstants = require('@constants/staff/staffConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
+const { handleServiceError } = require('@utils/errorHandling');
 
-class OfflineService {
-  static async cacheOrders(restaurantId, orders, ipAddress) {
-    const transaction = await sequelize.transaction();
+const cacheOrders = async (restaurantId, orders) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!merchant || !merchant.merchant) {
+      throw new AppError('Merchant not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
 
-    try {
-      const merchant = await User.findByPk(restaurantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Merchant, as: 'merchant_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant.id }, transaction });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    for (const order of orders) {
+      if (!order.items || !order.total_amount || !order.customer_id || !munchConstants.ORDER_CONSTANTS.ORDER_TYPES.includes(order.order_type)) {
+        throw new AppError('Invalid order data', 400, munchConstants.ERROR_CODES[4]);
       }
-
-      const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant_profile.id }, transaction });
-      if (!branch) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidBranch'), 404, merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND);
-      }
-
-      for (const order of orders) {
-        if (!order.items || !order.total_amount || !order.customer_id) {
-          throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidOrderData'), 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
-        }
-        await OfflineCache.create({
+      await OfflineCache.create(
+        {
           merchant_id: restaurantId,
           branch_id: branch.id,
           data_type: 'order',
           data: order,
           status: 'pending',
-        }, { transaction });
-      }
-
-      const message = formatMessage(merchant.preferred_language, 'offline.ordersCached', { count: orders.length });
-      await notificationService.createNotification({
-        userId: restaurantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: restaurantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId: restaurantId, orderCount: orders.length },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`offline:ordersCached:${restaurantId}`, { merchantId: restaurantId, orderCount: orders.length });
-
-      await transaction.commit();
-      logger.info(`Cached ${orders.length} orders for merchant ${restaurantId}`);
-      return { merchantId: restaurantId, orderCount: orders.length };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('cacheOrders', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+        },
+        { transaction },
+      );
     }
+
+    await transaction.commit();
+    logger.logApiEvent(`Cached ${orders.length} orders for merchant ${restaurantId}`, { type: 'order_cache' });
+    return { merchantId: restaurantId, orderCount: orders.length };
+  } catch (error) {
+    await transaction.rollback();
+    logger.logErrorEvent('Error caching orders', { error: error.message, restaurantId });
+    throw handleServiceError('cacheOrders', error, munchConstants.ERROR_CODES[4]);
   }
+};
 
-  static async cacheBookings(restaurantId, bookings, ipAddress) {
-    const transaction = await sequelize.transaction();
+const cacheBookings = async (restaurantId, bookings) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!merchant || !merchant.merchant) {
+      throw new AppError('Merchant not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
 
-    try {
-      const merchant = await User.findByPk(restaurantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Merchant, as: 'merchant_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant.id }, transaction });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    for (const booking of bookings) {
+      if (
+        !booking.booking_date ||
+        !booking.booking_time ||
+        !booking.customer_id ||
+        !mtablesConstants.BOOKING_TYPES.includes(booking.booking_type)
+      ) {
+        throw new AppError('Invalid booking data', 400, mtablesConstants.ERROR_TYPES[0]);
       }
-
-      const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant_profile.id }, transaction });
-      if (!branch) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidBranch'), 404, merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND);
-      }
-
-      for (const booking of bookings) {
-        if (!booking.booking_date || !booking.booking_time || !booking.customer_id) {
-          throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidBookingData'), 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
-        }
-        await OfflineCache.create({
+      await OfflineCache.create(
+        {
           merchant_id: restaurantId,
           branch_id: branch.id,
           data_type: 'booking',
           data: booking,
           status: 'pending',
-        }, { transaction });
-      }
-
-      const message = formatMessage(merchant.preferred_language, 'offline.bookingsCached', { count: bookings.length });
-      await notificationService.createNotification({
-        userId: restaurantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: restaurantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId: restaurantId, bookingCount: bookings.length },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`offline:bookingsCached:${restaurantId}`, { merchantId: restaurantId, bookingCount: bookings.length });
-
-      await transaction.commit();
-      logger.info(`Cached ${bookings.length} bookings for merchant ${restaurantId}`);
-      return { merchantId: restaurantId, bookingCount: bookings.length };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('cacheBookings', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+        },
+        { transaction },
+      );
     }
+
+    await transaction.commit();
+    logger.logApiEvent(`Cached ${bookings.length} bookings for merchant ${restaurantId}`, { type: 'booking_cache' });
+    return { merchantId: restaurantId, bookingCount: bookings.length };
+  } catch (error) {
+    await transaction.rollback();
+    logger.logErrorEvent('Error caching bookings', { error: error.message, restaurantId });
+    throw handleServiceError('cacheBookings', error, mtablesConstants.ERROR_TYPES[0]);
   }
+};
 
-  static async syncOfflineData(restaurantId, ipAddress) {
-    const transaction = await sequelize.transaction();
+const cacheParkingBookings = async (restaurantId, parkingBookings) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!merchant || !merchant.merchant || !mparkConstants.MERCHANT_TYPE.includes(merchant.merchant.merchant_type)) {
+      throw new AppError('Invalid merchant or type', 404, mparkConstants.ERROR_TYPES[7]);
+    }
 
-    try {
-      const merchant = await User.findByPk(restaurantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Merchant, as: 'merchant_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    for (const parkingBooking of parkingBookings) {
+      if (
+        !parkingBooking.start_time ||
+        !parkingBooking.end_time ||
+        !parkingBooking.customer_id ||
+        !parkingBooking.space_id ||
+        !mparkConstants.BOOKING_CONFIG.BOOKING_TYPES.includes(parkingBooking.booking_type)
+      ) {
+        throw new AppError('Invalid parking booking data', 400, mparkConstants.ERROR_TYPES[0]);
       }
+      await OfflineCache.create(
+        {
+          merchant_id: restaurantId,
+          data_type: 'parking_booking',
+          data: parkingBooking,
+          status: 'pending',
+        },
+        { transaction },
+      );
+    }
 
-      const cachedItems = await OfflineCache.findAll({
-        where: { merchant_id: restaurantId, status: 'pending' },
-        transaction,
-      });
+    await transaction.commit();
+    logger.logApiEvent(`Cached ${parkingBookings.length} parking bookings for merchant ${restaurantId}`, { type: 'parking_booking_cache' });
+    return { merchantId: restaurantId, parkingBookingCount: parkingBookings.length };
+  } catch (error) {
+    await transaction.rollback();
+    logger.logErrorEvent('Error caching parking bookings', { error: error.message, restaurantId });
+    throw handleServiceError('cacheParkingBookings', error, mparkConstants.ERROR_TYPES[0]);
+  }
+};
 
-      let orderCount = 0;
-      let bookingCount = 0;
+const syncOfflineData = async (restaurantId) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!merchant || !merchant.merchant) {
+      throw new AppError('Merchant not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
 
-      for (const item of cachedItems) {
-        try {
-          if (item.data_type === 'order') {
-            const orderData = item.data;
-            const customer = await Customer.findByPk(orderData.customer_id, { transaction });
-            if (!customer) {
-              throw new AppError('Invalid customer', 404);
-            }
-            const order = await Order.create({
+    const cachedItems = await OfflineCache.findAll({
+      where: { merchant_id: restaurantId, status: 'pending' },
+      transaction,
+    });
+
+    let orderCount = 0, bookingCount = 0, parkingBookingCount = 0;
+
+    for (const item of cachedItems) {
+      try {
+        const staff = await Staff.findOne({
+          where: { merchant_id: merchant.merchant.id, availability_status: staffConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES[0] },
+          include: [{ model: Shift, as: 'shift', where: { status: staffConstants.STAFF_STATUSES[0] } }],
+          transaction,
+        });
+
+        if (item.data_type === 'order') {
+          const orderData = item.data;
+          const customer = await Customer.findByPk(orderData.customer_id, { transaction });
+          if (!customer) {
+            throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
+          }
+
+          const wallet = await Wallet.findOne({ where: { user_id: customer.user_id }, transaction });
+          if (!wallet || wallet.balance < orderData.total_amount) {
+            throw new AppError('Insufficient wallet balance', 400, munchConstants.ERROR_CODES[12]);
+          }
+
+          const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant.id }, transaction });
+          const order = await Order.create(
+            {
               ...orderData,
               merchant_id: restaurantId,
-              branch_id: item.branch_id,
+              branch_id: branch?.id,
               order_number: `OFFLINE-${Date.now()}-${orderCount}`,
-              status: 'pending',
-              payment_status: 'unpaid',
-              currency: orderData.currency || 'MWK',
+              status: munchConstants.ORDER_CONSTANTS.ORDER_STATUSES[0],
+              payment_status: munchConstants.PAYMENT_STATUSES[0],
+              currency: orderData.currency || munchConstants.MUNCH_SETTINGS.DEFAULT_CURRENCY,
+              staff_id: staff?.id,
               created_at: new Date(),
               updated_at: new Date(),
-            }, { transaction });
-            item.status = 'synced';
-            orderCount++;
-          } else if (item.data_type === 'booking') {
-            const bookingData = item.data;
-            const customer = await Customer.findByPk(bookingData.customer_id, { transaction });
-            if (!customer) {
-              throw new AppError('Invalid customer', 404);
-            }
-            const booking = await Booking.create({
+            },
+            { transaction },
+          );
+
+          await WalletTransaction.create(
+            {
+              wallet_id: wallet.id,
+              type: customerConstants.WALLET_CONSTANTS.TRANSACTION_TYPES[2],
+              amount: orderData.total_amount,
+              currency: order.currency,
+              status: customerConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1],
+              description: `Payment for order ${order.order_number}`,
+            },
+            { transaction },
+          );
+
+          wallet.balance -= orderData.total_amount;
+          await wallet.save({ transaction });
+
+          item.status = 'synced';
+          orderCount++;
+        } else if (item.data_type === 'booking') {
+          const bookingData = item.data;
+          const customer = await Customer.findByPk(bookingData.customer_id, { transaction });
+          if (!customer) {
+            throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
+          }
+
+          const table = await Table.findOne({
+            where: {
+              branch_id: bookingData.branch_id,
+              status: mtablesConstants.TABLE_STATUSES[0],
+              capacity: { [sequelize.Op.gte]: bookingData.guest_count || 1 },
+            },
+            transaction,
+          });
+
+          const branch = await MerchantBranch.findOne({ where: { merchant_id: merchant.merchant.id }, transaction });
+          await Booking.create(
+            {
               ...bookingData,
               merchant_id: restaurantId,
-              branch_id: item.branch_id,
+              branch_id: branch?.id,
+              table_id: table?.id,
               reference: `OFFLINE-BK-${Date.now()}-${bookingCount}`,
-              status: 'pending',
+              status: mtablesConstants.BOOKING_STATUSES[0],
+              staff_id: staff?.id,
               created_at: new Date(),
               updated_at: new Date(),
-            }, { transaction });
-            item.status = 'synced';
-            bookingCount++;
+            },
+            { transaction },
+          );
+
+          item.status = 'synced';
+          bookingCount++;
+        } else if (item.data_type === 'parking_booking') {
+          const parkingData = item.data;
+          const customer = await Customer.findByPk(parkingData.customer_id, { transaction });
+          if (!customer) {
+            throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
           }
-          await item.save({ transaction });
-        } catch (error) {
-          item.status = 'failed';
-          await item.save({ transaction });
-          logger.error(`Failed to sync ${item.data_type} for merchant ${restaurantId}: ${error.message}`);
+
+          await ParkingBooking.create(
+            {
+              ...parkingData,
+              merchant_id: restaurantId,
+              status: mparkConstants.BOOKING_CONFIG.BOOKING_STATUSES[0],
+              created_at: new Date(),
+              updated_at: new Date(),
+            },
+            { transaction },
+          );
+
+          item.status = 'synced';
+          parkingBookingCount++;
         }
+
+        await item.save({ transaction });
+      } catch (error) {
+        item.status = 'failed';
+        await item.save({ transaction });
+
+        await SupportTicket.create(
+          {
+            user_id: merchant.user_id,
+            service_type: customerConstants.CROSS_VERTICAL_CONSTANTS.SERVICES[1],
+            issue_type: item.data_type === 'order' ? munchConstants.SUPPORT_CONSTANTS.ISSUE_TYPES[4] :
+                        item.data_type === 'booking' ? mtablesConstants.SUPPORT_SETTINGS.ISSUE_TYPES[0] :
+                        mparkConstants.ERROR_TYPES[9],
+            description: `Failed to sync ${item.data_type}: ${error.message}`,
+            status: mtablesConstants.SUPPORT_SETTINGS.TICKET_STATUSES[0],
+            priority: mtablesConstants.SUPPORT_SETTINGS.PRIORITIES[1],
+            ticket_number: `TICKET-${Date.now()}`,
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+          { transaction },
+        );
+
+        logger.logErrorEvent(`Failed to sync ${item.data_type} for merchant ${restaurantId}`, { error: error.message });
       }
-
-      const message = formatMessage(merchant.preferred_language, 'offline.dataSynced', { orderCount, bookingCount });
-      await notificationService.createNotification({
-        userId: restaurantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'HIGH',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: restaurantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId: restaurantId, orderCount, bookingCount },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`offline:dataSynced:${restaurantId}`, { merchantId: restaurantId, orderCount, bookingCount });
-
-      await transaction.commit();
-      logger.info(`Synced ${orderCount} orders and ${bookingCount} bookings for merchant ${restaurantId}`);
-      return { merchantId: restaurantId, orderCount, bookingCount };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('syncOfflineData', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
     }
+
+    await transaction.commit();
+    logger.logApiEvent(`Synced ${orderCount} orders, ${bookingCount} bookings, ${parkingBookingCount} parking bookings for merchant ${restaurantId}`, { type: 'sync' });
+    return { merchantId: restaurantId, orderCount, bookingCount, parkingBookingCount };
+  } catch (error) {
+    await transaction.rollback();
+    logger.logErrorEvent('Error syncing offline data', { error: error.message, restaurantId });
+    throw handleServiceError('syncOfflineData', error, merchantConstants.ERROR_CODES[0]);
   }
+};
 
-  static async trackOfflineGamification(customerId, ipAddress) {
-    try {
-      const customer = await User.findByPk(customerId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-      });
-      if (!customer || !customer.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'offline', 'en', 'offline.errors.invalidCustomer'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      const offlineOrders = await OfflineCache.count({
-        where: {
-          data_type: 'order',
-          data: { customer_id: customerId },
-          status: 'synced',
-        },
-      });
-
-      const offlineBookings = await OfflineCache.count({
-        where: {
-          data_type: 'booking',
-          data: { customer_id: customerId },
-          status: 'synced',
-        },
-      });
-
-      const points =
-        (offlineOrders * customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.OFFLINE_ORDER.points) +
-        (offlineBookings * customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.OFFLINE_BOOKING.points);
-
-      if (points > 0) {
-        await gamificationService.awardPoints({
-          userId: customerId,
-          action: customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.OFFLINE_USAGE.action,
-          points,
-          metadata: { offlineOrders, offlineBookings },
-        });
-
-        const message = formatMessage(customer.preferred_language, 'offline.pointsAwarded', { points });
-        await notificationService.createNotification({
-          userId: customerId,
-          type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-          message,
-          priority: 'LOW',
-          languageCode: customer.preferred_language,
-        });
-
-        socketService.emit(`offline:gamification:${customerId}`, { customerId, points });
-      }
-
-      await auditService.logAction({
-        userId: customerId,
-        role: 'customer',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { customerId, pointsAwarded: points, offlineOrders, offlineBookings },
-        ipAddress,
-      });
-
-      logger.info(`Offline gamification tracked for customer ${customerId}: ${points} points`);
-      return { customerId, points };
-    } catch (error) {
-      throw handleServiceError('trackOfflineGamification', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
-    }
-  }
-}
-
-module.exports = OfflineService;
+module.exports = {
+  cacheOrders,
+  cacheBookings,
+  cacheParkingBookings,
+  syncOfflineData,
+};

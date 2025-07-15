@@ -3,7 +3,8 @@
     "created": "Event '{title}' created successfully.",
     "invitation": "You've been invited to '{title}' by user #{creatorId}.",
     "bill_split_request": "Please pay {amount} {currency} for '{eventTitle}'.",
-    "chat_enabled": "Group chat started for '{eventTitle}'."
+    "chat_enabled": "Group chat started for '{eventTitle}'.",
+    "updated": "Event '{title}' updated successfully."
   },
   "tracking": {
     "points_awarded": "You earned {points} points for your interaction.",
@@ -22,6 +23,7 @@
     "event_creation_failed": "Failed to create event.",
     "group_bookings_failed": "Failed to manage group bookings.",
     "chat_facilitation_failed": "Failed to enable group chat.",
+    "event_amendment_failed": "Failed to amend event.",
     "interaction_tracking_failed": "Failed to track interaction.",
     "engagement_analysis_failed": "Failed to analyze engagement.",
     "max_interactions_exceeded": "Daily interaction limit exceeded.",
@@ -31,6 +33,7 @@
     "event_created": "Event created successfully.",
     "bill_processed": "Transaction processed successfully.",
     "chat_enabled": "Group chat enabled successfully.",
+    "event_updated": "Event amended successfully.",
     "interaction_tracked": "Interaction tracked successfully.",
     "engagement_analyzed": "Engagement analyzed successfully."
   }

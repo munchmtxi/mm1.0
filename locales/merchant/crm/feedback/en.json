@@ -1,8 +1,0 @@
-{
-  "feedback": {
-    "review_received": "New review received with rating {rating}.",
-    "review_interaction": "Your review received an {action}.",
-    "feedback_response": "Merchant responded: {content}",
-    "feedback_points_awarded": "Awarded {points} points for feedback."
-  }
-}

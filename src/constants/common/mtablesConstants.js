@@ -1,158 +1,147 @@
-/**
- * mtablesConstants.js
- *
- * Defines constants for the Mtables service, focusing on table bookings, pre-orders, and group coordination.
- * Supports friend invites, bill splitting, and in-dining orders. Aligns with customerConstants.js, munchConstants.js, and rideConstants.js.
- *
- * Last Updated: June 1, 2025
- */
-
 'use strict';
 
 module.exports = {
-  // Table Statuses
-  TABLE_STATUSES: ['available', 'reserved', 'occupied', 'maintenance'],
-
-  // In-Dining Order Statuses
-  IN_DINING_STATUSES: ['confirmed', 'preparing', 'served', 'closed'],
-
-  // Booking Types
-  BOOKING_TYPES: ['table'],
-
-  // Check-In Methods
-  CHECK_IN_METHODS: ['qr_code', 'manual'],
-
-  // Table Management Settings
+  TABLE_STATUSES: ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'],
+  IN_DINING_STATUSES: ['CONFIRMED', 'PREPARING', 'SERVED', 'CLOSED'],
+  BOOKING_TYPES: ['TABLE', 'PRIVATE_ROOM', 'EVENT_SPACE'],
+  CHECK_IN_METHODS: ['QR_CODE', 'MANUAL', 'NFC'],
   TABLE_MANAGEMENT: {
     MIN_TABLE_CAPACITY: 1,
-    MAX_TABLE_CAPACITY: 20,
-    LOCATION_TYPES: ['indoor', 'outdoor', 'rooftop', 'balcony', 'window', 'bar'],
-    TABLE_TYPES: ['standard', 'booth', 'high_top', 'bar', 'lounge', 'private'],
+    MAX_TABLE_CAPACITY: 30,
+    LOCATION_TYPES: ['INDOOR', 'OUTDOOR', 'ROOFTOP', 'BALCONY', 'WINDOW', 'BAR', 'PATIO'],
+    TABLE_TYPES: ['STANDARD', 'BOOTH', 'HIGH_TOP', 'BAR', 'LOUNGE', 'PRIVATE', 'COMMUNAL'],
     SEATING_PREFERENCES: [
-      'no_preference', 'indoor', 'outdoor', 'rooftop', 'balcony', 'window',
-      'booth', 'high_top', 'bar', 'lounge', 'private'
-    ],
+      'NO_PREFERENCE', 'INDOOR', 'OUTDOOR', 'ROOFTOP', 'BALCONY', 'WINDOW', 'BOOTH',
+      'HIGH_TOP', 'BAR', 'LOUNGE', 'PRIVATE', 'COMMUNAL'
+    ]
   },
-
-  // Booking Policies
   BOOKING_POLICIES: {
-    MIN_BOOKING_HOURS: 1,
-    MAX_BOOKING_HOURS: 4,
-    CANCELLATION_WINDOW_HOURS: 24,
-    EXTENSION_LIMIT_MINUTES: 120,
-    MIN_DEPOSIT_PERCENTAGE: 10,
+    MIN_BOOKING_HOURS: 0.5,
+    MAX_BOOKING_HOURS: 6,
+    CANCELLATION_WINDOW_HOURS: 12,
+    EXTENSION_LIMIT_MINUTES: 180,
+    MIN_DEPOSIT_PERCENTAGE: 5
   },
-
-  // Customer Support Settings
   SUPPORT_SETTINGS: {
-    ISSUE_TYPES: ['booking', 'order', 'payment', 'table'],
-    TICKET_STATUSES: ['open', 'in_progress', 'resolved', 'escalated', 'closed'],
-    PRIORITIES: ['low', 'medium', 'high'],
-    MAX_TICKET_DESCRIPTION_LENGTH: 1000,
+    ISSUE_TYPES: ['BOOKING', 'ORDER', 'PAYMENT', 'TABLE', 'EVENT'],
+    TICKET_STATUSES: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'ESCALATED', 'CLOSED'],
+    PRIORITIES: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
+    MAX_TICKET_DESCRIPTION_LENGTH: 2000,
+    SUPPORT_CHANNELS: ['in_app_chat', 'email', 'phone', 'whatsapp', 'telegram'],
+    AI_CHATBOT: true
   },
-
-  // Staff Settings
   STAFF_SETTINGS: {
-    AVAILABILITY_STATUSES: ['available', 'unavailable', 'on_break'],
+    AVAILABILITY_STATUSES: ['AVAILABLE', 'UNAVAILABLE', 'ON_BREAK', 'TRAINING'],
+    ROLES: ['WAITER', 'HOST', 'MANAGER', 'EVENT_COORDINATOR']
   },
-
-  // Group Coordination Settings
   GROUP_SETTINGS: {
-    MAX_FRIENDS_PER_BOOKING: 10,
-    INVITE_STATUSES: ['invited', 'accepted', 'declined', 'removed'],
-    INVITE_METHODS: ['app', 'sms', 'email'],
-    BILL_SPLIT_TYPES: ['equal', 'custom', 'itemized'],
-    MAX_SPLIT_PARTICIPANTS: 10,
+    MAX_FRIENDS_PER_BOOKING: 20,
+    INVITE_STATUSES: ['PENDING', 'ACCEPTED', 'DECLINED', 'REMOVED'],
+    INVITE_METHODS: ['APP', 'SMS', 'EMAIL', 'WHATSAPP', 'TELEGRAM'],
+    BILL_SPLIT_TYPES: ['EQUAL', 'CUSTOM', 'ITEMIZED', 'PERCENTAGE'],
+    MAX_SPLIT_PARTICIPANTS: 20,
+    GROUP_CHAT: ['in_app', 'whatsapp_integration', 'real_time_updates']
   },
-
-  // Pre-Order Settings
   ORDER_SETTINGS: {
-    MAX_GROUP_SIZE: 20,
-    MIN_PRE_ORDER_LEAD_TIME_MINUTES: 30,
-    ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal'],
+    MAX_GROUP_SIZE: 30,
+    MIN_PRE_ORDER_LEAD_TIME_MINUTES: 15,
+    ALLOWED_DIETARY_FILTERS: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE', 'NUT_FREE', 'DAIRY_FREE', 'HALAL', 'KOSHER', 'LOW_CARB', 'ORGANIC']
   },
-
-  // Cart Settings
   CART_SETTINGS: {
-    MAX_ITEMS_PER_CART: 50,
+    MAX_ITEMS_PER_CART: 100,
     MIN_QUANTITY_PER_ITEM: 1,
-    MAX_QUANTITY_PER_ITEM: 20,
+    MAX_QUANTITY_PER_ITEM: 30
   },
-
-  // Feedback Settings
   FEEDBACK_SETTINGS: {
     MIN_RATING: 1,
     MAX_RATING: 5,
     POSITIVE_RATING_THRESHOLD: 3,
+    SOCIAL_SHARING: ['post_review', 'share_experience', 'tag_friends']
   },
-
-  // Financial Settings
   FINANCIAL_SETTINGS: {
-    MIN_DEPOSIT_AMOUNT: 10,
-    MAX_DEPOSIT_AMOUNT: 500,
-    DEPOSIT_TRANSACTION_TYPE: 'deposit',
+    MIN_DEPOSIT_AMOUNT: 5,
+    MAX_DEPOSIT_AMOUNT: 1000,
+    DEPOSIT_TRANSACTION_TYPE: 'DEPOSIT',
+    PAYMENT_TRANSACTION_TYPE: 'ORDER_PAYMENT',
+    TRANSACTION_STATUSES: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+    WALLET_FEATURES: ['add_funds', 'transfer_funds', 'crypto_payments', 'auto_top_up']
   },
-
-  // Customer Settings
   CUSTOMER_SETTINGS: {
-    MAX_ACTIVE_BOOKINGS: 5,
+    MAX_ACTIVE_BOOKINGS: 7,
+    SUPPORTED_CITIES: {
+      US: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami', 'San Francisco'],
+      GB: ['London', 'Manchester', 'Birmingham', 'Glasgow', 'Edinburgh'],
+      EU: ['Berlin', 'Paris', 'Amsterdam', 'Rome', 'Madrid'],
+      CA: ['Toronto', 'Vancouver', 'Montreal', 'Calgary'],
+      AU: ['Sydney', 'Melbourne', 'Brisbane', 'Perth'],
+      MW: ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba'],
+      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mwanza'],
+      KE: ['Nairobi', 'Mombasa', 'Kisumu', 'Eldoret'],
+      MZ: ['Maputo', 'Beira', 'Nampula', 'Matola'],
+      ZA: ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria'],
+      IN: ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad'],
+      CM: ['Douala', 'Yaoundé'],
+      GH: ['Accra', 'Kumasi'],
+      MX: ['Mexico City', 'Guadalajara', 'Monterrey', 'Puebla'],
+      ER: ['Asmara', 'Keren', 'Massawa']
+    },
+    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'ZAR', 'INR', 'XAF', 'GHS', 'MXN', 'ERN']
   },
-
-  // Discount and Modifier Types
-  DISCOUNT_TYPES: ['percentage', 'flat', 'bogo', 'seasonal', 'loyalty', 'bulk_discount', 'early_bird', 'clearance'],
-  MODIFIER_TYPES: ['size', 'spiciness', 'extras', 'toppings', 'sauces', 'cooking_preference', 'temperature', 'side_choices', 'dressings'],
-
-  // Promotion Settings
-  PROMOTION_SETTINGS: {
-    PROMOTION_TYPES: ['percentage', 'flat', 'bogo', 'discount'],
-    RULE_TYPES: ['product_quantity', 'category', 'customer_type', 'loyalty_points'],
-    MAX_REDEMPTIONS_PER_CUSTOMER: 5,
-    MIN_DISCOUNT_AMOUNT: 1,
-  },
-
-  // Time Slot Settings
-  TIME_SLOT_SETTINGS: {
-    DAYS_OF_WEEK: { SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6 },
-    SLOT_TYPES: ['regular', 'special', 'holiday', 'event'],
-  },
-
-  // Error Codes
-  ERROR_CODES: {
-    INVALID_BOOKING_DETAILS: 'INVALID_BOOKING_DETAILS',
-    INVALID_PARTY_SIZE: 'INVALID_PARTY_SIZE',
-    TABLE_NOT_AVAILABLE: 'TABLE_NOT_AVAILABLE',
-    BOOKING_NOT_FOUND: 'BOOKING_NOT_FOUND',
-    BOOKING_CREATION_FAILED: 'BOOKING_CREATION_FAILED',
-    BOOKING_UPDATE_FAILED: 'BOOKING_UPDATE_FAILED',
-    BOOKING_CANCELLATION_FAILED: 'BOOKING_CANCELLATION_FAILED',
-    CHECK_IN_FAILED: 'CHECK_IN_FAILED',
-    MAX_BOOKINGS_EXCEEDED: 'MAX_BOOKINGS_EXCEEDED',
-    CANCELLATION_WINDOW_EXPIRED: 'CANCELLATION_WINDOW_EXPIRED',
-    INVALID_CUSTOMER_ID: 'INVALID_CUSTOMER_ID',
-    INVALID_FEEDBACK_RATING: 'INVALID_FEEDBACK_RATING',
-    INVALID_FRIEND_INVITE: 'INVALID_FRIEND_INVITE',
-    MAX_FRIENDS_EXCEEDED: 'MAX_FRIENDS_EXCEEDED',
-    INVALID_BILL_SPLIT: 'INVALID_BILL_SPLIT',
-    FRIEND_NOT_FOUND: 'FRIEND_NOT_FOUND',
-    FEEDBACK_SUBMISSION_FAILED: 'FEEDBACK_SUBMISSION_FAILED',
-    PARTY_MEMBER_ADDITION_FAILED: 'PARTY_MEMBER_ADDITION_FAILED',
-    TABLE_SEARCH_FAILED: 'TABLE_SEARCH_FAILED',
-    PAYMENT_PROCESSING_FAILED: 'PAYMENT_PROCESSING_FAILED',
-    REFUND_PROCESSING_FAILED: 'REFUND_PROCESSING_FAILED',
-  },
-
-  // Success Messages
-  SUCCESS_MESSAGES: [
-    'Booking created',
-    'Booking updated',
-    'Booking cancelled',
-    'Check-in confirmed',
-    'Booking history retrieved',
-    'Feedback submitted',
-    'Party member added',
-    'Tables retrieved',
-    'Payment processed',
-    'Refund processed',
-    'Bill split processed',
+  DISCOUNT_TYPES: ['PERCENTAGE', 'FLAT', 'BOGO', 'SEASONAL', 'EARLY_BIRD', 'REFERRAL', 'SOCIAL_MEDIA'],
+  MODIFIER_TYPES: [
+    'SIZE', 'SPICINESS', 'EXTRAS', 'TOPPINGS', 'SAUCES', 'COOKING_PREFERENCE', 'TEMPERATURE', 'SIDE_CHOICES', 'DRESSINGS'
   ],
+  TIME_SLOT_SETTINGS: {
+    DAYS_OF_WEEK: {
+      SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6
+    },
+    SLOT_TYPES: ['REGULAR', 'SPECIAL', 'HOLIDAY', 'EVENT']
+  },
+  ANALYTICS_PERIODS: ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'],
+  BOOKING_STATUSES: ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
+  ORDER_STATUSES: ['PENDING', 'PREPARING', 'COMPLETED', 'CANCELLED', 'REFUNDED'],
+  PAYMENT_STATUSES: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+  NOTIFICATION_TYPES: {
+    BOOKING_CONFIRMATION: 'BOOKING_CONFIRMATION',
+    TABLE_ASSIGNED: 'TABLE_ASSIGNED',
+    TABLE_ADJUSTED: 'TABLE_ADJUSTED',
+    TABLE_AVAILABILITY_UPDATED: 'TABLE_AVAILABILITY_UPDATED',
+    PRE_ORDER_CONFIRMATION: 'PRE_ORDER_CONFIRMATION',
+    PAYMENT_COMPLETED: 'PAYMENT_COMPLETED',
+    REFUND_PROCESSED: 'REFUND_PROCESSED',
+    SUPPORT_TICKET_CREATED: 'SUPPORT_TICKET_CREATED',
+    SUPPORT_TICKET_RESOLVED: 'SUPPORT_TICKET_RESOLVED',
+    BILL_SPLIT_REQUEST: 'BILL_SPLIT_REQUEST',
+    FRIEND_INVITED: 'FRIEND_INVITED',
+    GROUP_CHAT_MESSAGE: 'GROUP_CHAT_MESSAGE',
+    SOCIAL_MEDIA_POST: 'SOCIAL_MEDIA_POST'
+  },
+  AUDIT_TYPES: {
+    BOOKING_CREATED: 'BOOKING_CREATED',
+    BOOKING_UPDATED: 'BOOKING_UPDATED',
+    BOOKING_CANCELLED: 'BOOKING_CANCELLED',
+    TABLE_ASSIGNED: 'TABLE_ASSIGNED',
+    TABLE_ADJUSTED: 'TABLE_ADJUSTED',
+    TABLE_AVAILABILITY_UPDATED: 'TABLE_AVAILABILITY_UPDATED',
+    PRE_ORDER_CREATED: 'PRE_ORDER_CREATED',
+    PAYMENT_PROCESSED: 'PAYMENT_PROCESSED',
+    REFUND_PROCESSED: 'REFUND_PROCESSED',
+    BILL_SPLIT_PROCESSED: 'BILL_SPLIT_PROCESSED',
+    FRIEND_INVITED: 'FRIEND_INVITED',
+    SOCIAL_MEDIA_INTERACTION: 'SOCIAL_MEDIA_INTERACTION'
+  },
+  ERROR_TYPES: [
+    'INVALID_INPUT', 'INVALID_PERIOD', 'SYSTEM_ERROR', 'PERMISSION_DENIED', 'INVALID_BOOKING_DETAILS',
+    'INVALID_PARTY_SIZE', 'TABLE_NOT_AVAILABLE', 'BOOKING_NOT_FOUND', 'BOOKING_CREATION_FAILED',
+    'BOOKING_UPDATE_FAILED', 'BOOKING_CANCELLATION_FAILED', 'CHECK_IN_FAILED', 'MAX_BOOKINGS_EXCEEDED',
+    'CANCELLATION_WINDOW_EXPIRED', 'INVALID_CUSTOMER_ID', 'INVALID_FEEDBACK_RATING', 'INVALID_FRIEND_INVITE',
+    'MAX_FRIENDS_EXCEEDED', 'INVALID_BILL_SPLIT', 'FRIEND_NOT_FOUND', 'FEEDBACK_SUBMISSION_FAILED',
+    'PARTY_MEMBER_ADDITION_FAILED', 'TABLE_SEARCH_FAILED', 'PAYMENT_PROCESSING_FAILED', 'REFUND_PROCESSING_FAILED',
+    'INVALID_MODIFIER', 'WALLET_INSUFFICIENT_FUNDS'
+  ],
+  SUCCESS_MESSAGES: [
+    'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CANCELLED', 'CHECK_IN_CONFIRMED', 'BOOKING_HISTORY_RETRIEVED',
+    'FEEDBACK_SUBMITTED', 'PARTY_MEMBER_ADDED', 'TABLES_RETRIEVED', 'PAYMENT_PROCESSED', 'REFUND_PROCESSED',
+    'BILL_SPLIT_PROCESSED', 'ORDER_PROCESSED', 'ORDER_STATUS_UPDATED', 'PAYMENT_COMPLETED', 'SOCIAL_POST_SHARED'
+  ]
 };

@@ -1,30 +1,13 @@
 'use strict';
 
-/**
- * Driver Delivery Service
- * Manages driver-side food delivery operations, including accepting deliveries, retrieving details,
- * updating status, communicating with customers, and awarding gamification points. Integrates with common services.
- */
-
 const { Order, Customer, Driver, sequelize } = require('@models');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const locationService = require('@services/common/locationService');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const munchConstants = require('@constants/munchConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const driverConstants = require('@constants/driverConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const { Op } = require('sequelize');
 
-/**
- * Accepts a delivery request.
- * @param {number} deliveryId - Order ID representing the delivery.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Updated order object.
- */
-async function acceptDelivery(deliveryId, driverId) {
+async function acceptDelivery(deliveryId, driverId, auditService, notificationService, socketService, pointService) {
   const order = await Order.findByPk(deliveryId, { include: [{ model: Customer, as: 'customer' }] });
   if (!order) throw new AppError('Delivery not found', 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
   if (order.status !== munchConstants.ORDER_STATUSES.READY || order.driver_id) {
@@ -57,7 +40,7 @@ async function acceptDelivery(deliveryId, driverId) {
 
     await notificationService.sendNotification({
       userId: order.customer.user_id,
-      notificationType: munchConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DELIVERY_ASSIGNED,
+      notificationType: munchConstants.NOTIFICATION_TYPES.DELIVERY_ASSIGNED,
       message: formatMessage(
         'customer',
         'delivery',
@@ -66,6 +49,13 @@ async function acceptDelivery(deliveryId, driverId) {
         { deliveryId }
       ),
       priority: 'HIGH',
+    });
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'delivery_completion').action,
+      languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
     });
 
     socketService.emit(null, 'delivery:accepted', { deliveryId, driverId, customerId: order.customer_id });
@@ -79,12 +69,7 @@ async function acceptDelivery(deliveryId, driverId) {
   }
 }
 
-/**
- * Retrieves delivery information.
- * @param {number} deliveryId - Order ID representing the delivery.
- * @returns {Promise<Object>} Delivery details.
- */
-async function getDeliveryDetails(deliveryId) {
+async function getDeliveryDetails(deliveryId, auditService, pointService) {
   const order = await Order.findByPk(deliveryId, {
     include: [
       { model: Customer, as: 'customer', attributes: ['user_id', 'full_name', 'phone_number'] },
@@ -92,6 +77,21 @@ async function getDeliveryDetails(deliveryId) {
     ],
   });
   if (!order) throw new AppError('Delivery not found', 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+
+  await auditService.logAction({
+    userId: 'system',
+    role: 'driver',
+    action: 'GET_DELIVERY_DETAILS',
+    details: { deliveryId },
+    ipAddress: 'unknown',
+  });
+
+  await pointService.awardPoints({
+    userId: 'system',
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'delivery_details_access').action,
+    languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Delivery details retrieved', { deliveryId });
   return {
@@ -107,14 +107,7 @@ async function getDeliveryDetails(deliveryId) {
   };
 }
 
-/**
- * Updates delivery progress.
- * @param {number} deliveryId - Order ID representing the delivery.
- * @param {string} status - New status.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function updateDeliveryStatus(deliveryId, status, driverId) {
+async function updateDeliveryStatus(deliveryId, status, driverId, auditService, notificationService, socketService, pointService) {
   const validStatuses = Object.values(munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES);
   if (!validStatuses.includes(status)) {
     throw new AppError('Invalid status', 400, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
@@ -131,6 +124,12 @@ async function updateDeliveryStatus(deliveryId, status, driverId) {
     const updates = { status, updated_at: new Date() };
     if (status === munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES.DELIVERED) {
       updates.actual_delivery_time = new Date();
+      await pointService.awardPoints({
+        userId: driver.user_id,
+        role: 'driver',
+        action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'delivery_completion').action,
+        languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+      });
     }
     await order.update(updates, { transaction });
 
@@ -144,7 +143,7 @@ async function updateDeliveryStatus(deliveryId, status, driverId) {
 
     await notificationService.sendNotification({
       userId: order.customer_id,
-      notificationType: munchConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DELIVERY_UPDATE,
+      notificationType: munchConstants.NOTIFICATION_TYPES.DELIVERY_STATUS_UPDATED,
       message: formatMessage(
         'customer',
         'delivery',
@@ -165,14 +164,7 @@ async function updateDeliveryStatus(deliveryId, status, driverId) {
   }
 }
 
-/**
- * Sends/receives messages between driver and customer.
- * @param {number} deliveryId - Order ID representing the delivery.
- * @param {string} message - Message content.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function communicateWithCustomer(deliveryId, message, driverId) {
+async function communicateWithCustomer(deliveryId, message, driverId, auditService, notificationService, socketService) {
   const order = await Order.findByPk(deliveryId);
   if (!order) throw new AppError('Delivery not found', 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
   if (order.driver_id !== driverId) {
@@ -189,7 +181,7 @@ async function communicateWithCustomer(deliveryId, message, driverId) {
 
   await notificationService.sendNotification({
     userId: order.customer_id,
-    notificationType: munchConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DRIVER_MESSAGE,
+    notificationType: munchConstants.NOTIFICATION_TYPES.DRIVER_COMMUNICATION,
     message: formatMessage(
       'customer',
       'delivery',
@@ -211,41 +203,9 @@ async function communicateWithCustomer(deliveryId, message, driverId) {
   logger.info('Message sent to customer', { deliveryId, driverId });
 }
 
-/**
- * Awards gamification points for delivery completion.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Points awarded record.
- */
-async function awardDeliveryPoints(driverId) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, munchConstants.ERROR_CODES.NO_DRIVER_ASSIGNED);
-
-  const completedDeliveries = await Order.count({
-    where: {
-      driver_id: driverId,
-      status: munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES.DELIVERED,
-      updated_at: { [Op.gte]: sequelize.literal('CURRENT_DATE') },
-    },
-  });
-  if (completedDeliveries === 0) {
-    throw new AppError('No completed deliveries today', 400, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
-  }
-
-  const pointsRecord = await pointService.awardPoints({
-    userId: driver.user_id,
-    role: 'driver',
-    action: munchConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.DELIVERY_COMPLETED.action,
-    languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-  });
-
-  logger.info('Delivery points awarded', { driverId, points: pointsRecord.points });
-  return pointsRecord;
-}
-
 module.exports = {
   acceptDelivery,
   getDeliveryDetails,
   updateDeliveryStatus,
   communicateWithCustomer,
-  awardDeliveryPoints,
 };

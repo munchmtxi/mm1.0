@@ -1,41 +1,63 @@
 'use strict';
 
-/**
- * communicationService.js
- * Manages staff messaging, shift announcements, and communication channels for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
-const staffSystemConstants = require('@constants/staff/staffSystemConstants');
-const { Staff, Merchant, User, Shift, Message, Channel, Notification, AuditLog } = require('@models');
+const staffConstants = require('@constants/staff/staffSystemConstants');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const AppError = require('@utils/AppError');
+const { handleServiceError } = require('@utils/errorHandling');
+const { Staff, Merchant, User, Shift, Message, Channel, MerchantBranch, Driver } = require('@models');
 
-/**
- * Sends a message to a staff member.
- * @param {number} staffId - Receiver staff ID.
- * @param {Object} message - Message details { senderId, content, channelId }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Message details.
- */
-async function sendMessage(staffId, message, io) {
+async function sendMessage(staffId, message, io, auditService, socketService, pointService) {
+  const functionName = 'sendMessage';
   try {
     const { senderId, content, channelId } = message;
     if (!staffId || !senderId || !content) {
-      throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE);
+      throw new AppError(
+        'Invalid input provided',
+        400,
+        staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE,
+        'Missing required fields: staffId, senderId, or content'
+      );
     }
 
     const [receiver, sender] = await Promise.all([
-      Staff.findByPk(staffId, { include: [{ model: User, as: 'user' }] }),
-      Staff.findByPk(senderId, { include: [{ model: User, as: 'user' }] }),
+      Staff.findByPk(staffId, { include: [{ model: User, as: 'user' }, { model: MerchantBranch, as: 'branch' }] }),
+      Staff.findByPk(senderId, { include: [{ model: User, as: 'user' }, { model: MerchantBranch, as: 'branch' }] }),
     ]);
-    if (!receiver || !sender) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
 
-    const channel = channelId ? await Channel.findByPk(channelId) : null;
-    if (channelId && !channel) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    if (!receiver || !sender) {
+      throw new AppError(
+        'Staff not found',
+        404,
+        staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND,
+        `Staff ID ${!receiver ? staffId : senderId} not found`
+      );
+    }
+
+    // Validate staff types
+    if (
+      !receiver.staff_types.some(type => staffConstants.STAFF_PROFILE_CONSTANTS.ALLOWED_STAFF_TYPES.includes(type)) ||
+      !sender.staff_types.some(type => staffConstants.STAFF_PROFILE_CONSTANTS.ALLOWED_STAFF_TYPES.includes(type))
+    ) {
+      throw new AppError(
+        'Invalid staff type',
+        400,
+        staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE,
+        'Sender or receiver has invalid staff type'
+      );
+    }
+
+    const channel = channelId
+      ? await Channel.findByPk(channelId, { include: [{ model: MerchantBranch, as: 'branch' }] })
+      : null;
+    if (channelId && !channel) {
+      throw new AppError(
+        'Invalid channel',
+        404,
+        staffConstants.STAFF_ERROR_CODES.INVALID_CHANNEL,
+        `Channel ID ${channelId} not found`
+      );
+    }
 
     const newMessage = await Message.create({
       sender_id: senderId,
@@ -47,82 +69,145 @@ async function sendMessage(staffId, message, io) {
     await auditService.logAction({
       userId: sender.user_id,
       role: 'staff',
-      action: staffSystemConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_message_sent')
+        ? 'staff_message_sent'
+        : 'message_sent',
       details: { senderId, receiverId: staffId, channelId, content },
       ipAddress: '127.0.0.1',
     });
 
     socketService.emit(io, 'staff:messageSent', { senderId, receiverId: staffId, content }, `staff:${staffId}`);
 
+    await pointService.awardPoints(
+      sender.user_id,
+      'message_sent',
+      staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS?.find(a => a.action === 'message_sent')?.points || 10
+    );
+
     return newMessage;
   } catch (error) {
-    logger.error('Error sending message', { error: error.message });
-    throw error;
+    logger.logErrorEvent(`Error in ${functionName}`, { error: error.message, stack: error.stack });
+    throw handleServiceError(functionName, error, error.code || staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE);
   }
 }
 
-/**
- * Broadcasts shift updates.
- * @param {number} scheduleId - Shift ID.
- * @param {Object} message - Announcement details { content }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Notification result.
- */
-async function announceShift(scheduleId, message, io) {
+async function announceShift(scheduleId, message, io, auditService, socketService, notificationService, pointService) {
+  const functionName = 'announceShift';
   try {
     const { content } = message;
-    if (!scheduleId || !content) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_SHIFT);
+    if (!scheduleId || !content) {
+      throw new AppError(
+        'Invalid shift input',
+        400,
+        staffConstants.STAFF_ERROR_CODES.INVALID_SHIFT,
+        'Missing required fields: scheduleId or content'
+      );
+    }
 
-    const shift = await Shift.findByPk(scheduleId, { include: [{ model: Staff, as: 'staff', include: [{ model: Merchant, as: 'merchant' }, { model: User, as: 'user' }] }] });
-    if (!shift) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_SHIFT);
+    const shift = await Shift.findByPk(scheduleId, {
+      include: [
+        { model: Staff, as: 'staff', include: [{ model: MerchantBranch, as: 'branch' }, { model: User, as: 'user' }] },
+        { model: Driver, as: 'driver' },
+        { model: MerchantBranch, as: 'branch' },
+      ],
+    });
+
+    if (!shift) {
+      throw new AppError(
+        'Shift not found',
+        404,
+        staffConstants.STAFF_ERROR_CODES.INVALID_SHIFT,
+        `Shift ID ${scheduleId} not found`
+      );
+    }
+
+    const userId = shift.staff?.user_id || shift.driver?.user_id;
+    if (!userId) {
+      throw new AppError(
+        'Staff or driver not found',
+        404,
+        staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND,
+        'No staff or driver associated with shift'
+      );
+    }
+
+    const languageCode = shift.branch?.preferred_language || merchantConstants.BUSINESS_SETTINGS.DEFAULT_LANGUAGE || 'en';
 
     const result = await notificationService.sendNotification({
-      userId: shift.staff.user_id,
-      notificationType: staffSystemConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.ANNOUNCEMENT,
+      userId,
+      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.TYPES.includes('announcement')
+        ? 'announcement'
+        : 'general',
       messageKey: 'staff.shift_announcement',
       messageParams: { content, date: shift.start_time },
-      role: 'staff',
+      role: shift.staff ? 'staff' : 'driver',
       module: 'communication',
-      languageCode: shift.staff.merchant?.preferred_language || staffSystemConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+      languageCode,
     });
 
     await auditService.logAction({
-      userId: shift.staff.user_id,
-      role: 'staff',
-      action: staffSystemConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
+      userId,
+      role: shift.staff ? 'staff' : 'driver',
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('shift_announced')
+        ? 'shift_announced'
+        : 'announcement_sent',
       details: { scheduleId, content },
       ipAddress: '127.0.0.1',
     });
 
-    socketService.emit(io, 'staff:shiftAnnounced', { scheduleId, content }, `staff:${shift.staff_id}`);
+    socketService.emit(
+      io,
+      'staff:shiftAnnounced',
+      { scheduleId, content },
+      `staff:${shift.staff_id || shift.driver_id}`
+    );
+
+    await pointService.awardPoints(
+      userId,
+      'shift_announced',
+      staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS?.find(a => a.action === 'shift_announced')?.points || 10
+    );
 
     return result;
   } catch (error) {
-    logger.error('Error announcing shift', { error: error.message });
-    throw error;
+    logger.logErrorEvent(`Error in ${functionName}`, { error: error.message, stack: error.stack });
+    throw handleServiceError(functionName, error, error.code || staffConstants.STAFF_ERROR_CODES.INVALID_SHIFT);
   }
 }
 
-/**
- * Organizes communication channels.
- * @param {number} restaurantId - Branch ID.
- * @param {Object} channel - Channel details { name, type }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Channel details.
- */
-async function manageChannels(restaurantId, channel, io) {
+async function manageChannels(restaurantId, channel, io, auditService, socketService, pointService) {
+  const functionName = 'manageChannels';
   try {
     const { name, type } = channel;
     if (!restaurantId || !name || !type) {
-      throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+      throw new AppError(
+        'Invalid branch input',
+        400,
+        staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH,
+        'Missing required fields: restaurantId, name, or type'
+      );
     }
 
-    if (!['team', 'shift', 'manager'].includes(type)) {
-      throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    if (!staffConstants.CHANNEL_TYPES?.includes(type)) {
+      throw new AppError(
+        'Invalid channel type',
+        400,
+        staffConstants.STAFF_ERROR_CODES.INVALID_CHANNEL_TYPE,
+        `Channel type ${type} not allowed`
+      );
     }
 
-    const branch = await MerchantBranch.findByPk(restaurantId);
-    if (!branch) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+    });
+    if (!branch) {
+      throw new AppError(
+        'Branch not found',
+        404,
+        staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH,
+        `Branch ID ${restaurantId} not found`
+      );
+    }
 
     const newChannel = await Channel.create({
       branch_id: restaurantId,
@@ -133,32 +218,56 @@ async function manageChannels(restaurantId, channel, io) {
     await auditService.logAction({
       userId: null,
       role: 'system',
-      action: staffSystemConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('channel_created')
+        ? 'channel_created'
+        : 'channel_managed',
       details: { branchId: restaurantId, channelId: newChannel.id, type },
       ipAddress: '127.0.0.1',
     });
 
-    socketService.emit(io, 'staff:channelManaged', { branchId: restaurantId, channelId: newChannel.id, type }, `branch:${restaurantId}`);
+    socketService.emit(
+      io,
+      'staff:channelManaged',
+      { branchId: restaurantId, channelId: newChannel.id, type },
+      `branch:${restaurantId}`
+    );
+
+    await pointService.awardPoints(
+      null,
+      'channel_created',
+      staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS?.find(a => a.action === 'channel_created')?.points || 10
+    );
 
     return newChannel;
   } catch (error) {
-    logger.error('Error managing channels', { error: error.message });
-    throw error;
+    logger.logErrorEvent(`Error in ${functionName}`, { error: error.message, stack: error.stack });
+    throw handleServiceError(functionName, error, error.code || staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
   }
 }
 
-/**
- * Logs staff communications.
- * @param {number} staffId - Staff ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Communication log.
- */
-async function trackCommunication(staffId, io) {
+async function trackCommunication(staffId, io, auditService, socketService) {
+  const functionName = 'trackCommunication';
   try {
-    if (!staffId) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
+    if (!staffId) {
+      throw new AppError(
+        'Staff ID required',
+        400,
+        staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND,
+        'Missing staffId'
+      );
+    }
 
-    const staff = await Staff.findByPk(staffId, { include: [{ model: User, as: 'user' }] });
-    if (!staff) throw new Error(staffSystemConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
+    const staff = await Staff.findByPk(staffId, {
+      include: [{ model: User, as: 'user' }, { model: MerchantBranch, as: 'branch' }],
+    });
+    if (!staff) {
+      throw new AppError(
+        'Staff not found',
+        404,
+        staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND,
+        `Staff ID ${staffId} not found`
+      );
+    }
 
     const messages = await Message.findAll({
       where: {
@@ -166,22 +275,30 @@ async function trackCommunication(staffId, io) {
       },
       attributes: ['id', 'sender_id', 'receiver_id', 'channel_id', 'content', 'created_at'],
       order: [['created_at', 'DESC']],
+      include: [{ model: Channel, as: 'channel', include: [{ model: MerchantBranch, as: 'branch' }] }],
     });
 
     await auditService.logAction({
       userId: staff.user_id,
       role: 'staff',
-      action: staffSystemConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_RETRIEVE,
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_communication_tracked')
+        ? 'staff_communication_tracked'
+        : 'communication_tracked',
       details: { staffId, messageCount: messages.length },
       ipAddress: '127.0.0.1',
     });
 
-    socketService.emit(io, 'staff:communicationTracked', { staffId, messageCount: messages.length }, `staff:${staffId}`);
+    socketService.emit(
+      io,
+      'staff:communicationTracked',
+      { staffId, messageCount: messages.length },
+      `staff:${staffId}`
+    );
 
     return { staffId, messages };
   } catch (error) {
-    logger.error('Error tracking communication', { error: error.message });
-    throw error;
+    logger.logErrorEvent(`Error in ${functionName}`, { error: error.message, stack: error.stack });
+    throw handleServiceError(functionName, error, error.code || staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
   }
 }
 

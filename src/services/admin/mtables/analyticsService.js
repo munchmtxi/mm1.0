@@ -1,35 +1,17 @@
 'use strict';
 
-/**
- * Analytics Service for mtables (Admin)
- * Provides analytics for booking completion rates, report generation, customer engagement,
- * and gamification metrics for a restaurant (merchant branch).
- * Integrates with notification, socket, audit, point, and localization services.
- *
- * Last Updated: May 27, 2025
- */
-
 const { Op, sequelize } = require('sequelize');
 const { Booking, Feedback, GamificationPoints, MerchantBranch, Customer } = require('@models');
-const mtablesConstants = require('@constants/common/mtablesConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
-const pointService = require('@services/common/pointService');
+const mtablesConstants = require('@constants/admin/mtablesConstants');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils/logger');
 const { AppError } = require('@utils/AppError');
 
-/**
- * Retrieves booking completion rates for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Object>} Completion rates and statistics.
- */
-async function getBookingAnalytics(restaurantId) {
+async function getBookingAnalytics(restaurantId, { pointService }) {
   try {
     if (!restaurantId) {
       throw new AppError(
-        'Restaurant ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -38,7 +20,7 @@ async function getBookingAnalytics(restaurantId) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -48,7 +30,7 @@ async function getBookingAnalytics(restaurantId) {
       where: {
         branch_id: restaurantId,
         booking_date: {
-          [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+          [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         },
       },
       attributes: [
@@ -73,13 +55,11 @@ async function getBookingAnalytics(restaurantId) {
       })),
     };
 
-    // Log audit action
-    await auditService.logAction({
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, analyticsType: 'booking_completion' },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.bookingTrendsAnalyzed,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.points,
     });
 
     logger.info('Booking analytics retrieved', { restaurantId });
@@ -90,16 +70,11 @@ async function getBookingAnalytics(restaurantId) {
   }
 }
 
-/**
- * Generates booking reports for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Object>} Report data.
- */
-async function exportBookingReports(restaurantId) {
+async function exportBookingReports(restaurantId, { pointService }) {
   try {
     if (!restaurantId) {
       throw new AppError(
-        'Restaurant ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -108,7 +83,7 @@ async function exportBookingReports(restaurantId) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -146,31 +121,11 @@ async function exportBookingReports(restaurantId) {
       feedbackComment: booking.booking?.comment || null,
     }));
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      notificationType: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'analytics.report_generated',
-      messageParams: { restaurantId, reportCount: report.length },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'analytics:report_generated', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      reportCount: report.length,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, reportCount: report.length },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.reportGenerated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.FINANCIAL_REPORT.points,
     });
 
     logger.info('Booking report generated', { restaurantId, reportCount: report.length });
@@ -181,16 +136,11 @@ async function exportBookingReports(restaurantId) {
   }
 }
 
-/**
- * Tracks customer engagement for bookings at a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Object>} Engagement metrics.
- */
-async function analyzeCustomerEngagement(restaurantId) {
+async function analyzeCustomerEngagement(restaurantId, { pointService }) {
   try {
     if (!restaurantId) {
       throw new AppError(
-        'Restaurant ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -199,7 +149,7 @@ async function analyzeCustomerEngagement(restaurantId) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -209,7 +159,7 @@ async function analyzeCustomerEngagement(restaurantId) {
       where: {
         branch_id: restaurantId,
         booking_date: {
-          [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
+          [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         },
       },
       include: [{ model: Feedback, as: 'booking' }],
@@ -236,31 +186,11 @@ async function analyzeCustomerEngagement(restaurantId) {
       repeatCustomerCount: repeatCustomers.length,
     };
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'analytics.engagement',
-      messageParams: { restaurantId, feedbackRate: engagement.feedbackRate },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'analytics:engagement_completed', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      engagementMetrics: engagement,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, engagementMetrics: engagement },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.engagementAnalyzed,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.points,
     });
 
     logger.info('Customer engagement analyzed', { restaurantId, engagement });
@@ -271,16 +201,11 @@ async function analyzeCustomerEngagement(restaurantId) {
   }
 }
 
-/**
- * Monitors gamification points for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Object>} Gamification metrics.
- */
-async function trackGamificationMetrics(restaurantId) {
+async function trackGamificationMetrics(restaurantId, { pointService }) {
   try {
     if (!restaurantId) {
       throw new AppError(
-        'Restaurant ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -289,7 +214,7 @@ async function trackGamificationMetrics(restaurantId) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -306,8 +231,8 @@ async function trackGamificationMetrics(restaurantId) {
         user_id: { [Op.in]: userIds },
         role: 'customer',
         action: {
-          [Op.in]: Object.values(mtablesConstants.GAMIFICATION_ACTIONS)
-            .filter(a => a.roles.includes('customer'))
+          [Op.in]: Object.values(mtablesConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS)
+            .filter(a => a.roles?.includes('customer') || !a.roles)
             .map(a => a.action),
         },
         expires_at: { [Op.gte]: new Date() },
@@ -326,31 +251,11 @@ async function trackGamificationMetrics(restaurantId) {
       activeUsers: userIds.length,
     };
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      notificationType: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'analytics.gamification_tracked',
-      messageParams: { restaurantId, totalPoints },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'analytics:gamification_tracked', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      gamificationMetrics: metrics,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, gamificationMetrics: metrics },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.ANALYTICS_REVIEW,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW.points,
     });
 
     logger.info('Gamification metrics tracked', { restaurantId, metrics });

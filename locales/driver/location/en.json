@@ -1,8 +1,11 @@
 {
   "location": {
-    "map.configured": "Map configured for {country} using {provider}."
+    "updated": "Location updated at lat: {{lat}}, lng: {{lng}}",
+    "map.configured": "Map configured for {{country}} using {{provider}}"
   },
   "route": {
-    "updated": "Route #{routeId} updated."
+    "calculated": "Route calculated with distance {{distance}} km",
+    "updated": "Route {{routeId}} updated successfully",
+    "details_retrieved": "Route {{routeId}} details retrieved"
   }
 }

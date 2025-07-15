@@ -1,15 +1,47 @@
 'use strict';
 
+/**
+ * Joi validators for customer privacy routes.
+ */
+
 const Joi = require('joi');
+const customerConstants = require('@constants/customer/customerConstants');
+const { formatMessage } = require('@utils/localization');
+const AppError = require('@utils/AppError');
 
-const setPrivacySettingsSchema = Joi.object({
-  anonymizeLocation: Joi.boolean().optional(),
-  anonymizeProfile: Joi.boolean().optional(),
-}).min(1);
+module.exports = {
+  validateSetPrivacySettings(req, res, next) {
+    const schema = Joi.object({
+      location_visibility: Joi.string().valid('public', 'private', 'contacts').required(),
+      data_sharing: Joi.boolean().required(),
+      languageCode: Joi.string().valid(...customerConstants.CUSTOMER_SETTINGS.SUPPORTED_LANGUAGES).optional(),
+    });
 
-const manageDataAccessSchema = Joi.object({
-  shareWithMerchants: Joi.boolean().optional(),
-  shareWithThirdParties: Joi.boolean().optional(),
-}).min(1);
+    const { error } = schema.validate(req.body);
+    if (error) {
+      throw new AppError(
+        formatMessage('customer', 'profile', req.languageCode || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE, 'profile.invalid_privacy_settings'),
+        400,
+        customerConstants.ERROR_CODES.find(code => code === 'INVALID_PRIVACY_SETTINGS')
+      );
+    }
+    next();
+  },
 
-module.exports = { setPrivacySettingsSchema, manageDataAccessSchema };
+  validateManageDataAccess(req, res, next) {
+    const schema = Joi.object({
+      permissions: Joi.object().pattern(Joi.string(), Joi.boolean()).required(),
+      languageCode: Joi.string().valid(...customerConstants.CUSTOMER_SETTINGS.SUPPORTED_LANGUAGES).optional(),
+    });
+
+    const { error } = schema.validate(req.body);
+    if (error) {
+      throw new AppError(
+        formatMessage('customer', 'profile', req.languageCode || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE, 'profile.invalid_permissions'),
+        400,
+        customerConstants.ERROR_CODES.find(code => code === 'INVALID_PERMISSIONS')
+      );
+    }
+    next();
+  },
+};

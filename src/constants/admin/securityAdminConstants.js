@@ -1,65 +1,52 @@
-/**
- * securityAdminConstants.js
- *
- * Defines constants for the Security Admin role, managing authentication and encryption.
- * Supports global operations (Malawi, Tanzania, Kenya, Mozambique, Nigeria, South Africa,
- * India, Brazil) and aligns with driverConstants.js, staffConstants.js, customerConstants.js,
- * and merchantConstants.js.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
-  // Role Definition
   ROLE: 'security_admin',
-
-  // Permissions
+  DESCRIPTION: 'Manages platform authentication, encryption, and security operations.',
   PERMISSIONS: {
-    manageSecurity: ['read', 'write', 'configure'], // Authentication, encryption
-    manageUsers: ['read'], // View security data
-    manageLogs: ['read', 'write', 'archive'] // Security audit logs
+    manageSecurity: ['read', 'write', 'configure'],
+    manageUsers: ['read'],
+    manageLogs: ['read', 'write', 'archive']
   },
-
-  // Admin Configuration
   SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: ['USD', 'MWK', 'TZS', 'KES', 'MZN', 'NGN', 'ZAR', 'INR', 'BRL'],
-    DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: ['en'],
-    DEFAULT_TIMEZONE: 'UTC',
-    MAX_LOGIN_SESSIONS: 3,
-    SESSION_TIMEOUT_MINUTES: 30,
-    PROFILE_FIELDS: {
-      REQUIRED: ['full_name', 'email', 'phone_number', 'role'],
-      OPTIONAL: ['preferred_language']
-    }
+    MAX_LOGIN_SESSIONS: 5,
+    SESSION_TIMEOUT_MINUTES: 60,
+    TWO_FACTOR_AUTH: { ENABLED: true, METHODS: ['sms', 'email', 'authenticator_app', 'biometric'] },
+    PROFILE_FIELDS: { REQUIRED: ['full_name', 'email', 'phone_number', 'role'], OPTIONAL: ['preferred_language'] }
   },
-
-  // Security Operations
   SECURITY_OPERATIONS: {
     ENCRYPTION_ALGORITHM: 'AES-256-GCM',
-    TOKEN_EXPIRY_MINUTES: 60,
+    POST_QUANTUM_ALGORITHM: 'Kyber-512',
+    TOKEN_EXPIRY_MINUTES: 30,
     REFRESH_TOKEN_EXPIRY_DAYS: 7,
-    MFA_METHODS: ['sms', 'email', 'auth_app', 'biometric'],
+    MFA_METHODS: ['sms', 'email', 'authenticator_app', 'biometric'],
     TOKENIZATION_PROVIDER: 'stripe',
     MAX_LOGIN_ATTEMPTS: 5,
-    LOCKOUT_DURATION_MINUTES: 30,
-    AUDIT_LOG_RETENTION_DAYS: 180,
+    LOCKOUT_DURATION_MINUTES: 15,
+    AUDIT_LOG_RETENTION_DAYS: 365,
     SECURITY_INCIDENT_TYPES: ['unauthorized_access', 'data_breach', 'fraud_attempt', 'system_down'],
     PASSWORD_POLICY: {
-      MIN_LENGTH: 12,
+      MIN_LENGTH: 14,
       REQUIRE_UPPERCASE: true,
       REQUIRE_LOWERCASE: true,
       REQUIRE_NUMBERS: true,
       REQUIRE_SPECIAL_CHARS: true,
-      MAX_AGE_DAYS: 90
+      MAX_AGE_DAYS: 60
     },
     TRANSACTION_VERIFICATION_METHODS: ['otp', 'biometric', 'pin']
   },
-
-  // Error Codes
-  ERROR_CODES: ['PERMISSION_DENIED', 'SECURITY_INCIDENT'],
-
-  // Success Messages
-  SUCCESS_MESSAGES: ['Security enhancement applied']
+  ANALYTICS_CONSTANTS: {
+    METRICS: ['security_incident_rate', 'mfa_adoption', 'login_failure_rate', 'fraud_detection_rate'],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['security_alert', 'mfa_update', 'incident_report', 'announcement'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    MAX_PER_HOUR: 15,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
+  },
+  ERROR_CODES: ['PERMISSION_DENIED', 'SECURITY_INCIDENT', 'AUTHENTICATION_FAILED'],
+  SUCCESS_MESSAGES: ['security_enhancement_applied', 'incident_mitigated']
 };

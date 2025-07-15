@@ -1,21 +1,31 @@
 'use strict';
+
 const logger = require('@utils/logger');
-const AppError = require('@utils/AppError');
+const socketConstants = require('@constants/common/socketConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 
 module.exports = (fn) => {
-  return async (...args) => {
+  return async (io, ...args) => {
     try {
-      await Promise.resolve(fn(...args));
+      await Promise.resolve(fn(io, ...args));
     } catch (err) {
       logger.error('catchAsyncSocket caught error', { error: err.message, stack: err.stack });
-      const socket = args[0]; // The first argument is typically the socket
-      // Emit an error event to the client
-      socket.emit('error', {
+      const [event, data, room, languageCode = localizationConstants.DEFAULT_LANGUAGE] = args;
+      const errorData = {
         status: 'error',
-        message: err.message || 'Something went wrong',
+        message: localizationConstants.getMessage('socket.error', languageCode, { message: err.message || 'Something went wrong' }),
         code: err.statusCode || 500,
         errors: err.errors || [],
-      });
+        timestamp: new Date().toISOString(),
+      };
+
+      if (room && io) {
+        io.to(room).emit(socketConstants.SOCKET_EVENT_TYPES.ERROR, errorData);
+        logger.info('Error emitted to room', { event, room, error: err.message });
+      } else if (io) {
+        io.emit(socketConstants.SOCKET_EVENT_TYPES.ERROR, errorData);
+        logger.info('Error broadcasted', { event, error: err.message });
+      }
     }
   };
 };

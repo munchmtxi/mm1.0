@@ -35,16 +35,16 @@ const registerValidations = [
   body('email').isEmail().withMessage('Valid email is required'),
   body('password')
     .isString()
-    .isLength({ min: authConstants.PASSWORD_CONSTANTS.MIN_LENGTH, max: authConstants.PASSWORD_CONSTANTS.MAX_LENGTH })
+    .isLength({ min: 8, max: 128 })
     .custom((value) => {
       const schema = new (require('password-validator'))();
       schema
-        .is().min(authConstants.PASSWORD_CONSTANTS.MIN_LENGTH)
-        .is().max(authConstants.PASSWORD_CONSTANTS.MAX_LENGTH)
-        .has().uppercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.UPPERCASE ? 1 : 0)
-        .has().lowercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.LOWERCASE ? 1 : 0)
-        .has().digits(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.NUMBER ? 1 : 0)
-        .has().symbols(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.SPECIAL_CHAR ? 1 : 0);
+        .is().min(8)
+        .is().max(128)
+        .has().uppercase(1)
+        .has().lowercase(1)
+        .has().digits(1)
+        .has().symbols(1);
       if (!schema.validate(value)) {
         throw new Error('Password does not meet complexity requirements');
       }
@@ -62,7 +62,7 @@ const registerValidations = [
       }
     }),
   body('country')
-    .isIn(authConstants.AUTH_SETTINGS.SUPPORTED_COUNTRIES)
+    .isIn(['MWI', 'US'])
     .withMessage('Invalid country'),
   body('merchant_type')
     .optional()
@@ -74,7 +74,7 @@ const registerValidations = [
     .withMessage('Invalid role'),
   body('mfa_method')
     .optional()
-    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .isIn(authConstants.MFA_CONSTANTS.MFA_METHODS)
     .withMessage('Invalid MFA method'),
 ];
 
@@ -85,7 +85,7 @@ const registerNonCustomerValidations = [
     .withMessage('Role must be admin, driver, staff, or merchant'),
   body('mfa_method')
     .optional()
-    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .isIn(authConstants.MFA_CONSTANTS.MFA_METHODS)
     .withMessage('Invalid MFA method'),
 ];
 
@@ -115,8 +115,8 @@ const loginValidations = [
   body('mfa_code')
     .optional()
     .isString()
-    .isLength({ min: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH, max: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH })
-    .withMessage(`MFA code must be ${authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH} characters`),
+    .isLength({ min: 6, max: 6 })
+    .withMessage('MFA code must be 6 characters'),
 ];
 
 const logoutValidations = [
@@ -154,10 +154,10 @@ const verifyMfaValidations = [
     .withMessage('User ID must be an integer'),
   body('mfa_code')
     .isString()
-    .isLength({ min: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH, max: authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH })
-    .withMessage(`MFA code must be ${authConstants.MFA_CONSTANTS.MFA_TOKEN_LENGTH} characters`),
+    .isLength({ min: 6, max: 6 })
+    .withMessage('MFA code must be 6 characters'),
   body('mfa_method')
-    .isIn(Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS))
+    .isIn(authConstants.MFA_CONSTANTS.MFA_METHODS)
     .withMessage('Invalid MFA method'),
 ];
 

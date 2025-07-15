@@ -1,12 +1,14 @@
+'use strict';
+
 /**
- * notificationService.js
- *
+ * Notification Service
  * Centralized service for managing notifications across all roles and services.
  * Handles notification creation, validation, delivery, localization, rate limiting,
  * retries, and analytics. Integrates with Zoho for email and push notifications.
  *
  * Dependencies:
  * - notificationConstants.js (types, delivery methods, settings)
+ * - localizationConstants.js (language settings)
  * - logger.js (custom logging)
  * - config.js (environment settings)
  * - localizationService.js (message formatting)
@@ -14,13 +16,12 @@
  * - External APIs: twilio (SMS/WhatsApp), Zoho (email, push)
  * - Redis for rate limiting
  *
- * Last Updated: May 28, 2025
+ * Last Updated: June 25, 2025
  */
-
-'use strict';
 
 const { Op } = require('sequelize');
 const notificationConstants = require('@constants/common/notificationConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 const logger = require('@utils/logger');
 const config = require('@config/config');
 const { formatMessage } = require('@utils/localizationService');
@@ -90,7 +91,10 @@ class NotificationService {
         throw new Error(notificationConstants.ERROR_CODES[2]);
       }
 
-      const language = user.preferred_language || notificationConstants.NOTIFICATION_SETTINGS.DEFAULT_LANGUAGE;
+      const language = user.preferred_language || localizationConstants.DEFAULT_LANGUAGE;
+      if (!localizationConstants.SUPPORTED_LANGUAGES.includes(language)) {
+        throw new Error('Unsupported language');
+      }
       const message = formatMessage(role, module, language, messageKey, messageParams);
 
       const notification = await Notification.create({
@@ -342,7 +346,7 @@ class NotificationService {
       type: notificationConstants.NOTIFICATION_TYPES[0], // announcement
       message,
       priority: notificationConstants.PRIORITY_LEVELS[0], // low
-      language_code: notificationConstants.NOTIFICATION_SETTINGS.DEFAULT_LANGUAGE,
+      language_code: localizationConstants.DEFAULT_LANGUAGE,
       status: 'sent',
       read_status: false,
       data,

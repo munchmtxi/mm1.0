@@ -7,58 +7,44 @@ const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const jwtConfig = require('@config/jwtConfig');
 const authConstants = require('@constants/common/authConstants');
-const { TYPES: BUSINESS_TYPES } = require('@constants/merchant/businessTypes');
-const { User, Role, Device, Merchant, Customer, Driver, admin, Staff, Session, AuditLog, Verification } = require('@models');
+const { SECURITY_CONSTANTS } = require('@constants/common/securityConstants');
+const { MERCHANT_CONFIG } = require('@constants/merchant/merchantConstants');
+const { User, Role, Device, Merchant, Customer, Driver, Admin, Staff, Session, AuditLog, Verification } = require('@models');
 
 const TokenService = {
   generateTokens: async (user, deviceInfo = {}, tokenType = authConstants.TOKEN_CONSTANTS.TOKEN_TYPES.ACCESS) => {
-    const roleName = user.role ? user.role.name : (await Role.findByPk(user.role_id)).name;
-    const payload = { id: user.id, role: roleName };
-    if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('merchant') && user.merchant_profile) {
-      payload.merchant_id = user.merchant_profile.id;
-    }
-    if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('admin') && user.admin_profile) {
-      payload.admin_id = user.admin_profile.id;
-    }
+    const role = await Role.findByPk(user.role_id);
+    const payload = { id: user.id, role: role.name };
+    if (role.name === 'merchant' && user.merchant_profile) payload.merchant_id = user.merchant_profile.id;
+    if (role.name === 'admin' && user.admin_profile) payload.admin_id = user.admin_profile.id;
 
     const tokenOptions = {
-      expiresIn: authConstants.TOKEN_CONSTANTS.TOKEN_EXPIRY[tokenType.toUpperCase()] * 60, // Convert to seconds
-      algorithm: authConstants.TOKEN_CONSTANTS.SIGNING_ALGORITHM,
+      expiresIn: SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].TOKEN_EXPIRY_MINUTES * 60,
+      algorithm: SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].ENCRYPTION_ALGORITHM,
     };
 
     const accessToken = jwt.sign(payload, jwtConfig.secretOrKey, tokenOptions);
     const refreshToken = tokenType === authConstants.TOKEN_CONSTANTS.TOKEN_TYPES.REFRESH
       ? jwt.sign(payload, jwtConfig.refreshSecret, {
-          expiresIn: authConstants.TOKEN_CONSTANTS.TOKEN_EXPIRY.REFRESH * 60,
-          algorithm: authConstants.TOKEN_CONSTANTS.SIGNING_ALGORITHM,
+          expiresIn: SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].TOKEN_EXPIRY_MINUTES * 60,
+          algorithm: SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].ENCRYPTION_ALGORITHM,
         })
       : null;
 
-    if (deviceInfo?.deviceId) {
+    if (deviceInfo?.device_id) {
       const deviceType = deviceInfo.deviceType || 'unknown';
-      let platform;
-      switch (deviceType.toLowerCase()) {
-        case 'desktop':
-          platform = 'web';
-          break;
-        case 'mobile':
-        case 'tablet':
-          platform = 'ios';
-          break;
-        default:
-          platform = 'web';
-      }
+      const platform = deviceType.toLowerCase() === 'desktop' ? 'web' : deviceType.toLowerCase() === 'mobile' || deviceType.toLowerCase() === 'tablet' ? 'ios' : 'web';
 
       const activeDevices = await Device.count({ where: { user_id: user.id } });
-      if (activeDevices >= authConstants.TOKEN_CONSTANTS.MAX_TOKENS_PER_USER) {
-        throw new AppError('Maximum device limit reached', 403, authConstants.ERROR_CODES.MAX_DEVICE_LIMIT);
+      if (activeDevices >= SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].MAX_ACTIVE_TOKENS) {
+        throw new AppError('Maximum device limit reached', 403, SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].ERROR_CODES.TOKEN_LIMIT_EXCEEDED);
       }
 
       const [device, created] = await Device.findOrCreate({
-        where: { user_id: user.id, device_id: deviceInfo.deviceId },
+        where: { user_id: user.id, device_id: deviceInfo.device_id },
         defaults: {
           user_id: user.id,
-          device_id: deviceInfo.deviceId,
+          device_id: deviceInfo.device_id,
           device_type: deviceType,
           platform,
           last_active_at: new Date(),
@@ -69,7 +55,7 @@ const TokenService = {
 
       await device.update({
         refresh_token: refreshToken,
-        refresh_token_expires_at: new Date(Date.now() + authConstants.TOKEN_CONSTANTS.TOKEN_EXPIRY.REFRESH * 60 * 1000),
+        refresh_token_expires_at: new Date(Date.now() + SECURITY_CONSTANTS.ROLES[role.name.toUpperCase()].TOKEN_EXPIRY_MINUTES * 60 * 1000),
         last_active_at: new Date(),
       });
 
@@ -78,7 +64,7 @@ const TokenService = {
         token: accessToken,
         token_type: tokenType,
         status: authConstants.SESSION_CONSTANTS.SESSION_STATUSES.ACTIVE,
-        expires_at: new Date(Date.now() + authConstants.SESSION_CONSTANTS.SESSION_TIMEOUT_MINUTES[roleName] * 60 * 1000),
+        expires_at: new Date(Date.now() + authConstants.SESSION_CONSTANTS.SESSION_TIMEOUT_MINUTES[role.name] * 60 * 1000),
         device_id: device.id,
         last_active_at: new Date(),
       });
@@ -86,11 +72,11 @@ const TokenService = {
       await AuditLog.create({
         user_id: user.id,
         log_type: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.TOKEN_ISSUANCE,
-        details: { token_type: tokenType, device_id: deviceInfo.deviceId },
+        details: { token_type: tokenType, device_id: deviceInfo.device_id },
       });
     }
 
-    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.TOKEN_ISSUANCE, { userId: user.id, role: roleName });
+    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.TOKEN_ISSUANCE, { userId: user.id, role: role.name });
     return { accessToken, refreshToken };
   },
 
@@ -141,17 +127,19 @@ const registerUser = async (userData, isAdmin = false) => {
       license_number,
       permissions,
       mfa_method,
+      staff_types,
     } = userData;
 
     const roleName = role || authConstants.AUTH_SETTINGS.DEFAULT_ROLE;
+    if (!authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes(roleName)) {
+      throw new AppError('Invalid role', 400, authConstants.ERROR_CODES.INVALID_ROLE);
+    }
     if (roleName !== authConstants.AUTH_SETTINGS.DEFAULT_ROLE && !isAdmin) {
       throw new AppError('Only admins can register non-customer roles', 403, authConstants.ERROR_CODES.PERMISSION_DENIED);
     }
 
     const roleRecord = await Role.findOne({ where: { name: roleName } });
-    if (!roleRecord) {
-      throw new AppError('Invalid role', 400, authConstants.ERROR_CODES.INVALID_ROLE);
-    }
+    if (!roleRecord) throw new AppError('Invalid role', 400, authConstants.ERROR_CODES.INVALID_ROLE);
 
     const user = await User.create({
       first_name,
@@ -161,7 +149,7 @@ const registerUser = async (userData, isAdmin = false) => {
       phone,
       country,
       role_id: roleRecord.id,
-      is_verified: roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('admin') ? true : false,
+      is_verified: roleName === 'admin' ? true : false,
       status: authConstants.USER_STATUSES.ACTIVE,
       mfa_method: authConstants.MFA_CONSTANTS.MFA_REQUIRED_ROLES.includes(roleName) ? mfa_method || authConstants.MFA_CONSTANTS.MFA_METHODS.EMAIL : null,
       mfa_status: authConstants.MFA_CONSTANTS.MFA_REQUIRED_ROLES.includes(roleName) ? authConstants.MFA_CONSTANTS.MFA_STATUSES.PENDING : authConstants.MFA_CONSTANTS.MFA_STATUSES.DISABLED,
@@ -176,9 +164,9 @@ const registerUser = async (userData, isAdmin = false) => {
       await user.save();
     }
 
-    if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('merchant')) {
+    if (roleName === 'merchant') {
       const merchantType = business_type || 'cafe';
-      if (!BUSINESS_TYPES[merchantType.toUpperCase()]) {
+      if (!MERCHANT_CONFIG.SUPPORTED_MERCHANT_TYPES.includes(merchantType)) {
         throw new AppError('Invalid business type', 400, authConstants.ERROR_CODES.INVALID_BUSINESS_TYPE);
       }
       await Merchant.create({
@@ -187,7 +175,7 @@ const registerUser = async (userData, isAdmin = false) => {
         business_type: merchantType,
         address: address || 'Blantyre, Malawi',
         phone_number: phone,
-        currency: authConstants.AUTH_SETTINGS.SUPPORTED_CURRENCIES.includes('MWK') ? 'MWK' : authConstants.AUTH_SETTINGS.DEFAULT_CURRENCY,
+        currency: authConstants.AUTH_SETTINGS.SUPPORTED_CURRENCIES.includes(country === 'MWI' ? 'MWK' : 'USD') ? (country === 'MWI' ? 'MWK' : 'USD') : authConstants.AUTH_SETTINGS.DEFAULT_CURRENCY,
         time_zone: 'Africa/Blantyre',
         business_type_details: business_type_details || {
           cuisine_type: ['coffee'],
@@ -203,20 +191,21 @@ const registerUser = async (userData, isAdmin = false) => {
         method: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_METHODS.DOCUMENT_UPLOAD,
         status: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_STATUSES.PENDING,
         document_type: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_DOCUMENT_TYPES.BUSINESS_LICENSE,
+        document_url: 'placeholder_url',
       });
-    } else if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('customer')) {
+    } else if (roleName === 'customer') {
       await Customer.create({
         user_id: user.id,
         phone_number: phone,
         address: address || 'Blantyre, Malawi',
         country: country || 'MWI',
       });
-    } else if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('driver')) {
+    } else if (roleName === 'driver') {
       await Driver.create({
         user_id: user.id,
         name: `${first_name} ${last_name}`,
         phone_number: phone,
-        vehicle_info: vehicle_info || {},
+        vehicle_info: vehicle_info || { type: 'car' },
         license_number: license_number || `LIC-${user.id}`,
       });
 
@@ -225,11 +214,26 @@ const registerUser = async (userData, isAdmin = false) => {
         method: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_METHODS.DOCUMENT_UPLOAD,
         status: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_STATUSES.PENDING,
         document_type: authConstants.VERIFICATION_CONSTANTS.VERIFICATION_DOCUMENT_TYPES.DRIVERS_LICENSE,
+        document_url: 'placeholder_url',
       });
-    } else if (roleName === authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('admin')) {
-      await admin.create({
+    } else if (roleName === 'admin') {
+      await Admin.create({
         user_id: user.id,
+        role_id: roleRecord.id,
+        email,
+        phone_number: phone,
+        country_code: country || 'MWI',
         permissions: permissions || authConstants.RBAC_CONSTANTS.ROLE_PERMISSIONS.admin,
+      });
+    } else if (roleName === 'staff') {
+      const validStaffTypes = staff_types?.every((type) => require('@constants/staff/staffConstants').STAFF_PROFILE_CONSTANTS.ALLOWED_STAFF_TYPES.includes(type));
+      if (!validStaffTypes) {
+        throw new AppError('Invalid staff type', 400, authConstants.ERROR_CODES.INVALID_STAFF_TYPE);
+      }
+      await Staff.create({
+        user_id: user.id,
+        merchant_id: userData.merchant_id || null,
+        staff_types: staff_types || ['general'],
       });
     }
 
@@ -257,7 +261,7 @@ const loginUser = async (email, password, deviceInfo, roleName, mfaCode) => {
       { model: Merchant, as: 'merchant_profile' },
       { model: Customer, as: 'customer_profile' },
       { model: Driver, as: 'driver_profile' },
-      { model: admin, as: 'admin_profile' },
+      { model: Admin, as: 'admin_profile' },
       { model: Staff, as: 'staff_profile' },
     ];
 
@@ -292,7 +296,7 @@ const loginUser = async (email, password, deviceInfo, roleName, mfaCode) => {
       throw new AppError('User account is inactive', 403, authConstants.ERROR_CODES.ACCOUNT_INACTIVE);
     }
 
-    if (!user.is_verified && roleName !== authConstants.AUTH_SETTINGS.SUPPORTED_ROLES.includes('admin')) {
+    if (!user.is_verified && roleName !== 'admin') {
       throw new AppError('Please verify your account', 403, authConstants.ERROR_CODES.ACCOUNT_UNVERIFIED);
     }
 
@@ -306,8 +310,9 @@ const loginUser = async (email, password, deviceInfo, roleName, mfaCode) => {
           window: 1,
         });
       } else if (user.mfa_method === authConstants.MFA_CONSTANTS.MFA_METHODS.SMS || user.mfa_method === authConstants.MFA_CONSTANTS.MFA_METHODS.EMAIL) {
-        // Placeholder for SMS/Email OTP verification
-        isMfaValid = true; // Implement actual OTP verification
+        isMfaValid = true; // Placeholder for SMS/Email OTP verification
+      } else if (user.mfa_method === authConstants.MFA_CONSTANTS.MFA_METHODS.BIOMETRIC) {
+        isMfaValid = true; // Placeholder for biometric verification
       }
       if (!isMfaValid) {
         await AuditLog.create({
@@ -326,7 +331,7 @@ const loginUser = async (email, password, deviceInfo, roleName, mfaCode) => {
     await AuditLog.create({
       user_id: user.id,
       log_type: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.LOGIN,
-      details: { role: roleName, device_id: deviceInfo?.deviceId },
+      details: { role: roleName, device_id: deviceInfo?.device_id },
     });
 
     logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.LOGIN, { userId: user.id, role: roleName });
@@ -343,7 +348,7 @@ const googleOAuthLogin = async (user, deviceInfo) => {
     const platform = deviceInfo?.platform || (deviceType === 'desktop' ? 'web' : 'ios');
 
     const { accessToken, refreshToken } = await TokenService.generateTokens(user, {
-      deviceId: deviceInfo?.deviceId,
+      device_id: deviceInfo?.device_id,
       deviceType,
       platform,
     });
@@ -351,7 +356,7 @@ const googleOAuthLogin = async (user, deviceInfo) => {
     await AuditLog.create({
       user_id: user.id,
       log_type: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.LOGIN,
-      details: { method: 'google_oauth', device_id: deviceInfo?.deviceId },
+      details: { method: 'google_oauth', device_id: deviceInfo?.device_id },
     });
 
     logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.LOGIN, { userId: user.id, role: user.role?.name });
@@ -371,13 +376,12 @@ const refreshToken = async (refreshToken) => {
         { model: Merchant, as: 'merchant_profile' },
         { model: Customer, as: 'customer_profile' },
         { model: Driver, as: 'driver_profile' },
-        { model: admin, as: 'admin_profile' },
+        { model: Admin, as: 'admin_profile' },
         { model: Staff, as: 'staff_profile' },
       ],
     });
-    if (!user) {
-      throw new AppError('User not found', 404, authConstants.ERROR_CODES.USER_NOT_FOUND);
-    }
+    if (!user) throw new AppError('User not found', 404, authConstants.ERROR_CODES.USER_NOT_FOUND);
+
     const { accessToken, refreshToken: newRefreshToken } = await TokenService.generateTokens(user, null, authConstants.TOKEN_CONSTANTS.TOKEN_TYPES.REFRESH);
 
     await AuditLog.create({
@@ -399,10 +403,7 @@ const verifyMfa = async (userId, mfaCode, mfaMethod) => {
     const user = await User.findByPk(userId, {
       attributes: ['two_factor_secret', 'mfa_status', 'mfa_method', 'mfa_backup_codes'],
     });
-    if (!user) {
-      throw new AppError('User not found', 404, authConstants.ERROR_CODES.USER_NOT_FOUND);
-    }
-
+    if (!user) throw new AppError('User not found', 404, authConstants.ERROR_CODES.USER_NOT_FOUND);
     if (user.mfa_status !== authConstants.MFA_CONSTANTS.MFA_STATUSES.ENABLED) {
       throw new AppError('MFA not enabled', 400, authConstants.ERROR_CODES.MFA_FAILED);
     }
@@ -416,14 +417,12 @@ const verifyMfa = async (userId, mfaCode, mfaMethod) => {
         window: 1,
       });
     } else if (mfaMethod === authConstants.MFA_CONSTANTS.MFA_METHODS.SMS || mfaMethod === authConstants.MFA_CONSTANTS.MFA_METHODS.EMAIL) {
-      // Placeholder for SMS/Email OTP verification
-      isValid = true; // Implement actual OTP verification
+      isValid = true; // Placeholder for SMS/Email OTP verification
     } else if (mfaMethod === authConstants.MFA_CONSTANTS.MFA_METHODS.BIOMETRIC) {
-      // Placeholder for biometric verification
-      isValid = true; // Implement actual biometric verification
+      isValid = true; // Placeholder for biometric verification
     }
 
-    if (!isValid && user.mfa_backup_codes.includes(mfaCode)) {
+    if (!isValid && user.mfa_backup_codes?.includes(mfaCode)) {
       isValid = true;
       user.mfa_backup_codes = user.mfa_backup_codes.filter((code) => code !== mfaCode);
       await user.save();

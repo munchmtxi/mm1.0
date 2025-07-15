@@ -14,6 +14,18 @@ const eventTrackingHandler = (io, socket) => {
     socket.leave(room);
     logger.info('User left tracking room', { room, userId: socket.user_id });
   });
+
+  socket.on('joinEngagementRoom', ({ customerId }) => {
+    const room = `tracking:engagement:${customerId}`;
+    socket.join(room);
+    logger.info('User joined engagement room', { room, userId: socket.user_id });
+  });
+
+  socket.on('leaveEngagementRoom', ({ customerId }) => {
+    const room = `tracking:engagement:${customerId}`;
+    socket.leave(room);
+    logger.info('User left engagement room', { room, userId: socket.user_id });
+  });
 };
 
 module.exports = eventTrackingHandler;

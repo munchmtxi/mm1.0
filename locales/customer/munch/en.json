@@ -1,56 +1,98 @@
 {
-  "error": {
-    "customer_not_found": "Customer not found",
-    "restaurant_not_found": "Restaurant not found",
-    "invalid_order_items": "Invalid order items",
-    "menu_item_not_found": "Menu item not found or unavailable",
-    "invalid_dietary_filter": "Invalid dietary filter",
-    "insufficient_funds": "Insufficient wallet funds",
-    "order_not_found": "Order not found",
-    "cannot_update_order": "Cannot update order in current status",
-    "order_already_cancelled": "Order already cancelled",
-    "cannot_cancel_order": "Cannot cancel order in current status",
-    "wallet_not_found": "Wallet not found",
-    "cart_not_found": "Cart not found",
-    "insufficient_stock": "Insufficient stock for item",
-    "no_driver_assigned": "No driver assigned",
-    "invalid_subscription_plan": "Invalid subscription plan",
-    "subscription_already_active": "Subscription already active",
-    "subscription_not_found": "Subscription not found",
-    "invalid_subscription_action": "Invalid subscription action",
-    "invalid_upgrade_plan": "Invalid upgrade plan",
-    "invalid_downgrade_plan": "Invalid downgrade plan",
-    "invalid_pause_duration": "Invalid pause duration",
-    "invalid_issue_type": "Invalid issue type",
-    "ticket_not_found": "Ticket not found",
-    "ticket_already_escalated": "Ticket already escalated",
-    "cannot_escalate_ticket": "Cannot escalate ticket",
-    "promotion_not_found": "Promotion not found",
-    "invalid_promotion": "Invalid or expired promotion",
-    "promotion_already_redeemed": "Promotion already redeemed"
-  },
+  "validation_error": "Invalid request: {errors}",
+  "invalid_restaurant_id": "Invalid restaurant ID",
+  "invalid_item_id": "Invalid item ID",
+  "invalid_limit": "Limit must be between 1 and {max}",
+  "unsupported_language": "Unsupported language",
+  "restaurant_not_found": "Restaurant not found",
+  "menu_retrieved": "Menu items retrieved successfully",
+  "menu_retrieval_failed": "Failed to retrieve menu items: {error}",
+  "availability_checked": "Item availability checked successfully",
+  "availability_check_failed": "Failed to check item availability: {error}",
+  "featured_items_retrieved": "Featured items retrieved successfully",
+  "featured_items_retrieval_failed": "Failed to retrieve featured items: {error}",
+  "menu_subscription_confirmed": "Subscribed to menu updates",
+  "menu_subscription_failed": "Failed to subscribe to menu updates: {error}",
+  "item_availability_updated": "Item availability updated",
+  "item_availability_update_failed": "Failed to update item availability: {error}",
   "order": {
-    "confirmed": "Order {orderId} confirmed successfully",
-    "updated": "Order {orderId} updated successfully",
-    "cancelled": "Order {orderId} cancelled successfully"
+    "merchant_browse_success": "Merchants retrieved successfully",
+    "merchant_browse_failed": "Failed to browse merchants: {error}",
+    "add_to_cart_success": "Item added to cart successfully",
+    "add_to_cart_failed": "Failed to add item to cart: {error}",
+    "update_cart_success": "Cart updated successfully",
+    "update_cart_failed": "Failed to update cart: {error}",
+    "order_placed_success": "Order {orderNumber} placed successfully",
+    "order_placed_failed": "Failed to place order: {error}",
+    "order_updated_success": "Order {orderNumber} updated successfully",
+    "order_updated_failed": "Failed to update order: {error}",
+    "order_cancelled_success": "Order {orderNumber} cancelled successfully",
+    "order_cancelled_failed": "Failed to cancel order: {error}",
+    "validation_failed": "Validation failed: {errors}"
   },
-  "driver": {
-    "message_sent": "Message sent for order {orderId}: {message}"
-  },
-  "subscription": {
-    "enrolled": "Enrolled in {planId} plan successfully",
-    "upgrade": "Subscription {subscriptionId} upgraded successfully",
-    "downgrade": "Subscription {subscriptionId} downgraded successfully",
-    "pause": "Subscription {subscriptionId} paused successfully",
-    "cancel": "Subscription {subscriptionId} cancelled successfully"
-  },
-  "support": {
-    "ticket": {
-      "created": "Support ticket {ticketNumber} created successfully",
-      "escalated": "Support ticket {ticketNumber} escalated successfully"
+  "delivery": {
+    "success": {
+      "order_tracked": "Order tracked successfully",
+      "order_cancelled": "Order {orderNumber} cancelled successfully",
+      "message_sent": "Message sent to driver successfully",
+      "feedback_requested": "Feedback requested successfully",
+      "status_updated": "Delivery status updated successfully",
+      "earnings_processed": "Earnings processed successfully",
+      "location_updated": "Location updated successfully",
+      "address_predictions_retrieved": "Address predictions retrieved successfully"
+    },
+    "error": {
+      "permission_denied": "Permission denied",
+      "order_not_found": "Order not found",
+      "order_cancellation_failed": "Failed to cancel order: {error}",
+      "feedback_request_failed": "Failed to request feedback: {error}",
+      "status_update_failed": "Failed to update delivery status: {error}",
+      "earnings_processing_failed": "Failed to process earnings: {error}",
+      "location_update_failed": "Failed to update location: {error}",
+      "order_not_cancellable": "Order cannot be cancelled",
+      "feedback_not_allowed": "Feedback not allowed for this order",
+      "driver_not_assigned": "Driver not assigned to this order",
+      "cannot_update_location": "Cannot update location for non-pending order"
     }
   },
-  "promotion": {
-    "redeemed": "Promotion {promotionId} redeemed successfully"
+  "subscription": {
+    "success": {
+      "enrolled": "Successfully enrolled in {plan} plan",
+      "upgrade": "Subscription upgraded to {plan}",
+      "downgrade": "Subscription downgraded to {plan}",
+      "pause": "Subscription paused successfully",
+      "cancel": "Subscription cancelled with {refundAmount} refunded",
+      "renewed": "Subscription {plan} renewed successfully",
+      "tracked": "Subscription details retrieved successfully",
+      "enrolled_notification": "You enrolled in {plan} for {amount} {currency}",
+      "upgrade_notification": "Your subscription was upgraded to {plan} for {amount} {currency}",
+      "downgrade_notification": "Your subscription was downgraded to {plan} for {amount} {currency}",
+      "pause_notification": "Your subscription has been paused",
+      "cancel_notification": "Your subscription was cancelled with {refundAmount} {currency} refunded",
+      "renewed_notification": "Your subscription {plan} was renewed for {amount} {currency}"
+    },
+    "error": {
+      "validation_failed": "Validation failed: {errors}",
+      "generic": "An error occurred: {message}",
+      "CUSTOMER_NOT_FOUND": "Customer not found",
+      "INVALID_SUBSCRIPTION_PLAN": "Invalid subscription plan",
+      "MAX_SUBSCRIPTIONS_EXCEEDED": "Maximum active subscriptions reached",
+      "INVALID_MENU_ITEM": "Invalid or unpublished menu item",
+      "INVALID_DIETARY_FILTER": "Menu item does not meet dietary requirements",
+      "WALLET_NOT_FOUND": "Wallet not found",
+      "WALLET_INSUFFICIENT_FUNDS": "Insufficient wallet balance",
+      "TRANSACTION_LIMIT_EXCEEDED": "Wallet balance exceeds maximum limit",
+      "SUBSCRIPTION_NOT_FOUND": "Subscription not found",
+      "INVALID_SUBSCRIPTION_ACTION": "Invalid subscription action",
+      "INVALID_UPGRADE_PLAN": "Invalid upgrade plan",
+      "INVALID_DOWNGRADE_PLAN": "Invalid downgrade plan",
+      "INVALID_PAUSE_DURATION": "Invalid pause duration",
+      "SUBSCRIPTION_ENROLLMENT_FAILED": "Failed to enroll subscription",
+      "SUBSCRIPTION_MANAGEMENT_FAILED": "Failed to manage subscription",
+      "SUBSCRIPTION_TRACKING_FAILED": "Failed to track subscription",
+      "SUBSCRIPTION_RENEWAL_FAILED": "Failed to renew subscription",
+      "INVALID_ACTION": "Invalid gamification action",
+      "SUBSCRIPTION_CHECK_FAILED": "Failed to check subscription status"
+    }
   }
 }

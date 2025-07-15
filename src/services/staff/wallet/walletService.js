@@ -1,30 +1,13 @@
 'use strict';
 
-/**
- * walletService.js
- * Manages staff wallet operations for munch. Handles balance retrieval, transaction history,
- * withdrawals, merchant synchronization, and preferences.
- * Last Updated: May 26, 2025
- */
-
 const { Wallet, WalletTransaction, Staff, Merchant, PrivacySettings, Payout } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const merchantConstants = require('@constants/merchant/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
-const securityService = require('@services/common/securityService');
+const staffConstants = require('@constants/staff/staffConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
 
-/**
- * Retrieves staff wallet balance.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Object>} Wallet balance and currency.
- */
-async function getWalletBalance(staffId) {
+async function getWalletBalance(staffId, securityService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -42,16 +25,11 @@ async function getWalletBalance(staffId) {
     return { balance: staff.wallet.balance, currency: staff.wallet.currency };
   } catch (error) {
     logger.error('Wallet balance retrieval failed', { error: error.message, staffId });
-    throw new AppError(`Balance retrieval failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Balance retrieval failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('WALLET_NOT_FOUND') ? 'WALLET_NOT_FOUND' : 'TRANSACTION_FAILED');
   }
 }
 
-/**
- * Displays wallet transaction history.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Array>} Transaction records.
- */
-async function viewTransactionHistory(staffId) {
+async function viewTransactionHistory(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -69,54 +47,51 @@ async function viewTransactionHistory(staffId) {
     return transactions;
   } catch (error) {
     logger.error('Transaction history retrieval failed', { error: error.message, staffId });
-    throw new AppError(`History retrieval failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`History retrieval failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('WALLET_NOT_FOUND') ? 'WALLET_NOT_FOUND' : 'TRANSACTION_FAILED');
   }
 }
 
-/**
- * Submits a withdrawal request.
- * @param {number} staffId - Staff ID.
- * @param {number} amount - Withdrawal amount.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Payout record.
- */
-async function requestWithdrawal(staffId, amount, ipAddress) {
+async function requestWithdrawal(staffId, amount, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
       throw new AppError('Wallet not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
+    const withdrawalLimit = paymentConstants.FINANCIAL_LIMITS.find(limit => limit.type === 'WITHDRAWAL');
     if (amount > staff.wallet.balance) {
-      throw new AppError('Insufficient balance', 400, staffConstants.STAFF_ERROR_CODES.INSUFFICIENT_BALANCE);
+      throw new AppError('Insufficient balance', 400, paymentConstants.ERROR_CODES.includes('INSUFFICIENT_FUNDS') ? 'INSUFFICIENT_FUNDS' : 'INVALID_BALANCE');
+    }
+    if (amount < withdrawalLimit.min || amount > withdrawalLimit.max) {
+      throw new AppError(`Withdrawal amount must be between ${withdrawalLimit.min} and ${withdrawalLimit.max}`, 400, 'INVALID_BALANCE');
     }
 
     await securityService.verifyMFA(staff.user_id);
 
-    const encryptedBankDetails = await securityService.encryptData(staff.wallet.bank_details);
+    const encryptedBankDetails = await securityService.encryptData(staff.wallet.bank_details || {});
     const payout = await Payout.create({
       wallet_id: staff.wallet.id,
       staff_id: staffId,
       amount,
       currency: staff.wallet.currency,
-      method: 'bank_transfer',
-      status: 'pending',
+      method: paymentConstants.PAYMENT_METHODS.includes('bank_transfer') ? 'bank_transfer' : 'default',
+      status: paymentConstants.TRANSACTION_STATUSES[0], // 'pending'
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, amount, payoutId: payout.id, action: 'request_withdrawal' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('wallet.withdrawal_requested', { amount, payoutId: payout.id });
+    const message = formatMessage('wallet.withdrawal_requested', { amount, payoutId: payout.id });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WITHDRAWAL_PROCESSED,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -125,17 +100,11 @@ async function requestWithdrawal(staffId, amount, ipAddress) {
     return payout;
   } catch (error) {
     logger.error('Withdrawal request failed', { error: error.message, staffId, amount });
-    throw new AppError(`Withdrawal failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Withdrawal failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Synchronizes wallet data with merchant.
- * @param {number} staffId - Staff ID.
- * @param {number} merchantId - Merchant ID.
- * @returns {Promise<void>}
- */
-async function syncWithMerchant(staffId, merchantId) {
+async function syncWithMerchant(staffId, merchantId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     const merchant = await Merchant.findByPk(merchantId);
@@ -153,21 +122,13 @@ async function syncWithMerchant(staffId, merchantId) {
     );
 
     socketService.emit(`munch:wallet:${staffId}`, 'wallet:merchant_synced', { staffId, merchantId });
-
   } catch (error) {
     logger.error('Merchant sync failed', { error: error.message, staffId, merchantId });
-    throw new AppError(`Sync failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Sync failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'WALLET_NOT_FOUND');
   }
 }
 
-/**
- * Sets wallet notification preferences.
- * @param {number} staffId - Staff ID.
- * @param {Object} preferences - Notification preferences.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<void>}
- */
-async function updateWalletPreferences(staffId, preferences, ipAddress) {
+async function updateWalletPreferences(staffId, preferences, ipAddress, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: PrivacySettings, as: 'user' }] });
     if (!staff) {
@@ -181,25 +142,25 @@ async function updateWalletPreferences(staffId, preferences, ipAddress) {
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, preferences, action: 'update_wallet_preferences' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('wallet.preferences_updated', { staffId });
+    const message = formatMessage('wallet.preferences_updated', { staffId });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
     socketService.emit(`munch:wallet:${staffId}`, 'wallet:preferences_updated', { staffId, preferences });
   } catch (error) {
     logger.error('Wallet preferences update failed', { error: error.message, staffId });
-    throw new AppError(`Preferences update failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.STAFF_ERROR);
+    throw new AppError(`Preferences update failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('WALLET_NOT_FOUND') ? 'WALLET_NOT_FOUND' : 'TRANSACTION_FAILED');
   }
 }
 
@@ -208,5 +169,5 @@ module.exports = {
   viewTransactionHistory,
   requestWithdrawal,
   syncWithMerchant,
-  updateWalletPreferences,
+  updateWalletPreferences
 };

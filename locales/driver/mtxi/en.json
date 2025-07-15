@@ -1,11 +1,14 @@
 {
   "ride": {
-    "accepted": "Ride #{rideId} has been accepted.",
-    "status_updated": "Ride #{rideId} status updated to {status}.",
-    "message_received": "Message from driver: {message}",
-    "passenger_added": "You have been added to shared ride #{rideId}.",
-    "passenger_removed": "You have been removed from shared ride #{rideId}.",
-    "assigned": "Ride #{rideId} has been assigned to you.",
-    "cancelled": "Ride #{rideId} has been cancelled."
+    "accepted": "Ride {{rideId}} accepted successfully",
+    "status_updated": "Ride {{rideId}} status updated to {{status}}",
+    "message_sent": "Message sent for ride {{rideId}}",
+    "details_retrieved": "Ride {{rideId}} details retrieved"
+  },
+  "shared_ride": {
+    "passenger_added": "Passenger {{passengerId}} added to shared ride {{rideId}}",
+    "passenger_removed": "Passenger {{passengerId}} removed from shared ride {{rideId}}",
+    "details_retrieved": "Shared ride {{rideId}} details retrieved",
+    "route_optimized": "Shared ride {{rideId}} route optimized"
   }
 }

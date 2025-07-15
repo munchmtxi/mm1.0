@@ -1,68 +1,24 @@
 'use strict';
 
-/**
- * Driver Profile Middleware
- * Implements middleware for driver profile operations, including authentication, role-based access control,
- * and permission checks. Integrates with provided authentication middleware.
- *
- * Last Updated: May 15, 2025
- */
-
-const { authenticate, restrictTo, checkPermissions } = require('@middleware/auth/authMiddleware');
+const multer = require('multer');
 const driverConstants = require('@constants/driverConstants');
 const AppError = require('@utils/AppError');
-const logger = require('@utils/logger');
-const catchAsync = require('@utils/catchAsync');
 
-/**
- * Ensures the user is a driver and has permission to access profile operations.
- */
-const restrictToDriver = catchAsync(async (req, res, next) => {
-  logger.info('restrictToDriver middleware called', {
-    requestId: req.id,
-    userId: req.user?.id,
-  });
-
-  if (!req.user || req.user.role !== 'driver') {
-    throw new AppError(
-      'Only drivers can access this resource',
-      403,
-      driverConstants.ERROR_CODES.PERMISSION_DENIED
-    );
-  }
-
-  next();
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new AppError('Invalid file type', 400, driverConstants.ERROR_CODES.INVALID_FILE_DATA));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
-/**
- * Verifies that the driverId in the request matches the authenticated user.
- */
-const verifyDriverOwnership = catchAsync(async (req, res, next) => {
-  const { driverId } = req.params;
-  const user = req.user;
-
-  logger.info('verifyDriverOwnership middleware called', {
-    requestId: req.id,
-    userId: user.id,
-    driverId,
-  });
-
-  const driver = await require('@models').Driver.findByPk(driverId);
-  if (!driver || driver.user_id !== user.id) {
-    throw new AppError(
-      'Unauthorized access to driver profile',
-      403,
-      driverConstants.ERROR_CODES.PERMISSION_DENIED
-    );
-  }
-
-  next();
-});
+const uploadCertificationFile = upload.single('file');
 
 module.exports = {
-  authenticate,
-  restrictToDriver,
-  verifyDriverOwnership,
-  restrictTo: restrictTo('driver'),
-  checkPermissions,
+  uploadCertificationFile,
 };

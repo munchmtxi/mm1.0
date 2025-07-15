@@ -1,32 +1,56 @@
-/**
- * taxConstants.js
- *
- * Defines constants for tax calculations and compliance for the Munch service.
- * Aligns with paymentConstants.js and merchantConstants.js.
- *
- * Last Updated: May 27, 2025
- */
-
 'use strict';
 
 module.exports = {
-  SUPPORTED_PERIODS: ['monthly', 'quarterly'],
-  SUPPORTED_FILING_FREQUENCIES: ['monthly', 'quarterly', 'none'],
-  DEFAULT_TAX_RATE: 10,
-  TAX_RATES: {
-    'PH': { rate: 12, requirements: ['tax_registration', 'annual_filing'] },
-    'EU': { rate: 20, requirements: ['tax_registration', 'vat_registration'] },
-    'CA': { rate: 13, requirements: ['tax_registration', 'annual_filing'] },
-    'AU': { rate: 10, requirements: ['tax_registration', 'gst_registration'] },
-    'UK': { rate: 20, requirements: ['tax_registration', 'vat_registration'] },
-    'MW': { rate: 16.5, requirements: ['tax_registration', 'annual_filing'] },
-    'TZ': { rate: 18, requirements: ['tax_registration', 'vat_registration'] },
-    'KE': { rate: 16, requirements: ['tax_registration', 'annual_filing'] },
-    'MZ': { rate: 17, requirements: ['tax_registration', 'annual_filing'] },
-    'NG': { rate: 7.5, requirements: ['tax_registration', 'vat_registration'] },
-    'ZA': { rate: 15, requirements: ['tax_registration', 'vat_registration'] },
-    'IN': { rate: 18, requirements: ['tax_registration', 'gst_registration'] },
-    'BR': { rate: 17, requirements: ['tax_registration', 'annual_filing'] }
+  TAX_SETTINGS: {
+    TAX_TYPES: ['VAT', 'SALES_TAX', 'SERVICE_TAX', 'WITHHOLDING_TAX'],
+    TAX_CALCULATION_METHODS: ['INCLUDED', 'EXCLUSIVE'],
+    DEFAULT_TAX_TYPE: 'VAT',
+    TAX_EXEMPT_STATUSES: ['NON_PROFIT', 'GOVERNMENT', 'EXPORT'],
+    TAX_REPORT_PERIODS: ['MONTHLY', 'QUARTERLY', 'YEARLY']
   },
-  ERROR_CODES: ['INVALID_PERIOD', 'INVALID_FILING_FREQUENCY', 'MERCHANT_NOT_FOUND', 'WALLET_NOT_FOUND']
+  TAX_RATES: {
+    US: { SALES_TAX: 0.07 },
+    GB: { VAT: 0.20 },
+    EU: { VAT: 0.21 },
+    CA: { SALES_TAX: 0.13 },
+    AU: { VAT: 0.10 },
+    MW: { VAT: 0.165 },
+    TZ: { VAT: 0.18 },
+    KE: { VAT: 0.16 },
+    MZ: { VAT: 0.17 },
+    ZA: { VAT: 0.15 },
+    IN: { SERVICE_TAX: 0.18 },
+    CM: { VAT: 0.1925 },
+    GH: { VAT: 0.15 },
+    MX: { VAT: 0.16 },
+    ER: { VAT: 0.05 }
+  },
+  TRANSACTION_TYPES: [
+    'ORDER_PAYMENT', // munch
+    'RIDE_PAYMENT', // mtxi
+    'EVENT_PAYMENT', // mevents
+    'PARKING_PAYMENT', // mpark
+    'BOOKING_PAYMENT', // mtables
+    'REFUND'
+  ],
+  NOTIFICATION_CONSTANTS: {
+    NOTIFICATION_TYPES: {
+      TAX_CALCULATED: 'TAX_CALCULATED',
+      TAX_REPORT_GENERATED: 'TAX_REPORT_GENERATED',
+      TAX_EXEMPT_APPLIED: 'TAX_EXEMPT_APPLIED'
+    },
+    DELIVERY_METHODS: ['EMAIL', 'PUSH', 'WHATSAPP', 'TELEGRAM'],
+    PRIORITY_LEVELS: ['LOW', 'MEDIUM']
+  },
+  ERROR_CODES: [
+    'INVALID_TAX_TYPE',
+    'INVALID_TAX_RATE',
+    'TAX_CALCULATION_FAILED',
+    'INVALID_EXEMPT_STATUS'
+  ],
+  SUCCESS_MESSAGES: [
+    'TAX_CALCULATED',
+    'TAX_REPORT_GENERATED',
+    'TAX_EXEMPT_APPLIED'
+  ]
 };

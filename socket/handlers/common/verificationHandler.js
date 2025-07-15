@@ -2,23 +2,28 @@
 
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
 const authEvents = require('@socket/events/common/authEvents');
 const authConstants = require('@constants/common/authConstants');
 
-const handleVerificationSubmitted = (io, user, verificationMethod) => {
+const handleVerificationSubmitted = async (io, user, verificationMethod) => {
   try {
     const room = `role:${user.role}`;
-    io.to(room).emit(authEvents.VERIFICATION_SUBMITTED, {
+    await socketService.emit(io, authEvents.VERIFICATION_SUBMITTED, {
       userId: user.id,
       role: user.role,
       verificationMethod,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       message: 'Verification submitted',
-    });
-    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.VERIFICATION_ATTEMPT, {
+    }, room);
+
+    await auditService.logAction({
       userId: user.id,
       role: user.role,
-      verificationMethod,
+      action: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.VERIFICATION_ATTEMPT,
+      details: { verificationMethod },
+      ipAddress: '0.0.0.0', // Placeholder
     });
   } catch (error) {
     logger.logErrorEvent('Failed to handle verification submitted event', { error: error.message });
@@ -26,21 +31,23 @@ const handleVerificationSubmitted = (io, user, verificationMethod) => {
   }
 };
 
-const handleVerificationApproved = (io, user, verificationMethod) => {
+const handleVerificationApproved = async (io, user, verificationMethod) => {
   try {
     const room = `role:${user.role}`;
-    io.to(room).emit(authEvents.VERIFICATION_APPROVED, {
+    await socketService.emit(io, authEvents.VERIFICATION_APPROVED, {
       userId: user.id,
       role: user.role,
       verificationMethod,
-      timestamp: new Date(),
-      message: 'Verification approved',
-    });
-    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.VERIFICATION_ATTEMPT, {
+      timestamp: new Date().toISOString(),
+      message: authConstants.SUCCESS_MESSAGES[4], // USER_VERIFIED
+    }, room);
+
+    await auditService.logAction({
       userId: user.id,
       role: user.role,
-      verificationMethod,
-      success: true,
+      action: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.VERIFICATION_ATTEMPT,
+      details: { verificationMethod, success: true },
+      ipAddress: '0.0.0.0', // Placeholder
     });
   } catch (error) {
     logger.logErrorEvent('Failed to handle verification approved event', { error: error.message });

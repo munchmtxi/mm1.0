@@ -4,30 +4,111 @@
  * Location Service
  * Centralized service for resolving, validating, and managing locations across all roles.
  * Integrates with Google Maps/OpenStreetMap via localizationServiceConstants, validates
- * against locationConstants, supports geofence checks, and updates sessions/addresses.
+ * locations, supports geofence checks, and updates sessions/addresses.
  *
- * Last Updated: May 28, 2025
+ * Last Updated: June 25, 2025
  */
 
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const NodeCache = require('node-cache');
 const config = require('@config/config');
-const locationConstants = require('@constants/common/locationConstants');
 const localizationServiceConstants = require('@constants/common/localizationServiceConstants');
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
 const { Address, Geofence, User, Session, Customer, Driver, Merchant, Staff } = require('@models');
 const { Op } = require('sequelize');
 
+// Constants for cache and API retries
+const CACHE_TTL_SECONDS = 3600; // 1 hour
+const API_RETRY_ATTEMPTS = 3;
+const API_RETRY_DELAY_MS = 1000;
+
 // Initialize cache
-const locationCache = new NodeCache({ stdTTL: locationConstants.LOCATION_CONSTANTS.CACHE_TTL_SECONDS });
+const locationCache = new NodeCache({ stdTTL: CACHE_TTL_SECONDS });
 
 // Configure axios retries
 axiosRetry(axios, {
-  retries: locationConstants.LOCATION_CONSTANTS.API_RETRY_ATTEMPTS,
-  retryDelay: (retryCount) => retryCount * locationConstants.LOCATION_CONSTANTS.API_RETRY_DELAY_MS,
+  retries: API_RETRY_ATTEMPTS,
+  retryDelay: (retryCount) => retryCount * API_RETRY_DELAY_MS,
 });
+
+// Role-specific configurations
+const ROLES = {
+  ADMIN: {
+    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
+    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
+    MIN_CONFIDENCE_LEVEL: 'MEDIUM',
+    GEOFENCE_REQUIRED: false,
+    MAX_ADDRESS_STORAGE: 50,
+    ERROR_CODES: {
+      INVALID_LOCATION: 'INVALID_LOCATION',
+      UNSUPPORTED_CITY: 'UNSUPPORTED_CITY',
+      API_FAILURE: 'API_FAILURE',
+      SESSION_UPDATE_FAILED: 'SESSION_UPDATE_FAILED',
+      GEOFENCE_VIOLATION: 'GEOFENCE_VIOLATION',
+    }
+  },
+  CUSTOMER: {
+    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
+    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
+    MIN_CONFIDENCE_LEVEL: 'HIGH',
+    GEOFENCE_REQUIRED: true,
+    MAX_ADDRESS_STORAGE: 10,
+    ERROR_CODES: {
+      INVALID_LOCATION: 'CUSTOMER_INVALID_LOCATION',
+      UNSUPPORTED_CITY: 'CUSTOMER_UNSUPPORTED_CITY',
+      API_FAILURE: 'CUSTOMER_API_FAILURE',
+      SESSION_UPDATE_FAILED: 'CUSTOMER_SESSION_UPDATE_FAILED',
+      GEOFENCE_VIOLATION: 'CUSTOMER_GEOFENCE_VIOLATION'
+    }
+  },
+  DRIVER: {
+    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
+    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
+    MIN_CONFIDENCE_LEVEL: 'HIGH',
+    GEOFENCE_REQUIRED: true,
+    MAX_ADDRESS_STORAGE: 20,
+    ERROR_CODES: {
+      INVALID_LOCATION: 'DRIVER_INVALID_LOCATION',
+      UNSUPPORTED_CITY: 'DRIVER_UNSUPPORTED_CITY',
+      API_FAILURE: 'DRIVER_API_FAILURE',
+      SESSION_UPDATE_FAILED: 'DRIVER_SESSION_UPDATE_FAILED',
+      GEOFENCE_VIOLATION: 'DRIVER_GEOFENCE_VIOLATION'
+    }
+  },
+  STAFF: {
+    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
+    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
+    MIN_CONFIDENCE_LEVEL: 'MEDIUM',
+    GEOFENCE_REQUIRED: true,
+    MAX_ADDRESS_STORAGE: 10,
+    ERROR_CODES: {
+      INVALID_LOCATION: 'STAFF_INVALID_LOCATION',
+      UNSUPPORTED_CITY: 'STAFF_UNSUPPORTED_CITY',
+      API_FAILURE: 'STAFF_API_FAILURE',
+      SESSION_UPDATE_FAILED: 'STAFF_SESSION_UPDATE_FAILED',
+      GEOFENCE_VIOLATION: 'STAFF_GEOFENCE_VIOLATION'
+    }
+  },
+  MERCHANT: {
+    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
+    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
+    MIN_CONFIDENCE_LEVEL: 'HIGH',
+    GEOFENCE_REQUIRED: true,
+    MAX_ADDRESS_STORAGE: 20,
+    ERROR_CODES: {
+      INVALID_LOCATION: 'MERCHANT_INVALID_LOCATION',
+      UNSUPPORTED_CITY: 'MERCHANT_UNSUPPORTED_CITY',
+      API_FAILURE: 'MERCHANT_API_FAILURE',
+      SESSION_UPDATE_FAILED: 'MERCHANT_SESSION_UPDATE_FAILED',
+      GEOFENCE_VIOLATION: 'MERCHANT_GEOFENCE_VIOLATION'
+    }
+  }
+};
+
+// Supported confidence levels
+const SUPPORTED_CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'];
 
 class LocationService {
   /**
@@ -39,14 +120,14 @@ class LocationService {
    * @param {string} [languageCode] - Preferred language for error messages.
    * @returns {Promise<Object>} Standardized location object.
    */
-  async resolveLocation(location, userId, sessionToken, role, languageCode = localizationServiceConstants.LANGUAGE_CONSTANTS.DEFAULT_LANGUAGE) {
-    if (!role || !locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()]) {
-      throw new AppError('Invalid role', 400, locationConstants.LOCATION_CONSTANTS.ROLES.ADMIN.ERROR_CODES.INVALID_LOCATION);
+  async resolveLocation(location, userId, sessionToken, role, languageCode = localizationServiceConstants.DEFAULT_LANGUAGE) {
+    if (!role || !ROLES[role.toUpperCase()]) {
+      throw new AppError('Invalid role', 400, ROLES.ADMIN.ERROR_CODES.INVALID_LOCATION);
     }
-    if (!localizationServiceConstants.LANGUAGE_CONSTANTS.SUPPORTED_LANGUAGES.includes(languageCode)) {
-      languageCode = localizationServiceConstants.LANGUAGE_CONSTANTS.DEFAULT_LANGUAGE;
+    if (!localizationServiceConstants.SUPPORTED_LANGUAGES.includes(languageCode)) {
+      languageCode = localizationServiceConstants.DEFAULT_LANGUAGE;
     }
-    const roleConfig = locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()];
+    const roleConfig = ROLES[role.toUpperCase()];
 
     try {
       let geocodedResult;
@@ -60,7 +141,7 @@ class LocationService {
       } else {
         // Determine map provider based on country
         const countryCode = await this.deriveCountryCode(location);
-        const mapProvider = roleConfig.MAP_PROVIDER[countryCode] || localizationServiceConstants.MAP_INTEGRATION_CONSTANTS.DEFAULT_MAP_PROVIDER;
+        const mapProvider = roleConfig.MAP_PROVIDER[countryCode] || localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US;
 
         if (typeof location === 'string') {
           geocodedResult = await this.geocodeAddress(location, mapProvider);
@@ -123,12 +204,12 @@ class LocationService {
 
       // Role-specific validations
       if (userId) {
-        const user = await User.findByPk(userId);
+        const user = await User.findOne({ where: { id: userId } });
         if (!user) {
           throw new AppError('User not found', 404, roleConfig.ERROR_CODES.INVALID_LOCATION);
         }
         await this.validateRoleSpecificConstraints(userId, role, resolvedLocation);
-        await this.storeAddress(resolvedLocation, userId, role);
+        await this.saveAddress(resolvedLocation, userId, role);
       }
 
       // Update session
@@ -138,13 +219,13 @@ class LocationService {
 
       // Geofence validation
       if (roleConfig.GEOFENCE_REQUIRED) {
-        await this.validateGeofence(resolvedLocation, role, userId);
+        await this.validateGeofencing(resolvedLocation, role, userId);
       }
 
-      logger.info('Location resolved', { placeId: resolvedLocation.placeId, userId, role });
+      logger.info('Location resolved successfully', { placeId: resolvedLocation.placeId, userId, role });
       return resolvedLocation;
     } catch (error) {
-      logger.error('Location resolution failed', { error: error.message, location, userId, role });
+      logger.error('Location resolution failed', { error: error.message, userId, role });
       throw error instanceof AppError ? error : new AppError(
         'Location resolution failed',
         500,
@@ -161,18 +242,18 @@ class LocationService {
   async deriveCountryCode(location) {
     try {
       if (typeof location === 'string') {
-        const result = await this.geocodeAddress(location);
+        const result = await this.geocodeAddress(location));
         return result.address_components.find(comp => comp.types.includes('country'))?.short_name || 'US';
       } else if (location.lat && location.lng) {
         const result = await this.reverseGeocode(location.lat, location.lng);
         return result.address_components.find(comp => comp.types.includes('country'))?.short_name || 'US';
       } else if (location.address || location.formattedAddress) {
         const result = await this.geocodeAddress(location.address || location.formattedAddress);
-        return result.address_components.find(comp => comp.types.includes('country'))?.short_name || 'US';
+        return result.address_components.find(comp => c.types.includes('country'))?.short_name || 'US';
       }
       return 'US';
     } catch (error) {
-      logger.warn('Country code derivation failed, defaulting to US', { error: error.message });
+      logger.error('Country code derivation failed, defaulting to US', { error: error.message });
       return 'US';
     }
   }
@@ -186,7 +267,7 @@ class LocationService {
    * @returns {Promise<void>}
    */
   async updateSessionLocation(userId, sessionToken, location, role) {
-    const roleConfig = locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()];
+    const roleConfig = ROLES[role.toUpperCase()];
     try {
       const session = await Session.findOne({
         where: {
@@ -226,7 +307,7 @@ class LocationService {
    * @param {string} provider - Map provider (google_maps, openstreetmap).
    * @returns {Promise<Object>} Geocoded result.
    */
-  async geocodeAddress(address, provider = localizationServiceConstants.MAP_INTEGRATION_CONSTANTS.DEFAULT_MAP_PROVIDER) {
+  async geocodeAddress(address, provider = localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US) {
     try {
       if (provider === 'openstreetmap') {
         const response = await axios.get('https://nominatim.openstreetmap.org/search', {
@@ -267,7 +348,7 @@ class LocationService {
       }
     } catch (error) {
       logger.error('Geocoding failed', { address, provider, error: error.message });
-      throw new AppError('Geocoding failed', 400, locationConstants.LOCATION_CONSTANTS.ROLES.ADMIN.ERROR_CODES.API_FAILURE);
+      throw new AppError('Geocoding failed', 400, ROLES.ADMIN.ERROR_CODES.API_FAILURE);
     }
   }
 
@@ -278,7 +359,7 @@ class LocationService {
    * @param {string} provider - Map provider.
    * @returns {Promise<Object>} Geocoded result.
    */
-  async reverseGeocode(lat, lng, provider = localizationServiceConstants.MAP_INTEGRATION_CONSTANTS.DEFAULT_MAP_PROVIDER) {
+  async reverseGeocode(lat, lng, provider = localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US) {
     try {
       if (provider === 'openstreetmap') {
         const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
@@ -318,7 +399,7 @@ class LocationService {
       }
     } catch (error) {
       logger.error('Reverse geocoding failed', { lat, lng, provider, error: error.message });
-      throw new AppError('Reverse geocoding failed', 400, locationConstants.LOCATION_CONSTANTS.ROLES.ADMIN.ERROR_CODES.API_FAILURE);
+      throw new AppError('Reverse geocoding failed', 400, ROLES.ADMIN.ERROR_CODES.API_FAILURE);
     }
   }
 
@@ -347,7 +428,7 @@ class LocationService {
    * @returns {Promise<void>}
    */
   async storeAddress(location, userId, role) {
-    const roleConfig = locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()];
+    const roleConfig = ROLES[role.toUpperCase()];
     try {
       const addressCount = await Address.count({ where: { user_id: userId } });
       if (addressCount >= roleConfig.MAX_ADDRESS_STORAGE) {
@@ -396,7 +477,7 @@ class LocationService {
    * @returns {Promise<void>}
    */
   async validateGeofence(location, role, userId) {
-    const roleConfig = locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()];
+    const roleConfig = ROLES[role.toUpperCase()];
     try {
       let geofences = await Geofence.findAll({ where: { active: true } });
 
@@ -443,7 +524,7 @@ class LocationService {
    * @returns {Promise<void>}
    */
   async validateRoleSpecificConstraints(userId, role, location) {
-    const roleConfig = locationConstants.LOCATION_CONSTANTS.ROLES[role.toUpperCase()];
+    const roleConfig = ROLES[role.toUpperCase()];
     try {
       if (role === 'driver') {
         const driver = await Driver.findOne({ where: { user_id: userId } });
@@ -495,17 +576,16 @@ class LocationService {
    * @returns {string} Confidence level.
    */
   determineConfidenceLevel(locationType) {
-    const levels = locationConstants.LOCATION_CONSTANTS.SUPPORTED_CONFIDENCE_LEVELS;
     switch (locationType) {
       case 'ROOFTOP':
       case 'point':
-        return levels[0]; // HIGH
+        return SUPPORTED_CONFIDENCE_LEVELS[0]; // HIGH
       case 'RANGE_INTERPOLATED':
       case 'GEOMETRIC_CENTER':
       case 'road':
-        return levels[1]; // MEDIUM
+        return SUPPORTED_CONFIDENCE_LEVELS[1]; // MEDIUM
       default:
-        return levels[2]; // LOW
+        return SUPPORTED_CONFIDENCE_LEVELS[2]; // LOW
     }
   }
 
@@ -516,8 +596,7 @@ class LocationService {
    * @returns {boolean} True if sufficient.
    */
   isConfidenceLevelSufficient(level, minLevel) {
-    const levels = locationConstants.LOCATION_CONSTANTS.SUPPORTED_CONFIDENCE_LEVELS;
-    return levels.indexOf(level) <= levels.indexOf(minLevel);
+    return SUPPORTED_CONFIDENCE_LEVELS.indexOf(level) <= SUPPORTED_CONFIDENCE_LEVELS.indexOf(minLevel);
   }
 
   /**

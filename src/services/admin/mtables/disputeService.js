@@ -1,35 +1,18 @@
 'use strict';
 
-/**
- * Dispute Service for mtables (Admin)
- * Manages booking and pre-order dispute resolution, status tracking, and escalation.
- * Integrates with notification, socket, audit, point, and localization services.
- *
- * Last Updated: May 27, 2025
- */
-
+const { Op } = require('sequelize');
 const { Dispute, Booking, Customer, MerchantBranch, InDiningOrder } = require('@models');
 const disputeConstants = require('@constants/disputeConstants');
-const mtablesConstants = require('@constants/common/mtablesConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
-const pointService = require('@services/common/pointService');
+const mtablesConstants = require('@constants/admin/mtablesConstants');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils/logger');
 const { AppError } = require('@utils/AppError');
 
-/**
- * Handles booking complaints.
- * @param {number} bookingId - Booking ID.
- * @param {Object} resolution - Resolution details (e.g., type, description).
- * @returns {Promise<Object>} Dispute resolution details.
- */
-async function resolveBookingDisputes(bookingId, resolution) {
+async function resolveBookingDisputes(bookingId, resolution, { pointService }) {
   try {
     if (!bookingId || !resolution?.type) {
       throw new AppError(
-        'Booking ID and resolution type required',
+        formatMessage('error.invalid_issue'),
         400,
         disputeConstants.ERROR_CODES.INVALID_ISSUE
       );
@@ -40,7 +23,7 @@ async function resolveBookingDisputes(bookingId, resolution) {
     });
     if (!booking) {
       throw new AppError(
-        'Booking not found',
+        formatMessage('error.booking_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -55,68 +38,37 @@ async function resolveBookingDisputes(bookingId, resolution) {
     });
     if (!dispute) {
       throw new AppError(
-        'Dispute not found or already resolved',
+        formatMessage('error.dispute_not_found'),
         404,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
     }
 
-    // Validate resolution type
     if (!Object.values(disputeConstants.RESOLUTION_TYPES).includes(resolution.type)) {
       throw new AppError(
-        'Invalid resolution type',
+        formatMessage('error.invalid_resolution_type'),
         400,
         disputeConstants.ERROR_CODES.INVALID_ISSUE
       );
     }
 
-    // Update dispute
     await dispute.update({
       status: disputeConstants.DISPUTE_STATUSES.RESOLVED,
       resolution: resolution.description || 'Issue resolved',
       resolution_type: resolution.type,
     });
 
-    // Award gamification points
     const actionConfig = disputeConstants.GAMIFICATION_ACTIONS.DISPUTE_RESOLVED;
     if (actionConfig && actionConfig.roles.includes('customer')) {
       await pointService.awardPoints({
-        userId: booking.customer.user_id,
+        userId: booking.customer.user_id.toString(),
         role: 'customer',
         action: actionConfig.action,
         points: actionConfig.points,
         metadata: { disputeId: dispute.id, bookingId },
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
+        expiresAt: new Date(Date.now() + mtablesConstants.GAMIFICATION_CONSTANTS.POINT_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
       });
     }
-
-    // Send notification
-    await notificationService.sendNotification({
-      userId: booking.customer.user_id.toString(),
-      type: disputeConstants.NOTIFICATION_TYPES.DISPUTE_RESOLVED,
-      messageKey: 'dispute.resolved',
-      messageParams: { disputeId: dispute.id, resolutionType: resolution.type },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'dispute:resolved', {
-      userId: booking.customer.user_id.toString(),
-      role: 'customer',
-      disputeId: dispute.id,
-      bookingId,
-      resolutionType: resolution.type,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: booking.merchant_id.toString(),
-      role: 'merchant',
-      action: disputeConstants.AUDIT_TYPES.DISPUTE_RESOLVED,
-      details: { disputeId: dispute.id, bookingId, resolution },
-      ipAddress: 'unknown',
-    });
 
     logger.info('Booking dispute resolved', { disputeId: dispute.id, bookingId });
     return {
@@ -132,17 +84,11 @@ async function resolveBookingDisputes(bookingId, resolution) {
   }
 }
 
-/**
- * Addresses pre-order issues.
- * @param {number} bookingId - Booking ID.
- * @param {Object} resolution - Resolution details (e.g., type, description).
- * @returns {Promise<Object>} Dispute resolution details.
- */
-async function resolvePreOrderDisputes(bookingId, resolution) {
+async function resolvePreOrderDisputes(bookingId, resolution, { pointService }) {
   try {
     if (!bookingId || !resolution?.type) {
       throw new AppError(
-        'Booking ID and resolution type required',
+        formatMessage('error.invalid_issue'),
         400,
         disputeConstants.ERROR_CODES.INVALID_ISSUE
       );
@@ -153,7 +99,7 @@ async function resolvePreOrderDisputes(bookingId, resolution) {
     });
     if (!booking) {
       throw new AppError(
-        'Booking not found',
+        formatMessage('error.booking_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -164,7 +110,7 @@ async function resolvePreOrderDisputes(bookingId, resolution) {
     });
     if (!inDiningOrder) {
       throw new AppError(
-        'No pre-order found for this booking',
+        formatMessage('error.no_pre_order'),
         404,
         disputeConstants.ERROR_CODES.INVALID_SERVICE
       );
@@ -179,69 +125,37 @@ async function resolvePreOrderDisputes(bookingId, resolution) {
     });
     if (!dispute) {
       throw new AppError(
-        'Dispute not found or already resolved',
+        formatMessage('error.dispute_not_found'),
         404,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
     }
 
-    // Validate resolution type
     if (!Object.values(disputeConstants.RESOLUTION_TYPES).includes(resolution.type)) {
       throw new AppError(
-        'Invalid resolution type',
+        formatMessage('error.invalid_resolution_type'),
         400,
         disputeConstants.ERROR_CODES.INVALID_ISSUE
       );
     }
 
-    // Update dispute
     await dispute.update({
       status: disputeConstants.DISPUTE_STATUSES.RESOLVED,
       resolution: resolution.description || 'Pre-order issue resolved',
       resolution_type: resolution.type,
     });
 
-    // Award gamification points
     const actionConfig = disputeConstants.GAMIFICATION_ACTIONS.DISPUTE_RESOLVED;
     if (actionConfig && actionConfig.roles.includes('customer')) {
       await pointService.awardPoints({
-        userId: booking.customer.user_id,
+        userId: booking.customer.user_id.toString(),
         role: 'customer',
         action: actionConfig.action,
         points: actionConfig.points,
         metadata: { disputeId: dispute.id, bookingId, orderId: inDiningOrder.id },
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
+        expiresAt: new Date(Date.now() + mtablesConstants.GAMIFICATION_CONSTANTS.POINT_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
       });
     }
-
-    // Send notification
-    await notificationService.sendNotification({
-      userId: booking.customer.user_id.toString(),
-      type: disputeConstants.NOTIFICATION_TYPES.DISPUTE_RESOLVED,
-      messageKey: 'dispute.pre_order_resolved',
-      messageParams: { disputeId: dispute.id, resolutionType: resolution.type },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'dispute:pre_order_resolved', {
-      userId: booking.customer.user_id.toString(),
-      role: 'customer',
-      disputeId: dispute.id,
-      bookingId,
-      orderId: inDiningOrder.id,
-      resolutionType: resolution.type,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: booking.merchant_id.toString(),
-      role: 'merchant',
-      action: disputeConstants.AUDIT_TYPES.DISPUTE_RESOLVED,
-      details: { disputeId: dispute.id, bookingId, orderId: inDiningOrder.id, resolution },
-      ipAddress: 'unknown',
-    });
 
     logger.info('Pre-order dispute resolved', { disputeId: dispute.id, bookingId, orderId: inDiningOrder.id });
     return {
@@ -258,16 +172,11 @@ async function resolvePreOrderDisputes(bookingId, resolution) {
   }
 }
 
-/**
- * Monitors dispute resolution status.
- * @param {number} disputeId - Dispute ID.
- * @returns {Promise<Object>} Dispute status details.
- */
 async function trackDisputeStatus(disputeId) {
   try {
     if (!disputeId) {
       throw new AppError(
-        'Dispute ID required',
+        formatMessage('error.dispute_not_found'),
         400,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
@@ -280,38 +189,11 @@ async function trackDisputeStatus(disputeId) {
     });
     if (!dispute || dispute.service_type !== 'mtables') {
       throw new AppError(
-        'Dispute not found',
+        formatMessage('error.dispute_not_found'),
         404,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
     }
-
-    // Send notification
-    await notificationService.sendNotification({
-      userId: dispute.customer_id.toString(),
-      type: disputeConstants.NOTIFICATION_TYPES.DISPUTE_UPDATED,
-      messageKey: 'dispute.status_updated',
-      messageParams: { disputeId, status: dispute.status },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'dispute:status_updated', {
-      userId: dispute.customer_id.toString(),
-      role: 'customer',
-      disputeId,
-      status: dispute.status,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: dispute.customer_id.toString(),
-      role: 'customer',
-      action: disputeConstants.AUDIT_TYPES.DISPUTE_UPDATED,
-      auditLogs: { disputeId, status: dispute.status },
-      ipAddress: 'unknown',
-    });
 
     logger.info('Dispute status tracked', { disputeId });
     return {
@@ -329,16 +211,11 @@ async function trackDisputeStatus(disputeId) {
   }
 }
 
-/**
- * Assigns unresolved disputes to higher authority.
- * @param {number} disputeId - Dispute ID.
- * @returns {Promise<Object>} Escalation details.
- */
 async function escalateDisputes(disputeId) {
   try {
     if (!disputeId) {
       throw new AppError(
-        'Dispute ID required',
+        formatMessage('error.dispute_not_found'),
         400,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
@@ -351,7 +228,7 @@ async function escalateDisputes(disputeId) {
     });
     if (!dispute || dispute.service_type !== 'mtables') {
       throw new AppError(
-        'Dispute not found',
+        formatMessage('error.dispute_not_found'),
         404,
         disputeConstants.ERROR_CODES.DISPUTE_NOT_FOUND
       );
@@ -359,52 +236,14 @@ async function escalateDisputes(disputeId) {
 
     if (dispute.status === disputeConstants.DISPUTE_STATUSES.RESOLVED || dispute.status === disputeConstants.DISPUTE_STATUSES.CLOSED) {
       throw new AppError(
-        'Dispute already resolved or closed',
+        formatMessage('error.dispute_already_resolved'),
         400,
         disputeConstants.ERROR_CODES.DISPUTE_ALREADY_RESOLVED
       );
     }
 
-    // Update dispute status to in_review (escalated)
     await dispute.update({
       status: disputeConstants.DISPUTE_STATUSES.IN_REVIEW,
-    });
-
-    // Send notification to customer
-    await notificationService.sendNotification({
-      userId: dispute.customer_id.toString(),
-      type: disputeConstants.NOTIFICATION_TYPES.DISPUTE_UPDATED,
-      messageKey: 'dispute.escalated',
-      messageParams: { disputeId },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Notify admin (assuming super_admin role for escalation)
-    await notificationService.sendNotification({
-      userId: null, // Broadcast to admins
-      type: disputeConstants.NOTIFICATION_TYPES.DISPUTE_UPDATED,
-      messageKey: 'dispute.escalated_admin',
-      messageParams: { disputeId, serviceId: dispute.service_id },
-      role: 'admin',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'dispute:escalated', {
-      userId: dispute.customer_id.toString(),
-      role: 'customer',
-      disputeId,
-      adminRole: 'super_admin',
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: dispute.customer_id.toString(),
-      role: 'customer',
-      action: disputeConstants.AUDIT_TYPES.DISPUTE_UPDATED,
-      details: { disputeId, status: 'escalated' },
-      ipAddress: 'unknown',
     });
 
     logger.info('Dispute escalated', { disputeId });

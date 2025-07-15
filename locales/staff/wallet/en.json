@@ -1,30 +1,22 @@
 {
   "wallet": {
-    "balance_retrieved": "Wallet balance retrieved for staff {staffId}: {balance} {currency}.",
-    "history_retrieved": "Transaction history retrieved for staff {staffId}.",
-    "withdrawal_requested": "Withdrawal of {amount} requested for staff {staffId}, payout ID {payoutId}.",
-    "merchant_synced": "Wallet synced with merchant for staff {staffId}.",
-    "preferences_updated": "Wallet preferences updated for staff {staffId}."
-  },
-  "payment": {
-    "salary_processed": "Salary payment of {amount} processed for staff {staffId}.",
-    "bonus_processed": "Bonus payment of {amount} processed for staff {staffId}.",
-    "withdrawal_confirmed": "Withdrawal of {amount} confirmed for staff {staffId}.",
-    "audit_logged": "Payment audit logged for staff {staffId}.",
-    "error_reported": "Payment error reported for staff {staffId}, ticket ID {ticketId}."
-  },
-  "gamification": {
-    "points_converted": "Converted {points} points to {amount} credits for staff {staffId}.",
-    "earnings_tracked": "Reward earnings tracked for staff {staffId}.",
-    "reward_redeemed": "Reward {rewardName} redeemed for staff {staffId}.",
-    "analytics_synced": "Reward analytics synced for staff {staffId}.",
-    "reward_credited": "Reward credit of {amount} notified for staff {staffId}."
-  },
-  "reporting": {
-    "payment_report_generated": "Payment report generated for staff {staffId}, report ID {reportId}.",
-    "wallet_summary": "Wallet activity summarized for staff {staffId}.",
-    "data_exported": "Financial data exported for staff {staffId}.",
-    "tax_tracked": "Tax compliance tracked for staff {staffId}, tax record ID {taxRecordId}.",
-    "audit_trail": "Financial audit trail generated for staff {staffId}."
+    "withdrawal": {
+      "requested": "Withdrawal of {amount} requested with payout ID {payoutId}.",
+      "confirmed": "Withdrawal of {amount} confirmed successfully."
+    },
+    "preferences_updated": "Wallet preferences updated for staff {staffId}.",
+    "payment": {
+      "salary_processed": "Salary payment of {amount} processed successfully.",
+      "bonus_processed": "Bonus payment of {amount} processed successfully.",
+      "error_reported": "Payment error reported with ticket ID {ticketId}."
+    },
+    "reporting": {
+      "payment_report_generated": "Payment report generated with report ID {reportId}."
+    },
+    "gamification": {
+      "points_converted": "Converted {points} points to {amount} credits.",
+      "reward_redeemed": "Reward {rewardName} redeemed successfully.",
+      "reward_credited": "Reward credit of {amount} credited to your wallet."
+    }
   }
 }

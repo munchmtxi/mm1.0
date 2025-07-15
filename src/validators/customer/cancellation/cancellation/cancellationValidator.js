@@ -1,8 +1,12 @@
 'use strict';
 
+/**
+ * Validators for cancellation and refund requests.
+ */
 const Joi = require('joi');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
+const customerConstants = require('@constants/customer/customerConstants');
 
 const cancellationSchema = Joi.object({
   serviceId: Joi.number().integer().positive().required().messages({
@@ -11,7 +15,7 @@ const cancellationSchema = Joi.object({
     'number.positive': 'Service ID must be positive',
     'any.required': 'Service ID is required',
   }),
-  serviceType: Joi.string().valid('mtables', 'munch', 'mtxi', 'in_dining').required().messages({
+  serviceType: Joi.string().valid(...customerConstants.CROSS_VERTICAL_CONSTANTS.SERVICES).required().messages({
     'string.base': 'Service type must be a string',
     'any.only': 'Invalid service type',
     'any.required': 'Service type is required',
@@ -38,13 +42,16 @@ const refundSchema = Joi.object({
     'number.positive': 'Wallet ID must be positive',
     'any.required': 'Wallet ID is required',
   }),
-  serviceType: Joi.string().valid('mtables', 'munch', 'mtxi', 'in_dining').required().messages({
+  serviceType: Joi.string().valid(...customerConstants.CROSS_VERTICAL_CONSTANTS.SERVICES).required().messages({
     'string.base': 'Service type must be a string',
     'any.only': 'Invalid service type',
     'any.required': 'Service type is required',
   }),
 });
 
+/**
+ * Validates cancellation request body.
+ */
 const validateCancellation = (req, res, next) => {
   logger.info('Validating cancellation request', { requestId: req.id });
 
@@ -53,12 +60,15 @@ const validateCancellation = (req, res, next) => {
   if (error) {
     const errorMessages = error.details.map((detail) => detail.message);
     logger.warn('Validation failed', { requestId: req.id, errors: errorMessages });
-    return next(new AppError('Invalid request parameters', 400, 'INVALID_REQUEST', errorMessages));
+    return next(new AppError('Invalid request parameters', 400, customerConstants.ERROR_CODES.find(code => code === 'INVALID_REQUEST'), errorMessages));
   }
 
   next();
 };
 
+/**
+ * Validates refund request body.
+ */
 const validateRefund = (req, res, next) => {
   logger.info('Validating refund request', { requestId: req.id });
 
@@ -67,7 +77,7 @@ const validateRefund = (req, res, next) => {
   if (error) {
     const errorMessages = error.details.map((detail) => detail.message);
     logger.warn('Validation failed', { requestId: req.id, errors: errorMessages });
-    return next(new AppError('Invalid request parameters', 400, 'INVALID_REQUEST', errorMessages));
+    return next(new AppError('Invalid request parameters', 400, customerConstants.ERROR_CODES.find(code => code === 'INVALID_REQUEST'), errorMessages));
   }
 
   next();

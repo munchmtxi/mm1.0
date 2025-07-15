@@ -1,19 +1,16 @@
-/**
- * authConstants.js
- *
- * Defines core constants for the Authentication System, governing user authentication and authorization.
- * Aligns with customerConstants.js, munchConstants.js, mtablesConstants.js, meventsConstants.js, and rideConstants.js.
- *
- * Last Updated: May 27, 2025
- */
-
 'use strict';
+
+const { USER_MANAGEMENT } = require('@constants/admin/adminCoreConstants');
 
 module.exports = {
   AUTH_SETTINGS: {
     DEFAULT_ROLE: 'customer',
-    SUPPORTED_ROLES: ['admin', 'customer', 'driver', 'merchant', 'staff'],
-    PROTECTED_ROLES: ['admin', 'staff']
+    SUPPORTED_ROLES: ['admin', 'customer', 'merchant', 'staff', 'driver'],
+    PROTECTED_ROLES: ['admin', 'staff'],
+    KYC_REQUIRED: ['merchant', 'staff', 'driver'],
+    ONBOARDING_STATUSES: ['pending', 'verified', 'rejected'],
+    SUPPORTED_CURRENCIES: ['MWK', 'USD'],
+    DEFAULT_CURRENCY: 'USD',
   },
   USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'terminated', 'banned'],
   RBAC_CONSTANTS: {
@@ -24,33 +21,101 @@ module.exports = {
         manageBookings: ['read', 'write', 'cancel'],
         manageOrders: ['read', 'write', 'cancel'],
         manageRides: ['read', 'write', 'cancel'],
+        manageParking: ['read', 'write', 'cancel'],
         manageWallet: ['read', 'write'],
         viewAnalytics: ['read'],
         manageSocial: ['read', 'write'],
-        manageSupport: ['read', 'write']
-      }
-    }
+        manageSupport: ['read', 'write'],
+        manageEvents: ['read', 'write', 'cancel'],
+      },
+      merchant: {
+        manageMerchantProfile: ['read', 'write'],
+        manageBookings: ['read', 'write', 'approve', 'cancel'],
+        manageOrders: ['read', 'write', 'approve'],
+        manageEvents: ['read', 'write', 'approve'],
+        viewAnalytics: ['read'],
+        managePayouts: ['read', 'write'],
+        manageSupport: ['read', 'write', 'escalate'],
+      },
+      staff: {
+        manageTasks: ['read', 'write'],
+        manageBookings: ['read', 'write', 'approve'],
+        manageOrders: ['read', 'write', 'approve'],
+        manageEvents: ['read', 'write', 'approve'],
+        viewAnalytics: ['read'],
+        manageSupport: ['read', 'write'],
+      },
+      admin: {
+        manageUsers: ['read', 'write', 'delete', 'approve'],
+        manageConfig: ['read', 'write', 'configure'],
+        viewAnalytics: ['read', 'audit'],
+        manageSupport: ['read', 'write', 'escalate'],
+        manageAllServices: ['read', 'write', 'approve', 'cancel'],
+      },
+      driver: {
+        manageRides: ['read', 'write', 'accept', 'cancel'],
+        manageDeliveries: ['read', 'write', 'accept'],
+        viewAnalytics: ['read'],
+        manageWallet: ['read', 'write'],
+        manageSupport: ['read', 'write'],
+      },
+    },
   },
   MFA_CONSTANTS: {
     MFA_METHODS: ['sms', 'email', 'auth_app', 'biometric'],
     MFA_STATUSES: ['enabled', 'disabled', 'pending'],
     MFA_ATTEMPT_LIMIT: 3,
-    MFA_LOCKOUT_DURATION_MINUTES: 15
+    MFA_LOCKOUT_DURATION_MINUTES: 15,
+    MFA_BACKUP_CODES: { COUNT: 10, LENGTH: 12 },
+    MFA_REQUIRED_ROLES: ['admin', 'staff', 'merchant', 'driver'],
   },
   SESSION_CONSTANTS: {
-    MAX_SESSIONS_PER_USER: { customer: 5 },
-    SESSION_TIMEOUT_MINUTES: { customer: 60 },
+    MAX_SESSIONS_PER_USER: { customer: 5, merchant: 3, staff: 3, admin: 5, driver: 3 },
+    SESSION_TIMEOUT_MINUTES: { customer: 60, merchant: 30, staff: 30, admin: 60, driver: 30 },
     SESSION_STATUSES: ['active', 'expired', 'terminated'],
     MAX_LOGIN_ATTEMPTS: 5,
-    LOCKOUT_DURATION_MINUTES: 30
+    LOCKOUT_DURATION_MINUTES: 30,
   },
-  ERROR_CODES: [
-    'INVALID_CREDENTIALS', 'TOKEN_EXPIRED', 'TOKEN_INVALID', 'MFA_FAILED',
-    'ACCOUNT_LOCKED', 'PERMISSION_DENIED', 'USER_NOT_FOUND', 'VERIFICATION_FAILED',
-    'SESSION_EXPIRED'
-  ],
+  TOKEN_CONSTANTS: {
+    TOKEN_TYPES: { ACCESS: 'access', REFRESH: 'refresh' },
+    TOKEN_EXPIRY: { ACCESS: 15, REFRESH: 10080 }, // 15 min, 7 days
+  },
+  AUDIT_LOG_CONSTANTS: {
+    LOG_TYPES: {
+      TOKEN_ISSUANCE: 'TOKEN_ISSUANCE',
+      LOGOUT: 'LOGOUT',
+      USER_REGISTRATION: 'USER_REGISTRATION',
+      LOGIN: 'LOGIN',
+      MFA_ATTEMPT: 'MFA_ATTEMPT',
+    },
+  },
+  VERIFICATION_CONSTANTS: {
+    VERIFICATION_METHODS: USER_MANAGEMENT.VERIFICATION_METHODS,
+    VERIFICATION_STATUSES: ['pending', 'verified', 'rejected'],
+    VERIFICATION_DOCUMENT_TYPES: USER_MANAGEMENT.DOCUMENT_TYPES,
+  },
+  ERROR_CODES: {
+    INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+    TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+    TOKEN_INVALID: 'TOKEN_INVALID',
+    MFA_FAILED: 'MFA_FAILED',
+    ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+    PERMISSION_DENIED: 'PERMISSION_DENIED',
+    USER_NOT_FOUND: 'USER_NOT_FOUND',
+    VERIFICATION_FAILED: 'VERIFICATION_FAILED',
+    SESSION_EXPIRED: 'SESSION_EXPIRED',
+    KYC_REQUIRED: 'KYC_REQUIRED',
+    INVALID_ROLE: 'INVALID_ROLE',
+    DUPLICATE_USER: 'DUPLICATE_USER',
+    INVALID_BUSINESS_TYPE: 'INVALID_BUSINESS_TYPE',
+  },
   SUCCESS_MESSAGES: [
-    'User logged in', 'Token refreshed', 'MFA enabled', 'Password reset',
-    'User verified', 'Session terminated'
-  ]
+    'USER_LOGGED_IN',
+    'TOKEN_REFRESHED',
+    'MFA_ENABLED',
+    'PASSWORD_RESET',
+    'USER_VERIFIED',
+    'SESSION_TERMINATED',
+    'KYC_VERIFIED',
+  ],
 };

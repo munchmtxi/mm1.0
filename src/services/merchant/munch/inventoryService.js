@@ -1,38 +1,42 @@
 'use strict';
 
-/**
- * inventoryService.js
- * Manages inventory tracking, updates, restocking alerts, and gamification for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
-const { Op } = require('sequelize');
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
+const { Op, sequelize } = require('sequelize');
+const { MenuInventory, Order, MerchantBranch, ProductAuditLog, ProductActivityLog, InventoryAlert, InventoryAdjustmentLog, Merchant, Customer, MenuVersion, Staff } = sequelize.models;
+const munchConstants = require('@constants/common/munchConstants');
+const staffConstants = require('@constants/staff/staffConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const { MenuInventory, Staff, Order, MerchantBranch, Notification, AuditLog, ProductAuditLog, ProductActivityLog } = require('@models');
+const { AppError } = require('@utils/AppError');
+const logger = require('@utils/logger');
 
-/**
- * Monitors ingredient/supply levels for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Stock levels data.
- */
-async function trackStockLevels(restaurantId, io) {
+async function trackStockLevels(restaurantId) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!restaurantId) throw new Error('Restaurant ID required');
+    if (!restaurantId) {
+      throw new AppError('Invalid input: restaurantId is required', 400, munchConstants.ERROR_CODES[0]);
+    }
 
-    const branch = await MerchantBranch.findByPk(restaurantId);
-    if (!branch) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Merchant branch not found', 404, merchantConstants.ERROR_CODES.includes('INVALID_BRANCH') ? 'INVALID_BRANCH' : munchConstants.ERROR_CODES[0]);
+    }
+
+    // Validate merchant type
+    if (!merchantConstants.MERCHANT_TYPES.includes(branch.merchant?.business_type)) {
+      throw new AppError('Invalid merchant type', 400, merchantConstants.ERROR_CODES.includes('INVALID_MERCHANT_TYPE') ? 'INVALID_MERCHANT_TYPE' : munchConstants.ERROR_CODES[0]);
+    }
 
     const inventory = await MenuInventory.findAll({
       where: { branch_id: restaurantId, is_published: true },
       attributes: ['id', 'name', 'sku', 'quantity', 'minimum_stock_level', 'availability_status'],
+      include: [
+        { model: Merchant, as: 'merchant' },
+        { model: ProductAuditLog, as: 'auditLogs' },
+      ],
+      transaction,
     });
 
     const stockLevels = inventory.map(item => ({
@@ -44,194 +48,224 @@ async function trackStockLevels(restaurantId, io) {
       status: item.quantity <= (item.minimum_stock_level || 0) ? 'low' : 'sufficient',
     }));
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'track_stock_levels',
-      details: { restaurantId, stockLevels },
-      ipAddress: '127.0.0.1',
+    // Check for existing MenuVersion
+    const menuVersion = await MenuVersion.findOne({
+      where: { branch_id: restaurantId, merchant_id: branch.merchant_id },
+      order: [['version_number', 'DESC']],
+      transaction,
     });
 
-    socketService.emit(io, 'inventory:stockLevels', { restaurantId, stockLevels }, `merchant:${restaurantId}`);
+    if (menuVersion) {
+      logger.info('Menu version found', { version: menuVersion.version_number });
+    }
 
+    await transaction.commit();
+    logger.info('Stock levels tracked', { restaurantId, success: merchantConstants.SUCCESS_MESSAGES.includes('inventory_updated') ? 'inventory_updated' : 'operation_success' });
     return stockLevels;
   } catch (error) {
+    await transaction.rollback();
     logger.error('Error tracking stock levels', { error: error.message });
     throw error;
   }
 }
 
-/**
- * Adjusts inventory post-order.
- * @param {number} orderId - Order ID.
- * @param {Array} items - Order items with quantities.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated inventory items.
- */
-async function updateInventory(orderId, items, io) {
-  try {
-    if (!orderId || !items?.length) throw new Error('Order ID and items required');
+async function updateInventory(orderId, items) {
+  const transaction = await sequelize.transaction();
 
-    const order = await Order.findByPk(orderId, { include: [{ model: MerchantBranch, as: 'branch' }] });
-    if (!order) throw new Error('Order not found');
+  try {
+    if (!orderId || !items?.length) {
+      throw new AppError('Invalid input: orderId and items are required', 400, munchConstants.ERROR_CODES[0]);
+    }
+
+    const order = await Order.findByPk(orderId, {
+      include: [
+        { model: MerchantBranch, as: 'branch' },
+        { model: Merchant, as: 'merchant' },
+        { model: Customer, as: 'customer' },
+        { model: Staff, as: 'staff', required: false },
+      ],
+      transaction,
+    });
+    if (!order) {
+      throw new AppError('Order not found', 404, merchantConstants.ERROR_CODES.includes('INVALID_ORDER_TYPE') ? 'INVALID_ORDER_TYPE' : munchConstants.ERROR_CODES[0]);
+    }
+
+    // Validate staff role if assigned
+    if (order.staff_id) {
+      const staff = await Staff.findByPk(order.staff_id, { transaction });
+      if (staff && !staff.staff_types.some(type => staffConstants.STAFF_PERMISSIONS[type]?.includes('update_inventory'))) {
+        throw new AppError('Staff lacks permission to update inventory', 403, staffConstants.ERROR_CODES.includes('PERMISSION_DENIED') ? 'PERMISSION_DENIED' : munchConstants.ERROR_CODES[0]);
+      }
+    }
 
     const updatedItems = [];
     for (const item of items) {
       const inventoryItem = await MenuInventory.findOne({
         where: { branch_id: order.branch_id, id: item.menu_item_id },
+        include: [
+          { model: Merchant, as: 'merchant' },
+          { model: ProductAuditLog, as: 'auditLogs' },
+        ],
+        transaction,
       });
-      if (!inventoryItem) throw new Error(`Inventory item ${item.menu_item_id} not found`);
+      if (!inventoryItem) {
+        throw new AppError(`Inventory item not found for ID: ${item.menu_item_id}`, 404, munchConstants.ERROR_CODES[0]);
+      }
 
       const newQuantity = inventoryItem.quantity - (item.quantity || 1);
-      if (newQuantity < 0) throw new Error(`Insufficient stock for ${inventoryItem.name}`);
+      if (newQuantity < 0) {
+        throw new AppError(`Insufficient stock for item: ${inventoryItem.name}`, 400, munchConstants.ERROR_CODES[0]);
+      }
 
-      await inventoryItem.update({
-        quantity: newQuantity,
-        availability_status: newQuantity <= (inventoryItem.minimum_stock_level || 0) ? 'out-of-stock' : 'in-stock',
-      });
+      await inventoryItem.update(
+        {
+          quantity: newQuantity,
+          availability_status: newQuantity <= (inventoryItem.minimum_stock_level || 0) ? 'out-of-stock' : 'in-stock',
+          updated_by: order.staff_id || 'system',
+        },
+        { transaction },
+      );
 
-      await ProductAuditLog.create({
-        menu_item_id: inventoryItem.id,
-        user_id: 'system',
-        action: 'update',
-        changes: { quantity: newQuantity, availability_status: inventoryItem.availability_status },
-      });
+      await ProductAuditLog.create(
+        {
+          menu_item_id: inventoryItem.id,
+          user_id: order.staff_id || 'system',
+          action: 'update',
+          changes: { quantity: newQuantity, availability_status: inventoryItem.availability_status },
+        },
+        { transaction },
+      );
 
-      await ProductActivityLog.create({
-        productId: inventoryItem.id,
-        merchantBranchId: order.branch_id,
-        actorId: 'system',
-        actorType: 'system',
-        actionType: 'stock_adjusted',
-        previousState: { quantity: inventoryItem.quantity },
-        newState: { quantity: newQuantity },
-      });
+      await ProductActivityLog.create(
+        {
+          productId: inventoryItem.id,
+          merchantBranchId: order.branch_id,
+          actorId: order.staff_id || 'system',
+          actorType: order.staff_id ? 'staff' : 'system',
+          actionType: 'stock_adjusted',
+          previousState: { quantity: inventoryItem.quantity },
+          newState: { quantity: newQuantity },
+        },
+        { transaction },
+      );
+
+      await InventoryAdjustmentLog.create(
+        {
+          menu_item_id: inventoryItem.id,
+          merchant_id: order.merchant_id,
+          branch_id: order.branch_id,
+          adjustment_type: 'subtract',
+          previous_quantity: inventoryItem.quantity,
+          new_quantity: newQuantity,
+          adjustment_amount: item.quantity || 1,
+          reason: 'Order fulfillment',
+          performed_by: order.staff_id || 'system',
+          reference_id: orderId,
+          reference_type: 'order',
+        },
+        { transaction },
+      );
 
       updatedItems.push({ itemId: inventoryItem.id, name: inventoryItem.name, newQuantity });
     }
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'update_inventory',
-      details: { orderId, updatedItems },
-      ipAddress: '127.0.0.1',
-    });
+    // Log bulk update
+    await InventoryBulkUpdate.create(
+      {
+        merchant_id: order.merchant_id,
+        branch_id: order.branch_id,
+        total_items: items.length,
+        successful_items: updatedItems.length,
+        failed_items: 0,
+        performed_by: order.staff_id || 'system',
+        summary: { updatedItems: updatedItems.map(item => ({ id: item.itemId, newQuantity: item.newQuantity })) },
+      },
+      { transaction },
+    );
 
-    socketService.emit(io, 'inventory:updated', { orderId, updatedItems }, `merchant:${order.branch_id}`);
-
+    await transaction.commit();
+    logger.info('Inventory updated', { orderId, success: merchantConstants.SUCCESS_MESSAGES.includes('inventory_updated') ? 'inventory_updated' : 'operation_success' });
     return updatedItems;
   } catch (error) {
+    await transaction.rollback();
     logger.error('Error updating inventory', { error: error.message });
     throw error;
   }
 }
 
-/**
- * Notifies BOH staff of restocking needs.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Notification results.
- */
-async function sendRestockingAlerts(restaurantId, io) {
-  try {
-    if (!restaurantId) throw new Error('Restaurant ID required');
+async function sendRestockingAlerts(restaurantId) {
+  const transaction = await sequelize.transaction();
 
-    const branch = await MerchantBranch.findByPk(restaurantId);
-    if (!branch) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+  try {
+    if (!restaurantId) {
+      throw new AppError('Invalid input: restaurantId is required', 400, munchConstants.ERROR_CODES[0]);
+    }
+
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Merchant branch not found', 404, merchantConstants.ERROR_CODES.includes('INVALID_BRANCH') ? 'INVALID_BRANCH' : munchConstants.ERROR_CODES[0]);
+    }
+
+    // Validate merchant type for inventory management
+    if (!merchantConstants.BUSINESS_SETTINGS.AI_ENABLED_FEATURES.includes('inventory_management')) {
+      logger.warn('Inventory management not enabled for merchant type', { merchantType: branch.merchant?.business_type });
+    }
 
     const lowStockItems = await MenuInventory.findAll({
       where: {
         branch_id: restaurantId,
         quantity: { [Op.lte]: sequelize.col('minimum_stock_level') },
       },
+      include: [
+        { model: Merchant, as: 'merchant' },
+        { model: ProductAuditLog, as: 'auditLogs' },
+      ],
+      transaction,
     });
 
-    if (!lowStockItems.length) return { success: true, message: 'No restocking needed' };
-
-    const bohStaff = await Staff.findAll({
-      where: {
-        branch_id: restaurantId,
-        position: staffConstants.STAFF_TYPES.BOH,
-        availability_status: 'available',
-      },
-    });
-
-    if (!bohStaff.length) throw new Error('No available back-of-house staff');
-
-    const notificationResults = [];
-    for (const staff of bohStaff) {
-      const result = await notificationService.sendNotification({
-        userId: staff.user_id,
-        notificationType: 'restocking_alert',
-        messageKey: 'inventory.restock_alert',
-        messageParams: { items: lowStockItems.map(item => item.name).join(', ') },
-        deliveryMethod: 'WHATSAPP',
-        role: 'staff',
-        module: 'inventory',
-        languageCode: staff.user?.preferred_language || 'en',
-      });
-      notificationResults.push(result);
+    if (!lowStockItems.length) {
+      await transaction.commit();
+      return { success: true, message: 'No restocking needed' };
     }
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'send_restocking_alerts',
-      details: { restaurantId, lowStockItems: lowStockItems.map(item => item.name), staffIds: bohStaff.map(s => s.user_id) },
-      ipAddress: '127.0.0.1',
-    });
+    // Create InventoryAlert for each low stock item
+    for (const item of lowStockItems) {
+      await InventoryAlert.create(
+        {
+          menu_item_id: item.id,
+          merchant_id: branch.merchant_id,
+          branch_id: restaurantId,
+          type: 'low_stock',
+          details: {
+            name: item.name,
+            quantity: item.quantity,
+            minimum_stock_level: item.minimum_stock_level,
+          },
+          resolved: false,
+        },
+        { transaction },
+      );
 
-    socketService.emit(io, 'inventory:restockingAlerts', {
+      // Log notification attempt (aligned with NOTIFICATION_CONSTANTS)
+      logger.info('Restocking alert created', {
+        notificationType: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.includes('restocking_alert') ? 'restocking_alert' : 'inventory_alert',
+        itemId: item.id,
+      });
+    }
+
+    await transaction.commit();
+    logger.info('Restocking alerts prepared', {
       restaurantId,
-      lowStockItems: lowStockItems.map(item => ({ id: item.id, name: item.name })),
-    }, `merchant:${restaurantId}`);
-
-    return notificationResults;
+      lowStockItems: lowStockItems.length,
+      success: merchantConstants.SUCCESS_MESSAGES.includes('inventory_updated') ? 'inventory_updated' : 'operation_success',
+    });
+    return { restaurantId, lowStockItems: lowStockItems.map(item => ({ id: item.id, name: item.name })) };
   } catch (error) {
+    await transaction.rollback();
     logger.error('Error sending restocking alerts', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Awards inventory update points to staff.
- * @param {number} staffId - Staff ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points record.
- */
-async function trackInventoryGamification(staffId, io) {
-  try {
-    if (!staffId) throw new Error('Staff ID required');
-
-    const staff = await Staff.findByPk(staffId, { include: [{ model: MerchantBranch, as: 'branch' }] });
-    if (!staff || staff.position !== staffConstants.STAFF_TYPES.BOH) throw new Error('Invalid or non-BOH staff');
-
-    const pointsRecord = await pointService.awardPoints({
-      userId: staff.user_id,
-      role: 'staff',
-      subRole: staff.position,
-      action: 'inventory_update',
-      languageCode: staff.user?.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'track_inventory_gamification',
-      details: { staffId, points: pointsRecord.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'gamification:pointsAwarded', {
-      staffId,
-      points: pointsRecord.points,
-      action: 'inventory_update',
-    }, `staff:${staff.user_id}`);
-
-    return pointsRecord;
-  } catch (error) {
-    logger.error('Error tracking inventory gamification', { error: error.message });
     throw error;
   }
 }
@@ -240,5 +274,4 @@ module.exports = {
   trackStockLevels,
   updateInventory,
   sendRestockingAlerts,
-  trackInventoryGamification,
 };

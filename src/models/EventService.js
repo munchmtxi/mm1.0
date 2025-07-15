@@ -1,4 +1,3 @@
-// src/models/EventService.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -10,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.Order, { foreignKey: 'service_id', constraints: false });
       this.belongsTo(models.Ride, { foreignKey: 'service_id', constraints: false });
       this.belongsTo(models.InDiningOrder, { foreignKey: 'service_id', constraints: false });
+      this.belongsTo(models.ParkingBooking, { foreignKey: 'service_id', constraints: false });
     }
   }
 
@@ -31,16 +31,16 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       service_type: {
-        type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'in_dining'),
+        type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'in_dining', 'mpark'),
         allowNull: false,
       },
       payment_id: {
-  type: DataTypes.INTEGER,
-  allowNull: true,
-  references: { model: 'payments', key: 'id' },
-  onUpdate: 'CASCADE',
-  onDelete: 'SET NULL',
-}
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'payments', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+      },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,

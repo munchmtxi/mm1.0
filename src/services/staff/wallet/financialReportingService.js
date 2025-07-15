@@ -1,30 +1,14 @@
 'use strict';
 
-/**
- * financialReportingService.js
- * Generates financial reports for munch staff. Handles payment reports, wallet activity,
- * data exports, tax compliance, and audit trails.
- * Last Updated: May 26, 2025
- */
-
 const { Report, Payment, WalletTransaction, TaxRecord, AuditLog, Staff, FinancialSummary } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const merchantConstants = require('@constants/merchant/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
-const securityService = require('@services/common/securityService');
+const staffConstants = require('@constants/staff/staffConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
+const { Op } = require('sequelize');
 
-/**
- * Creates salary/bonus payment reports.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Object>} Report record.
- */
-async function generatePaymentReport(staffId) {
+async function generatePaymentReport(staffId, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -34,14 +18,26 @@ async function generatePaymentReport(staffId) {
     await securityService.verifyMFA(staff.user_id);
 
     const payments = await Payment.findAll({
-      where: { staff_id: staffId, payment_method: 'wallet_transfer' },
+      where: { 
+        staff_id: staffId, 
+        payment_method: paymentConstants.PAYMENT_METHODS.includes('bank_transfer') ? 'bank_transfer' : 'wallet_transfer' 
+      },
       limit: 100,
     });
 
     const reportData = {
-      total_salary: payments.filter(p => p.type === 'salary').reduce((sum, p) => sum + p.amount, 0),
-      total_bonus: payments.filter(p => p.type === 'bonus').reduce((sum, p) => sum + p.amount, 0),
-      transactions: payments.map(p => ({ id: p.id, amount: p.amount, type: p.type, created_at: p.created_at })),
+      total_salary: payments
+        .filter(p => paymentConstants.TRANSACTION_TYPES.includes(p.type) && p.type === 'salary')
+        .reduce((sum, p) => sum + p.amount, 0),
+      total_bonus: payments
+        .filter(p => paymentConstants.TRANSACTION_TYPES.includes(p.type) && p.type === 'bonus')
+        .reduce((sum, p) => sum + p.amount, 0),
+      transactions: payments.map(p => ({ 
+        id: p.id, 
+        amount: p.amount, 
+        type: p.type || 'payment', 
+        created_at: p.created_at 
+      })),
     };
 
     const report = await Report.create({
@@ -52,17 +48,17 @@ async function generatePaymentReport(staffId) {
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, reportId: report.id, action: 'generate_payment_report' },
     });
 
-    const message = localization.formatMessage('reporting.payment_report_generated', { reportId: report.id });
+    const message = formatMessage('reporting.payment_report_generated', { reportId: report.id });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.REPORT_GENERATED,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -71,16 +67,11 @@ async function generatePaymentReport(staffId) {
     return report;
   } catch (error) {
     logger.error('Payment report generation failed', { error: error.message, staffId });
-    throw new AppError(`Report generation failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Report generation failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Summarizes wallet transactions.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Object>} Summary data.
- */
-async function summarizeWalletActivity(staffId) {
+async function summarizeWalletActivity(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -93,9 +84,15 @@ async function summarizeWalletActivity(staffId) {
     });
 
     const summary = {
-      total_deposits: transactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0),
-      total_withdrawals: transactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0),
-      total_rewards: transactions.filter(t => t.type === 'reward').reduce((sum, t) => sum + t.amount, 0),
+      total_deposits: transactions
+        .filter(t => paymentConstants.TRANSACTION_TYPES.includes(t.type) && t.type === 'deposit')
+        .reduce((sum, t) => sum + t.amount, 0),
+      total_withdrawals: transactions
+        .filter(t => paymentConstants.TRANSACTION_TYPES.includes(t.type) && t.type === 'withdrawal')
+        .reduce((sum, t) => sum + t.amount, 0),
+      total_rewards: transactions
+        .filter(t => paymentConstants.TRANSACTION_TYPES.includes(t.type) && t.type === 'gamification_reward')
+        .reduce((sum, t) => sum + t.amount, 0),
       transaction_count: transactions.length,
     };
 
@@ -104,16 +101,11 @@ async function summarizeWalletActivity(staffId) {
     return summary;
   } catch (error) {
     logger.error('Wallet activity summary failed', { error: error.message, staffId });
-    throw new AppError(`Summary failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Summary failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('WALLET_NOT_FOUND') ? 'WALLET_NOT_FOUND' : 'TRANSACTION_FAILED');
   }
 }
 
-/**
- * Exports financial data for audits.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Object>} Exported data.
- */
-async function exportFinancialData(staffId) {
+async function exportFinancialData(staffId, securityService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -130,10 +122,10 @@ async function exportFinancialData(staffId) {
       wallet_id: staff.wallet.id,
       transactions: transactions.map(t => ({
         id: t.id,
-        type: t.type,
+        type: paymentConstants.TRANSACTION_TYPES.includes(t.type) ? t.type : 'payment',
         amount: t.amount,
         currency: t.currency,
-        status: t.status,
+        status: paymentConstants.TRANSACTION_STATUSES.includes(t.status) ? t.status : 'completed',
         created_at: t.created_at,
       })),
     };
@@ -145,16 +137,11 @@ async function exportFinancialData(staffId) {
     return encryptedData;
   } catch (error) {
     logger.error('Financial data export failed', { error: error.message, staffId });
-    throw new AppError(`Data export failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Data export failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'WALLET_NOT_FOUND');
   }
 }
 
-/**
- * Records tax-related data.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Object>} Tax record.
- */
-async function trackTaxCompliance(staffId) {
+async function trackTaxCompliance(staffId, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -162,11 +149,14 @@ async function trackTaxCompliance(staffId) {
     }
 
     const transactions = await WalletTransaction.findAll({
-      where: { wallet_id: staff.wallet.id, type: { [Op.in]: ['salary', 'bonus', 'reward'] } },
+      where: { 
+        wallet_id: staff.wallet.id, 
+        type: { [Op.in]: ['salary', 'bonus', 'gamification_reward'].filter(t => paymentConstants.TRANSACTION_TYPES.includes(t)) } 
+      },
     });
 
     const taxableAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const taxAmount = taxableAmount * merchantConstants.WALLET_CONSTANTS.TAX_RATE;
+    const taxAmount = taxableAmount * 0.15; // Fixed tax rate (replace with config if needed)
 
     const taxRecord = await TaxRecord.create({
       staff_id: staffId,
@@ -179,7 +169,7 @@ async function trackTaxCompliance(staffId) {
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, taxRecordId: taxRecord.id, action: 'track_tax_compliance' },
     });
@@ -189,16 +179,11 @@ async function trackTaxCompliance(staffId) {
     return taxRecord;
   } catch (error) {
     logger.error('Tax compliance tracking failed', { error: error.message, staffId });
-    throw new AppError(`Tax tracking failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Tax tracking failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'WALLET_NOT_FOUND');
   }
 }
 
-/**
- * Generates audit trails for financial transactions.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Array>} Audit logs.
- */
-async function auditFinancialTransactions(staffId) {
+async function auditFinancialTransactions(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -206,7 +191,10 @@ async function auditFinancialTransactions(staffId) {
     }
 
     const logs = await AuditLog.findAll({
-      where: { user_id: staffId, 'details.action': { [Op.in]: ['salary_payment', 'bonus_payment', 'confirm_withdrawal', 'convert_points', 'redeem_reward'] } },
+      where: { 
+        user_id: staffId, 
+        'details.action': { [Op.in]: ['salary_payment', 'bonus_payment', 'confirm_withdrawal'].filter(a => a) } 
+      },
       order: [['created_at', 'DESC']],
       limit: 100,
     });
@@ -216,7 +204,7 @@ async function auditFinancialTransactions(staffId) {
     return logs;
   } catch (error) {
     logger.error('Financial audit trail failed', { error: error.message, staffId });
-    throw new AppError(`Audit trail failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Audit trail failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'WALLET_NOT_FOUND');
   }
 }
 
@@ -225,5 +213,5 @@ module.exports = {
   summarizeWalletActivity,
   exportFinancialData,
   trackTaxCompliance,
-  auditFinancialTransactions,
+  auditFinancialTransactions
 };

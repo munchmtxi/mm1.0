@@ -1,76 +1,43 @@
 'use strict';
 
 const { body, param } = require('express-validator');
-const rideConstants = require('@constants/common/rideConstants');
-const customerConstants = require('@constants/customer/customerConstants');
-const { validate } = require('@utils/validation');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { formatMessage } = require('@utils/localization');
 
-const validateBookRide = [
-  body('pickupLocation').isObject().notEmpty(),
-  body('dropoffLocation').isObject().notEmpty(),
-  body('rideType').isIn(rideConstants.RIDE_TYPES),
-  body('scheduledTime').optional().isISO8601(),
-  body('friends').optional().isArray().custom(arr => arr.length <= rideConstants.GROUP_SETTINGS.MAX_FRIENDS_PER_RIDE),
-  body('billSplit').optional().isObject().custom(obj => {
-    if (!rideConstants.GROUP_SETTINGS.BILL_SPLIT_TYPES.includes(obj.type)) return false;
-    if (obj.participants.length > rideConstants.GROUP_SETTINGS.MAX_SPLIT_PARTICIPANTS) return false;
-    return true;
-  }),
-  body('paymentMethodId').optional().isInt(),
-  validate,
-];
-
-const validateUpdateRide = [
-  param('rideId').isInt(),
-  body('pickupLocation').optional().isObject(),
-  body('dropoffLocation').optional().isObject(),
-  body('scheduledTime').optional().isISO8601(),
-  body('friends').optional().isArray().custom(arr => arr.length <= rideConstants.GROUP_SETTINGS.MAX_FRIENDS_PER_RIDE),
-  body('billSplit').optional().isObject().custom(obj => {
-    if (!rideConstants.GROUP_SETTINGS.BILL_SPLIT_TYPES.includes(obj.type)) return false;
-    if (obj.participants.length > rideConstants.GROUP_SETTINGS.MAX_SPLIT_PARTICIPANTS) return false;
-    return true;
-  }),
-  validate,
-];
-
-const validateCancelRide = [
-  param('rideId').isInt(),
-  validate,
-];
-
-const validateCheckInRide = [
-  param('rideId').isInt(),
-  body('coordinates').isObject().notEmpty(),
-  validate,
-];
-
-const validateFeedback = [
-  param('rideId').isInt(),
-  body('rating').isInt({ min: 1, max: 5 }),
-  body('comment').optional().isString(),
-  validate,
-];
-
-const validateAddFriend = [
-  param('rideId').isInt(),
-  body('friendCustomerId').isInt(),
-  validate,
-];
-
-const validateBillSplit = [
-  param('rideId').isInt(),
-  body('type').isIn(rideConstants.GROUP_SETTINGS.BILL_SPLIT_TYPES),
-  body('participants').isArray().custom(arr => arr.length <= rideConstants.GROUP_SETTINGS.MAX_SPLIT_PARTICIPANTS),
-  validate,
-];
-
+/**
+ * Ride validation middleware
+ */
 module.exports = {
-  validateBookRide,
-  validateUpdateRide,
-  validateCancelRide,
-  validateCheckInRide,
-  validateFeedback,
-  validateAddFriend,
-  validateBillSplit,
+  createRide: [
+    body('pickupLocation').isObject().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_location')),
+    body('dropoffLocation').isObject().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_location')),
+    body('rideType').isString().isIn(['standard', 'shared']).withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_ride_type')),
+    body('scheduledTime').optional().isISO8601().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_scheduled_time')),
+    body('friends').optional().isArray().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_friends')),
+  ],
+  updateRideStatus: [
+    body('rideId').isInt().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_ride_id')),
+    body('status').isString().isIn(['COMPLETED', 'CANCELLED']).withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_status')),
+  ],
+  addFriendsToRide: [
+    body('rideId').isInt().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_ride_id')),
+    body('friends').isArray().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_friends')),
+  ],
+  submitFeedback: [
+    body('rideId').isInt().withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_ride_id')),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage((_, { req }) => 
+      formatMessage('customer', 'ride', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_rating')),
+    body('comment').optional().isString(),
+  ],
 };

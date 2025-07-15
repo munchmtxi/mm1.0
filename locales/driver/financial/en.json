@@ -1,14 +1,20 @@
 {
-  "payout": {
-    "requested": "Payout of {amount} {currency} requested via {method}.",
-    "scheduled": "Recurring payout scheduled: {amount} {currency} {frequency} via {method}."
-  },
-  "tax": {
-    "calculated": "Tax calculated for {period}: {taxAmount} {currency}.",
-    "report_generated": "Tax report generated for {period}.",
-    "settings_updated": "Tax settings updated: filing frequency {filingFrequency}."
-  },
   "financial": {
-    "summary_viewed": "Financial summary viewed for {period}."
+    "trends_viewed": "Earnings trends for {{period}} period viewed",
+    "summary_viewed": "Financial summary for {{period}} period viewed",
+    "goals_viewed": "Financial goal of {{goal}} recommended",
+    "comparison_viewed": "Financial performance compared with {{peers}} peers",
+    "tax": {
+      "calculated": "Tax calculated for {{period}}: {{taxAmount}} {{currency}}",
+      "report_generated": "Tax report generated for {{period}}",
+      "settings_updated": "Tax settings updated to {{filingFrequency}}",
+      "data_exported": "Tax data exported in {{format}} format"
+    },
+    "payout": {
+      "requested": "Payout of {{amount}} {{currency}} requested via {{method}}",
+      "history_viewed": "Payout history viewed ({{count}} records)",
+      "method_verified": "Payout method {{method}} verified",
+      "scheduled": "Recurring payout of {{amount}} scheduled {{frequency}} via {{method}}"
+    }
   }
 }

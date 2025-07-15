@@ -1,0 +1,13 @@
+{
+  "analytics": {
+    "metrics_retrieved": "Performance metrics successfully retrieved",
+    "report_generated": "Analytics report for {{period}} successfully generated",
+    "recommendations_received": "{{count}} performance recommendations received",
+    "recommendations": {
+      "improve_ride_completion": "Increase your ride completion rate by accepting and completing more rides",
+      "improve_delivery_completion": "Improve your delivery completion rate by ensuring timely deliveries",
+      "improve_rating": "Enhance your customer ratings by focusing on service quality and communication",
+      "increase_active_hours": "Increase your active hours to maximize earnings and opportunities"
+    }
+  }
+}

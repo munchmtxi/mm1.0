@@ -1,13 +1,9 @@
 'use strict';
 
 module.exports = {
-  PROFILE_UPDATE: 'profile:update',
-  SET_COUNTRY: 'profile:setCountry',
-  SET_LANGUAGE: 'profile:setLanguage',
-  SET_DIETARY_PREFERENCES: 'profile:setDietaryPreferences',
-  PROFILE_GET: 'profile:get',
-  PROFILE_UPDATED: 'profile:updated',
-  COUNTRY_UPDATED: 'profile:country_updated',
-  LANGUAGE_UPDATED: 'profile:language_updated',
-  DIETARY_UPDATED: 'profile:dietary_updated',
+  PROFILE_UPDATED: 'PROFILE_UPDATED',
+  COUNTRY_SET: 'COUNTRY_SET',
+  LANGUAGE_SET: 'LANGUAGE_SET',
+  DIETARY_PREFERENCES_SET: 'DIETARY_PREFERENCES_SET',
+  DEFAULT_ADDRESS_SET: 'DEFAULT_ADDRESS_SET',
 };

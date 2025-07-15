@@ -62,6 +62,7 @@ module.exports = (sequelize, DataTypes) => {
       { unique: true, fields: ['user_id'], name: 'customers_user_id_unique' },
       { unique: true, fields: ['phone_number'], name: 'customers_phone_number_unique' },
       { fields: ['default_address_id'], name: 'customers_default_address_id_index' },
+      { fields: ['last_known_location'], name: 'customers_last_known_location_index' },
     ],
     hooks: {
       afterSave: async (customer, options) => {

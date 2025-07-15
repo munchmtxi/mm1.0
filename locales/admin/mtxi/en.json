@@ -1,0 +1,30 @@
+{
+  "analytics": {
+    "ride_completion": "Ride completion analytics generated for driver {driverId} with {completionRate}% completion rate.",
+    "ride_completion_success": "Ride completion analytics retrieved successfully.",
+    "tip_distribution": "Tip distribution analytics generated for driver {driverId} with average tip of {averageTip}.",
+    "tip_distribution_success": "Tip distribution analytics retrieved successfully.",
+    "report_generated": "Ride report generated for driver {driverId} for {period} period in {format} format.",
+    "report_generated_success": "Ride report generated successfully.",
+    "performance_updated": "Performance metrics updated for driver {driverId} with {totalRides} rides and rating {rating}.",
+    "performance_updated_success": "Driver performance metrics retrieved successfully."
+  },
+  "driver": {
+    "assignment": "Ride {rideId} assigned to driver {driverId}.",
+    "assignment_success": "Ride assigned successfully.",
+    "availability": "Driver {driverId} availability status: {status}.",
+    "availability_success": "Driver availability retrieved successfully.",
+    "safety": {
+      "incidents": "Safety incidents reviewed for driver {driverId} with {totalIncidents} incidents.",
+      "incidents_success": "Safety incidents retrieved successfully."
+    },
+    "training": {
+      "assigned": "Training module {module} assigned to driver {driverId}.",
+      "assigned_success": "Training assigned successfully.",
+      "completed": "Training module {module} completed by driver {driverId}.",
+      "completed_success": "Training completed successfully.",
+      "verified": "Training module {module} verified for driver {driverId}.",
+      "verified_success": "Training verified successfully."
+    }
+  }
+}

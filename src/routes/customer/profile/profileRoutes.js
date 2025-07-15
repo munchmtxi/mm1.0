@@ -1,38 +1,21 @@
 'use strict';
 
+/**
+ * Customer profile routes.
+ */
+
 const express = require('express');
 const router = express.Router();
-const {
-  updateCustomerProfile,
-  setCustomerCountry,
-  setCustomerLanguage,
-  setCustomerDietaryPreferences,
-  getCustomerProfile,
-} = require('@controllers/customer/profile/profileController');
-const {
-  updateProfileSchema,
-  setCountrySchema,
-  setLanguageSchema,
-  setDietaryPreferencesSchema,
-  getProfileSchema,
-} = require('@validators/customer/profile/profileValidator');
-const {
-  updateCustomerProfile: updateProfileMW,
-  setCustomerCountry: setCountryMW,
-  setCustomerLanguage: setLanguageMW,
-  setCustomerDietaryPreferences: setDietaryMW,
-  getCustomerProfile: getProfileMW,
-} = require('@middleware/customer/profile/profileMiddleware');
-const { validate } = require('@middleware/validate');
+const profileController = require('@controllers/customer/profile/profileController');
+const profileValidator = require('@validators/customer/profile/profileValidator');
+const profileMiddleware = require('@middleware/customer/profile/profileMiddleware');
 
 /**
  * @swagger
- * /api/customer/profile:
- *   patch:
+ * /api/v1/customer/profile/update:
+ *   post:
  *     summary: Update customer profile
- *     tags: [Profile]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Profile]
  *     requestBody:
  *       required: true
  *       content:
@@ -40,48 +23,46 @@ const { validate } = require('@middleware/validate');
  *           schema:
  *             type: object
  *             properties:
- *               name:
+ *               phone_number:
  *                 type: string
- *               email:
- *                 type: string
- *               phone:
+ *               address:
+ *                 type: object
+ *                 properties:
+ *                   street:
+ *                     type: string
+ *                   city:
+ *                     type: string
+ *                   countryCode:
+ *                     type: string
+ *               languageCode:
  *                 type: string
  *     responses:
  *       200:
- *         description: Profile updated
+ *         description: Profile updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     customerId:
- *                       type: integer
- *                     updatedFields:
- *                       type: object
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
- *         description: Invalid request
- *       404:
- *         description: Customer not found
+ *         description: Invalid profile data
+ *       500:
+ *         description: Server error
  */
-router.patch('/', updateProfileMW, validate(updateProfileSchema), updateCustomerProfile);
+router.post('/update', profileMiddleware.validateUserId, profileMiddleware.validateLanguageCode, profileValidator.validateUpdateProfile, profileController.updateProfile);
 
 /**
  * @swagger
- * /api/customer/profile/country:
- *   patch:
+ * /api/v1/customer/profile/country:
+ *   post:
  *     summary: Set customer country
- *     tags: [Profile]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Profile]
  *     requestBody:
  *       required: true
  *       content:
@@ -89,46 +70,37 @@ router.patch('/', updateProfileMW, validate(updateProfileSchema), updateCustomer
  *           schema:
  *             type: object
  *             properties:
- *               countryCode:
+ *               country:
+ *                 type: string
+ *               languageCode:
  *                 type: string
  *     responses:
  *       200:
- *         description: Country set
+ *         description: Country set successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     customerId:
- *                       type: integer
- *                     countryCode:
- *                       type: string
- *                     currency:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
- *         description: Invalid country
- *       404:
- *         description: Customer not found
+ *         description: Invalid country code
+ *       500:
+ *         description: Server error
  */
-router.patch('/country', setCountryMW, validate(setCountrySchema), setCustomerCountry);
+router.post('/country', profileMiddleware.validateUserId, profileMiddleware.validateLanguageCode, profileValidator.validateSetCountry, profileController.setCountry);
 
 /**
  * @swagger
- * /api/customer/profile/language:
- *   patch:
+ * /api/v1/customer/profile/language:
+ *   post:
  *     summary: Set customer language
- *     tags: [Profile]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Profile]
  *     requestBody:
  *       required: true
  *       content:
@@ -140,40 +112,31 @@ router.patch('/country', setCountryMW, validate(setCountrySchema), setCustomerCo
  *                 type: string
  *     responses:
  *       200:
- *         description: Language set
+ *         description: Language set successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     customerId:
- *                       type: integer
- *                     languageCode:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
- *         description: Invalid language
- *       404:
- *         description: Customer not found
+ *         description: Invalid language code
+ *       500:
+ *         description: Server error
  */
-router.patch('/language', setLanguageMW, validate(setLanguageSchema), setCustomerLanguage);
+router.post('/language', profileMiddleware.validateUserId, profileValidator.validateSetLanguage, profileController.setLanguage);
 
 /**
  * @swagger
- * /api/customer/profile/dietary:
- *   patch:
- *     summary: Set customer dietary preferences
- *     tags: [Profile]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/dietary-preferences:
+ *   post:
+ *     summary: Set dietary preferences
+ *     tags: [Customer Profile]
  *     requestBody:
  *       required: true
  *       content:
@@ -185,88 +148,95 @@ router.patch('/language', setLanguageMW, validate(setLanguageSchema), setCustome
  *                 type: array
  *                 items:
  *                   type: string
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Dietary preferences set
+ *         description: Dietary preferences set successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     customerId:
- *                       type: integer
- *                     preferences:
- *                       type: array
- *                       items:
- *                         type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
  *         description: Invalid dietary preferences
- *       404:
- *         description: Customer not found
+ *       500:
+ *         description: Server error
  */
-router.patch('/dietary', setDietaryMW, validate(setDietaryPreferencesSchema), setCustomerDietaryPreferences);
+router.post('/dietary-preferences', profileMiddleware.validateUserId, profileMiddleware.validateLanguageCode, profileValidator.validateSetDietaryPreferences, profileController.setDietaryPreferences);
 
 /**
  * @swagger
- * /api/customer/profile:
- *   get:
- *     summary: Get customer profile
- *     tags: [Profile]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/default-address:
+ *   post:
+ *     summary: Set default address
+ *     tags: [Customer Profile]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               addressId:
+ *                 type: string
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Profile retrieved
+ *         description: Default address set successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     user_id:
- *                       type: string
- *                     name:
- *                       type: string
- *                     email:
- *                       type: string
- *                     phone:
- *                       type: string
- *                     preferred_language:
- *                       type: string
- *                     country_code:
- *                       type: string
- *                     currency:
- *                       type: string
- *                     dietary_preferences:
- *                       type: array
- *                       items:
- *                         type: string
- *                     created_at:
- *                       type: string
- *                     updated_at:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- *       404:
- *         description: Customer not found
+ *       400:
+ *         description: Invalid address ID
+ *       500:
+ *         description: Server error
  */
-router.get('/', getProfileMW, validate(getProfileSchema), getCustomerProfile);
+router.post('/default-address', profileMiddleware.validateUserId, profileMiddleware.validateLanguageCode, profileValidator.validateSetDefaultAddress, profileController.setDefaultAddress);
+
+/**
+ * @swagger
+ * /api/v1/customer/profile:
+ *   get:
+ *     summary: Get customer profile
+ *     tags: [Customer Profile]
+ *     parameters:
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       500:
+ *         description: Server error
+ */
+router.get('/', profileMiddleware.validateUserId, profileMiddleware.validateLanguageCode, profileController.getProfile);
 
 module.exports = router;

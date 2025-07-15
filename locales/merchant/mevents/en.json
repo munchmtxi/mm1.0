@@ -1,0 +1,57 @@
+{
+  "mevents": {
+    "eventCreated": "Event '{title}' created successfully.",
+    "eventCreatedDescription": "A new event has been created.",
+    "invitation": "You've been invited to '{title}' by merchant {creatorId}.",
+    "invitationDescription": "Check your event details to RSVP.",
+    "groupBookingsManaged": "Managed {serviceCount} bookings for event.",
+    "groupBookingsManagedDescription": "Group bookings have been processed.",
+    "billSplitRequest": "Split bill request for {amount} {currency} for event '{eventTitle}'.",
+    "billSplitRequestDescription": "Please confirm your payment.",
+    "chatEnabled": "Group chat enabled for event {eventId}.",
+    "chatEnabledDescription": "Join the chat to coordinate with participants.",
+    "pointsAwarded": "You earned {points} points for {action}!",
+    "pointsAwardedDescription": "Points can be redeemed for rewards or event management activities.",
+    "actions": {
+      "eventCreated": "Creating event",
+      "groupBookingsManaged": "Managing group bookings",
+      "groupChatFacilitated": "Facilitating group chat"
+    },
+    "errors": {
+      "invalidEventId": "Invalid event ID provided.",
+      "invalidEventIdDescription": "Please provide a valid event ID.",
+      "invalidMerchant": "Invalid merchant ID provided.",
+      "invalidMerchantDescription": "Please provide a valid merchant ID.",
+      "invalidTitle": "Invalid or too long event title provided.",
+      "invalidTitleDescription": "Please provide a valid title (max 100 characters).",
+      "invalidDescription": "Invalid or too long event description provided.",
+      "invalidDescriptionDescription": "Please provide a valid description (max 1000 characters).",
+      "invalidOccasion": "Invalid event occasion provided.",
+      "invalidOccasionDescription": "Please provide a valid occasion (e.g., birthday, corporate).",
+      "invalidPaymentType": "Invalid payment type provided.",
+      "invalidPaymentTypeDescription": "Please provide a valid payment type (solo, split).",
+      "maxParticipantsExceeded": "Maximum participant limit exceeded.",
+      "maxParticipantsExceededDescription": "Events can have up to 50 participants.",
+      "invalidParticipant": "Invalid participant ID provided.",
+      "invalidParticipantDescription": "Please provide valid participant IDs.",
+      "eventNotFound": "Event not found.",
+      "eventNotFoundDescription": "The specified event does not exist.",
+      "maxServicesExceeded": "Maximum service limit exceeded.",
+      "maxServicesExceededDescription": "Events can have up to 20 services.",
+      "invalidService": "Invalid service ID provided.",
+      "invalidServiceDescription": "Please provide valid service IDs.",
+      "insufficientFunds": "Insufficient funds for payment.",
+      "insufficientFundsDescription": "Please ensure sufficient wallet balance.",
+      "unauthorized": "Unauthorized access to event management.",
+      "unauthorizedDescription": "Only merchants can access event management features."
+    },
+    "gamification": {
+      "welcome": "Welcome to event management! Earn points by creating events, managing bookings, and facilitating chats.",
+      "welcomeDescription": "Points unlock exclusive benefits.",
+      "progress": "Great work! You've earned {points} points so far!",
+      "progressDescription": "Continue using event management features to earn more.",
+      "milestone": "Milestone reached! You've earned {points} points!",
+      "milestoneDescription": "Check your dashboard for new rewards."
+    }
+  }
+}

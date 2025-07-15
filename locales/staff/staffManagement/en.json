@@ -1,27 +1,24 @@
 {
-  "role_management": {
-    "role_assigned": "{role} role assigned successfully.",
-    "role_updated": "Role updated for staff {staffId}",
-    "role_points_awarded": "Points awarded for role tasks"
-  },
-  "scheduling": {
-    "shift_created": "Shift {shiftId} scheduled successfully.",
-    "shift_updated": "Shift updated for staff {id}",
-    "shift_notified": "Shift change notified"
-  },
-  "task_management": {
-    "task_assigned": "Task {taskId} assigned successfully.",
-    "task_delayed": "Task {taskId} in progress",
-    "task_complete": "Task completed successfully"
-  },
-  "timetracking": {
-    "clock_in": "Staff {staffId} clocked in successfully.",
-    "clock_out": "Staff {staffId} clocked out successfully.",
-    "report_generated": "Time tracking report {reportId} generated."
-  },
-  "training": {
-    "assigned": "Training {trainingId} assigned successfully.",
-    "completed": "Training {trainingId} completed.",
-    "compliance_verified": "Training compliance verified for staff {staffId}."
+  "staffManagement": {
+    "role_assigned": "Role {role} assigned to staff",
+    "permissions_updated": "Permissions updated for staff ID {staffId}",
+    "details_retrieved": "Role details retrieved for staff ID {staffId}",
+    "scheduling": {
+      "shift_created": "Shift {shiftId} has been successfully created.",
+      "shift_updated": "Shift for staff {staffId} has been updated."
+    },
+    "taskManagement": {
+      "task_assigned": "Task {taskId} has been successfully assigned.",
+      "task_delayed": "Task {taskId} is delayed."
+    },
+    "timeTracking": {
+      "clock_in": "Staff {staffId} clocked in successfully.",
+      "clock_out": "Staff {staffId} clocked out successfully.",
+      "report_generated": "Time tracking report {reportId} generated successfully."
+    },
+    "training": {
+      "assigned": "Training {trainingId} has been assigned.",
+      "compliance_assessed": "Training compliance assessed for staff {staffId}."
+    }
   }
 }

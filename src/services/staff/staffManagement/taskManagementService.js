@@ -1,38 +1,19 @@
 'use strict';
 
-/**
- * taskManagementService.js
- * Manages staff tasks for munch (staff role). Assigns tasks, tracks progress,
- * notifies delays, and awards task points.
- * Last Updated: May 26, 2025
- */
-
-const { Task, Staff, Notification, GamificationPoints } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const staffRolesConstants = require('@constants/staff/staffRolesConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
+const { Task, Staff } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
 
-/**
- * Allocates role-specific tasks to staff.
- * @param {number} staffId - Staff ID.
- * @param {Object} task - Task details (taskType, description, dueDate).
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Assigned task.
- */
-async function assignTask(staffId, task, ipAddress) {
+async function assignTask(staffId, task, ipAddress, notificationService, socketService, auditService, pointService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
       throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    const validTasks = staffRolesConstants.STAFF_TASK_TYPES[staff.position]?.munch?.map(t => t.id) || [];
+    const validTasks = staffConstants.STAFF_TASK_TYPES[staff.position]?.munch || [];
     if (!validTasks.includes(task.taskType)) {
       throw new AppError('Invalid task type for role', 400, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
     }
@@ -42,29 +23,44 @@ async function assignTask(staffId, task, ipAddress) {
       branch_id: staff.branch_id,
       task_type: task.taskType,
       description: task.description,
-      status: staffRolesConstants.STAFF_TASK_STATUSES.ASSIGNED,
+      status: staffConstants.STAFF_TASK_STATUSES[0], // 'assigned'
       due_date: task.dueDate,
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, taskId: newTask.id, action: 'assign_task' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('task.task_assigned', { taskId: newTask.id });
+    const message = formatMessage('taskManagement.task_assigned', { taskId: newTask.id });
     await notificationService.sendNotification({
       userId: staffId,
       notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.TASK_ASSIGNMENT,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
       taskId: newTask.id,
     });
 
     socketService.emit(`munch:task:${staffId}`, 'task:assigned', { staffId, taskId: newTask.id });
+
+    const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
+    if (action) {
+      await pointService.awardPoints({
+        userId: staffId,
+        role: staff.position,
+        subRole: staff.position,
+        action: action.action,
+        languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+      });
+      socketService.emit(`munch:staff:${staffId}`, 'points:awarded', {
+        action: action.action,
+        points: action.points,
+      });
+    }
 
     return newTask;
   } catch (error) {
@@ -73,12 +69,7 @@ async function assignTask(staffId, task, ipAddress) {
   }
 }
 
-/**
- * Monitors task completion progress.
- * @param {number} taskId - Task ID.
- * @returns {Promise<Object>} Task progress.
- */
-async function trackTaskProgress(taskId) {
+async function trackTaskProgress(taskId, socketService, pointService) {
   try {
     const task = await Task.findByPk(taskId);
     if (!task) {
@@ -94,6 +85,24 @@ async function trackTaskProgress(taskId) {
 
     socketService.emit(`munch:task:${task.staff_id}`, 'task:progress_updated', progress);
 
+    if (task.status === staffConstants.STAFF_TASK_STATUSES[2]) { // 'completed'
+      const staff = await Staff.findByPk(task.staff_id);
+      const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
+      if (action && staff) {
+        await pointService.awardPoints({
+          userId: task.staff_id,
+          role: staff.position,
+          subRole: staff.position,
+          action: action.action,
+          languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+        });
+        socketService.emit(`munch:staff:${task.staff_id}`, 'points:awarded', {
+          action: action.action,
+          points: action.points,
+        });
+      }
+    }
+
     return progress;
   } catch (error) {
     logger.error('Task progress tracking failed', { error: error.message, taskId });
@@ -101,38 +110,32 @@ async function trackTaskProgress(taskId) {
   }
 }
 
-/**
- * Alerts for delayed tasks.
- * @param {number} taskId - Task ID.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<void>}
- */
-async function notifyTaskDelay(taskId, ipAddress) {
+async function notifyTaskDelay(taskId, ipAddress, notificationService, socketService, auditService) {
   try {
     const task = await Task.findByPk(taskId);
     if (!task) {
       throw new AppError('Task not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    if (task.status !== staffRolesConstants.STAFF_TASK_STATUSES.ASSIGNED && task.status !== staffRolesConstants.STAFF_TASK_STATUSES.IN_PROGRESS) {
+    if (![staffConstants.STAFF_TASK_STATUSES[0], staffConstants.STAFF_TASK_STATUSES[1]].includes(task.status)) {
       throw new AppError('Task not eligible for delay notification', 400, staffConstants.STAFF_ERROR_CODES.ERROR);
     }
 
-    await task.update({ status: staffRolesConstants.STAFF_TASK_STATUSES.DELAYED });
+    await task.update({ status: staffConstants.STAFF_TASK_STATUSES[3] }); // 'delayed'
 
-    const message = localization.formatMessage('task.task_delayed', { taskId });
+    const message = formatMessage('taskManagement.task_delayed', { taskId });
     await notificationService.sendNotification({
       userId: task.staff_id,
       notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.TASK_ASSIGNMENT,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(task.position) ? task.position : 'staff',
       module: 'munch',
       taskId,
     });
 
     await auditService.logAction({
       userId: task.staff_id,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(task.position) ? task.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { taskId, action: 'notify_task_delay' },
       ipAddress,
@@ -145,40 +148,8 @@ async function notifyTaskDelay(taskId, ipAddress) {
   }
 }
 
-/**
- * Awards task completion points.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<void>}
- */
-async function awardTaskPoints(staffId) {
-  try {
-    const staff = await Staff.findByPk(staffId);
-    if (!staff) {
-      throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
-    }
-
-    const action = staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.TASK_COMPLETION.action;
-    await pointService.awardPoints({
-      userId: staffId,
-      role: 'staff',
-      subRole: staff.position,
-      action,
-      languageCode: 'en',
-    });
-
-    socketService.emit(`munch:staff:${staffId}`, 'points:completed', {
-      action,
-      points: staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.TASK_COMPLETION.points,
-    });
-  } catch (error) {
-    logger.error('Task points award failed', { error: error.message, staffId });
-    throw new AppError(`Points award failed: ${error.message}`, 500, error.code || staffConstants.STAFF_ERROR_CODES.ERROR);
-  }
-}
-
 module.exports = {
   assignTask,
   trackTaskProgress,
-  notifyTaskDelay,
-  awardTaskPoints,
+  notifyTaskDelay
 };

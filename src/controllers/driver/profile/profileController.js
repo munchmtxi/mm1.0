@@ -1,101 +1,76 @@
 'use strict';
 
-/**
- * Driver Profile Controller
- * Manages HTTP requests for driver profile operations, including updates, certification uploads,
- * profile retrieval, and verification. Integrates with profileService.js for business logic.
- *
- * Last Updated: May 16, 2025
- */
-
 const profileService = require('@services/driver/profile/profileService');
+const socketService = require('@services/common/socketService');
+const notificationService = require('@services/common/notificationService');
+const auditService = require('@services/common/auditService');
+const imageService = require('@services/common/imageService');
+const pointService = require('@services/common/pointService');
+const { formatMessage } = require('@utils/localization');
+const driverConstants = require('@constants/driverConstants');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const driverConstants = require('@constants/driverConstants');
-const catchAsync = require('@utils/catchAsync');
 
-/**
- * Updates driver profile.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- */
-const updateProfile = catchAsync(async (req, res) => {
-  const { driverId } = req.params;
-  const details = req.body;
+async function updateProfile(req, res, next) {
+  try {
+    const driverId = req.user.driverId;
+    const details = req.body;
+    const driver = await profileService.updateProfile(driverId, details, auditService, notificationService, socketService, pointService);
 
-  const driver = await profileService.updateProfile(driverId, details);
-  logger.info('Driver profile updated via HTTP', { driverId });
-
-  res.status(200).json({
-    status: 'success',
-    message: driverConstants.SUCCESS_MESSAGES.PROFILE_UPDATED,
-    data: { driver },
-  });
-});
-
-/**
- * Uploads driver certification.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- */
-const uploadCertification = catchAsync(async (req, res) => {
-  const { driverId } = req.params;
-  const { type } = req.body;
-  const file = req.file;
-
-  if (!file || !type) {
-    throw new AppError(
-      'Missing file or certification type',
-      400,
-      driverConstants.ERROR_CODES.INVALID_FILE_DATA
-    );
+    res.status(200).json({
+      status: 'success',
+      data: driver,
+      message: formatMessage('driver', 'profile', driver.preferred_language, 'profile.updated', { driverId }),
+    });
+  } catch (error) {
+    next(error);
   }
+}
 
-  const imageUrl = await profileService.uploadCertification(driverId, { file, type });
-  logger.info('Driver certification uploaded via HTTP', { driverId, type });
+async function uploadCertification(req, res, next) {
+  try {
+    const driverId = req.user.driverId;
+    const certData = { file: req.file, type: req.body.type };
+    const imageUrl = await profileService.uploadCertification(driverId, certData, auditService, notificationService, socketService, imageService, pointService);
 
-  res.status(200).json({
-    status: 'success',
-    message: driverConstants.SUCCESS_MESSAGES.CERTIFICATION_UPLOADED,
-    data: { imageUrl },
-  });
-});
+    res.status(200).json({
+      status: 'success',
+      data: { imageUrl },
+      message: formatMessage('driver', 'profile', driver.preferred_language, 'profile.certification_updated', { type: certData.type }),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
-/**
- * Retrieves driver profile.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- */
-const getProfile = catchAsync(async (req, res) => {
-  const { driverId } = req.params;
+async function getProfile(req, res, next) {
+  try {
+    const driverId = req.user.driverId;
+    const driver = await profileService.getProfile(driverId, auditService, pointService);
 
-  const driver = await profileService.getProfile(driverId);
-  logger.info('Driver profile retrieved via HTTP', { driverId });
+    res.status(200).json({
+      status: 'success',
+      data: driver,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
-  res.status(200).json({
-    status: 'success',
-    message: driverConstants.SUCCESS_MESSAGES.PROFILE_RETRIEVED,
-    data: { driver },
-  });
-});
+async function verifyProfile(req, res, next) {
+  try {
+    const driverId = req.user.driverId;
+    const complianceStatus = await profileService.verifyProfile(driverId, auditService, notificationService, socketService, pointService);
 
-/**
- * Verifies driver profile compliance.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- */
-const verifyProfile = catchAsync(async (req, res) => {
-  const { driverId } = req.params;
-
-  const complianceStatus = await profileService.verifyProfile(driverId);
-  logger.info('Driver profile verified via HTTP', { driverId });
-
-  res.status(200).json({
-    status: 'success',
-    message: driverConstants.SUCCESS_MESSAGES.PROFILE_VERIFIED,
-    data: { complianceStatus },
-  });
-});
+    res.status(200).json({
+      status: 'success',
+      data: complianceStatus,
+      message: formatMessage('driver', 'profile', driver.preferred_language, 'profile.verified'),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
 
 module.exports = {
   updateProfile,

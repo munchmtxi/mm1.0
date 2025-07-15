@@ -1,9 +1,26 @@
 'use strict';
 
-const { Sequelize, User, Customer, Booking, Order, InDiningOrder, Ride, Subscription, Payment, ProductRecommendationAnalytics, Feedback, PromotionRedemption, CustomerBehavior } = require('@models');
+const {
+  Sequelize,
+  User,
+  Customer,
+  Booking,
+  Order,
+  InDiningOrder,
+  Ride,
+  Subscription,
+  Payment,
+  Feedback,
+  PromotionRedemption,
+  CustomerBehavior,
+  ProductRecommendationAnalytics,
+  ParkingBooking,
+} = require('@models');
 const mtablesConstants = require('@constants/common/mtablesConstants');
 const munchConstants = require('@constants/common/munchConstants');
-const rideConstants = require('@constants/common/rideConstants');
+const mtxiConstants = require('@constants/common/mtxiConstants');
+const meventsConstants = require('@constants/common/meventsConstants');
+const mparkConstants = require('@constants/common/mparkConstants');
 const customerConstants = require('@constants/customer/customerConstants');
 
 const trackCustomerBehavior = async ({ customerId, transaction }) => {
@@ -14,18 +31,18 @@ const trackCustomerBehavior = async ({ customerId, transaction }) => {
   });
 
   if (!customer) {
-    throw new Error('Customer not found');
+    throw new Error(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND);
   }
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const [bookings, orders, in_dining_orders, rides] = await Promise.all([
+  const [bookings, orders, inDiningOrders, rides, parkingBookings] = await Promise.all([
     Booking.count({
       where: {
         customer_id: customer.id,
         created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
-        status: { [Sequelize.Op.in]: mtablesConstants.BOOKING_STATUSES },
+        status: { [Sequelize.Op.in]: customerConstants.MTABLES_CONSTANTS.BOOKING_STATUSES },
       },
       transaction,
     }),
@@ -33,7 +50,7 @@ const trackCustomerBehavior = async ({ customerId, transaction }) => {
       where: {
         customer_id: customer.id,
         created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
-        status: { [Sequelize.Op.in]: munchConstants.ORDER_CONSTANTS.ORDER_STATUSES },
+        status: { [Sequelize.Op.in]: customerConstants.MUNCH_CONSTANTS.ORDER_STATUSES },
       },
       transaction,
     }),
@@ -41,15 +58,23 @@ const trackCustomerBehavior = async ({ customerId, transaction }) => {
       where: {
         customer_id: customer.id,
         created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
-        status: { [Sequelize.Op.in]: mtablesConstants.IN_DINING_STATUSES },
+        status: { [Sequelize.Op.in]: customerConstants.MTABLES_CONSTANTS.ORDER_STATUSES },
       },
       transaction,
     }),
     Ride.count({
       where: {
-        customerId: customerId,
+        customerId: customer.id,
         created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
-        status: { [Sequelize.Op.in]: rideConstants.RIDE_STATUSES },
+        status: { [Sequelize.Op.in]: customerConstants.MTXI_CONSTANTS.RIDE_STATUSES },
+      },
+      transaction,
+    }),
+    ParkingBooking.count({
+      where: {
+        customer_id: customer.id,
+        created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
+        status: { [Sequelize.Op.in]: customerConstants.MPARK_CONSTANTS.PARKING_STATUSES },
       },
       transaction,
     }),
@@ -57,16 +82,18 @@ const trackCustomerBehavior = async ({ customerId, transaction }) => {
 
   const behavior = {
     bookingFrequency: bookings,
-    orderFrequency: orders + in_dining_orders,
+    orderFrequency: orders + inDiningOrders,
     rideFrequency: rides,
+    parkingFrequency: parkingBookings,
     lastUpdated: new Date(),
   };
 
   await CustomerBehavior.upsert({
     user_id: customerId,
     bookingFrequency: bookings,
-    orderFrequency: orders + in_dining_orders,
+    orderFrequency: orders + inDiningOrders,
     rideFrequency: rides,
+    parkingFrequency: parkingBookings,
     lastUpdated: new Date(),
   }, { transaction });
 
@@ -81,7 +108,7 @@ const analyzeSpendingTrends = async ({ customerId, transaction }) => {
   });
 
   if (!customer) {
-    throw new Error('Customer not found');
+    throw new Error(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND);
   }
 
   const ninetyDaysAgo = new Date();
@@ -90,7 +117,7 @@ const analyzeSpendingTrends = async ({ customerId, transaction }) => {
   const payments = await Payment.findAll({
     where: {
       customer_id: customer.id,
-      status: 'completed',
+      status: customerConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // 'completed'
       created_at: { [Sequelize.Op.gte]: ninetyDaysAgo },
     },
     attributes: [
@@ -104,7 +131,7 @@ const analyzeSpendingTrends = async ({ customerId, transaction }) => {
   const subscriptions = await Subscription.count({
     where: {
       customer_id: customer.id,
-      status: 'active',
+      status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0], // 'active'
       created_at: { [Sequelize.Op.gte]: ninetyDaysAgo },
     },
     transaction,
@@ -124,8 +151,10 @@ const analyzeSpendingTrends = async ({ customerId, transaction }) => {
     averageTransaction: parseFloat(payments[0]?.dataValues.averageTransaction || 0).toFixed(2),
     activeSubscriptions: subscriptions,
     promotionRedemptions: promotions,
-    currency: customerConstants.CUSTOMER_SETTINGS.DEFAULT_CURRENCY,
-    period: 'last 90 days',
+    currency: customerConstants.CROSS_VERTICAL_CONSTANTS.SERVICES.includes('munch')
+      ? munchConstants.MUNCH_SETTINGS.DEFAULT_CURRENCY
+      : customerConstants.WALLET_CONSTANTS.SUPPORTED_CURRENCIES[0], // Fallback to first supported currency
+    period: customerConstants.ANALYTICS_CONSTANTS.REPORT_PERIODS[2], // 'monthly'
   };
 
   return { customer, trends };
@@ -139,7 +168,7 @@ const provideRecommendations = async ({ customerId, transaction }) => {
   });
 
   if (!customer) {
-    throw new Error('Customer not found');
+    throw new Error(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND);
   }
 
   const preferences = customer.preferences || {};
@@ -158,7 +187,7 @@ const provideRecommendations = async ({ customerId, transaction }) => {
   });
 
   const feedback = await Feedback.findAll({
-    where: { user_id: customerId },
+    where: { customer_id: customerId },
     attributes: ['rating', 'comment'],
     limit: 10,
     transaction,
@@ -192,8 +221,65 @@ const provideRecommendations = async ({ customerId, transaction }) => {
   return { customer, recommendationData, recommendationCount: filteredRecommendations.length };
 };
 
+const trackParkingBehavior = async ({ customerId, transaction }) => {
+  const customer = await Customer.findOne({
+    where: { user_id: customerId },
+    include: [{ model: User, as: 'user' }],
+    transaction,
+  });
+
+  if (!customer) {
+    throw new Error(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND);
+  }
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const parkingBookings = await ParkingBooking.count({
+    where: {
+      customer_id: customer.id,
+      created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
+      status: { [Sequelize.Op.in]: customerConstants.MPARK_CONSTANTS.PARKING_STATUSES },
+    },
+    transaction,
+  });
+
+  const behavior = {
+    parkingFrequency: parkingBookings,
+    preferredSpaceTypes: await ParkingBooking.findAll({
+      where: {
+        customer_id: customer.id,
+        created_at: { [Sequelize.Op.gte]: thirtyDaysAgo },
+        status: customerConstants.MPARK_CONSTANTS.PARKING_STATUSES[1], // 'confirmed'
+      },
+      attributes: [
+        [Sequelize.fn('COUNT', Sequelize.col('booking_type')), 'count'],
+        'booking_type',
+      ],
+      group: ['booking_type'],
+      transaction,
+    }).then((results) =>
+      results.map((r) => ({
+        type: r.booking_type,
+        count: r.dataValues.count,
+      }))
+    ),
+    lastUpdated: new Date(),
+  };
+
+  await CustomerBehavior.upsert({
+    user_id: customerId,
+    parkingFrequency: parkingBookings,
+    preferredSpaceTypes: behavior.preferredSpaceTypes,
+    lastUpdated: new Date(),
+  }, { transaction });
+
+  return { customer, behavior };
+};
+
 module.exports = {
   trackCustomerBehavior,
   analyzeSpendingTrends,
   provideRecommendations,
+  trackParkingBehavior,
 };

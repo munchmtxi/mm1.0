@@ -1,74 +1,43 @@
 'use strict';
 
-const Joi = require('joi');
-const munchConstants = require('@constants/customer/munch/munchConstants');
+const { body, param } = require('express-validator');
+const localizationConstants = require('@constants/common/localizationConstants');
+const customerConstants = require('@constants/customer/customerConstants');
 
-const browseMerchantsSchema = Joi.object({
-  latitude: Joi.number().required().min(-90).max(90),
-  longitude: Joi.number().required().min(-180).max(180),
-  radiusKm: Joi.number().required().min(1).max(munchConstants.MUNCH_CONSTANTS.DELIVERY_SETTINGS.MAX_DELIVERY_RADIUS_KM),
-  filters: Joi.object({
-    dietaryPreferences: Joi.array().items(Joi.string().valid(...munchConstants.ORDER_CONSTANTS.ORDER_SETTINGS.ALLOWED_DIETARY_FILTERS)).optional(),
-    merchantType: Joi.string().valid(...munchConstants.MUNCH_CONSTANTS.SUPPORTED_MERCHANT_TYPES).optional(),
-    orderType: Joi.string().valid(...munchConstants.ORDER_CONSTANTS.ORDER_TYPES).optional(),
-  }).optional(),
-});
-
-const addToCartSchema = Joi.object({
-  itemId: Joi.number().integer().required(),
-  quantity: Joi.number().integer().min(1).required(),
-  customizations: Joi.object({
-    dietaryPreferences: Joi.array().items(Joi.string().valid(...munchConstants.ORDER_CONSTANTS.ORDER_SETTINGS.ALLOWED_DIETARY_FILTERS)).optional(),
-    toppings: Joi.array().items(Joi.string()).optional(),
-    size: Joi.string().optional(),
-    extras: Joi.array().items(Joi.string()).optional(),
-  }).optional(),
-});
-
-const updateCartSchema = Joi.object({
-  cartId: Joi.number().integer().required(),
-  items: Joi.array().items(
-    Joi.object({
-      itemId: Joi.number().integer().required(),
-      quantity: Joi.number().integer().min(0).required(),
-      customizations: Joi.object({
-        dietaryPreferences: Joi.array().items(Joi.string().valid(...munchConstants.ORDER_CONSTANTS.ORDER_SETTINGS.ALLOWED_DIETARY_FILTERS)).optional(),
-        toppings: Joi.array().items(Joi.string()).optional(),
-        size: Joi.string().optional(),
-        extras: Joi.array().items(Joi.string()).optional(),
-      }).optional(),
-    })
-  ).required(),
-});
-
-const placeOrderSchema = Joi.object({
-  cartId: Joi.number().integer().required(),
-  branchId: Joi.number().integer().required(),
-  deliveryLocation: Joi.object({
-    latitude: Joi.number().min(-90).max(90).required(),
-    longitude: Joi.number().min(-180).max(180).required(),
-    address: Joi.string().required(),
-  }).optional(),
-});
-
-const updateOrderSchema = Joi.object({
-  orderId: Joi.number().integer().required(),
-  items: Joi.array().items(
-    Joi.object({
-      itemId: Joi.number().integer().required(),
-      quantity: Joi.number().integer().min(0).required(),
-      customizations: Joi.object({
-        dietaryPreferences: Joi.array().items(Joi.string().valid(...munchConstants.ORDER_CONSTANTS.ORDER_SETTINGS.ALLOWED_DIETARY_FILTERS)).optional(),
-        toppings: Joi.array().items(Joi.string()).optional(),
-        size: Joi.string().optional(),
-        extras: Joi.array().items(Joi.string()).optional(),
-      }).optional(),
-    })
-  ).required(),
-});
-
-const cancelOrderSchema = Joi.object({
-  orderId: Joi.number().integer().required(),
-});
-
-module.exports = { browseMerchantsSchema, addToCartSchema, updateCartSchema, placeOrderSchema, updateOrderSchema, cancelOrderSchema };
+/**
+ * Validates customer order-related requests
+ */
+module.exports = {
+  browseMerchants: [
+    body('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    body('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+    body('radiusKm').isFloat({ min: 0.1, max: 100 }).withMessage('Invalid radius'),
+    body('filters').optional().isObject().withMessage('Filters must be an object'),
+  ],
+  addToCart: [
+    body('itemId').isInt({ min: 1 }).withMessage('Invalid item ID'),
+    body('quantity').isInt({ min: 1 }).withMessage('Invalid quantity'),
+    body('customizations').optional().isObject().withMessage('Customizations must be an object'),
+  ],
+  updateCart: [
+    body('cartId').isInt({ min: 1 }).withMessage('Invalid cart ID'),
+    body('items').isArray({ min: 1 }).withMessage('Items must be a non-empty array'),
+    body('items.*.itemId').isInt({ min: 1 }).withMessage('Invalid item ID'),
+    body('items.*.quantity').isInt({ min: 0 }).withMessage('Invalid quantity'),
+    body('items.*.customizations').optional().isObject().withMessage('Customizations must be an object'),
+  ],
+  placeOrder: [
+    body('cartId').isInt({ min: 1 }).withMessage('Invalid cart ID'),
+    body('branchId').isInt({ min: 1 }).withMessage('Invalid branch ID'),
+    body('deliveryLocation').isObject().withMessage('Invalid delivery location'),
+    body('deliveryLocation.latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    body('deliveryLocation.longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+  ],
+  updateOrder: [
+    body('orderId').isInt({ min: 1 }).withMessage('Invalid order ID'),
+    body('updates').isObject().withMessage('Updates must be an object'),
+  ],
+  cancelOrder: [
+    param('orderId').isInt({ min: 1 }).withMessage('Invalid order ID'),
+  ],
+};

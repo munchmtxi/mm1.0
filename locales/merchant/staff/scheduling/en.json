@@ -1,7 +1,0 @@
-{
-  "staff": {
-    "schedule_created": "New {shiftType} shift scheduled for {date}.",
-    "shift_reminder": "Reminder: Your {shiftType} shift is on {date}.",
-    "schedule_updated": "Your {shiftType} shift on {date} has been updated."
-  }
-}

@@ -1,46 +1,71 @@
 'use strict';
 
-/**
- * customerSegmentationService.js
- * Manages customer segmentation, behavior analysis, targeted offers, and engagement gamification for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const { Op } = require('sequelize');
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
+const { Customer, CustomerBehavior, Booking, InDiningOrder, Order, Merchant, Promotion, MerchantBranch, ParkingBooking } = require('@models');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Customer, CustomerBehavior, Booking, InDiningOrder, Order, Merchant, Promotion, GamificationPoints, AuditLog, Notification } = require('@models');
+const customerConstants = require('@constants/customer/customerConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const mtxiConstants = require('@constants/common/mtxiConstants');
+const mtablesConstants = require('@constants/common/mtablesConstants');
+const mparkConstants = require('@constants/common/mparkConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const AppError = require('@utils/AppError');
+const { handleServiceError } = require('@utils/errorHandling');
+const logger = require('@utils/logging');
 
-/**
- * Groups customers by behavior criteria.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} criteria - Segmentation criteria (e.g., orderFrequency, bookingFrequency, spending).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Segments.
- */
-async function segmentCustomers(merchantId, criteria, io) {
+async function segmentCustomers(merchantId, criteria, ipAddress, transaction = null) {
   try {
-    if (!merchantId || !criteria) throw new Error('Merchant ID and criteria required');
+    if (!merchantId || !criteria?.orderFrequency || !criteria?.bookingFrequency || !criteria?.spending || !criteria?.rideFrequency) {
+      throw new AppError('Invalid criteria provided', 400, customerConstants.ERROR_CODES.includes('INVALID_INPUT') ? 'INVALID_INPUT' : merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { 
+      attributes: ['id', 'user_id', 'preferred_language'], 
+      transaction 
+    });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, customerConstants.ERROR_CODES.includes('CUSTOMER_NOT_FOUND') ? 'CUSTOMER_NOT_FOUND' : merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    }
 
-    const { orderFrequency, bookingFrequency, spending } = criteria;
+    const { orderFrequency, bookingFrequency, spending, rideFrequency } = criteria;
     const conditions = {};
     if (orderFrequency) conditions.orderFrequency = { [Op.gte]: orderFrequency };
     if (bookingFrequency) conditions.bookingFrequency = { [Op.gte]: bookingFrequency };
 
     const customers = await Customer.findAll({
+      attributes: ['id'],
       include: [
-        { model: CustomerBehavior, where: conditions },
-        { model: Order, where: { merchant_id: merchantId } },
-        { model: InDiningOrder, where: { branch_id: { [Op.in]: (await merchant.getBranches()).map(b => b.id) } } },
+        { 
+          model: CustomerBehavior, 
+          where: conditions, 
+          attributes: ['orderFrequency', 'bookingFrequency', 'rideFrequency'] 
+        },
+        { 
+          model: Order, 
+          where: { 
+            merchant_id: merchantId, 
+            status: { [Op.in]: munchConstants.ORDER_CONSTANTS.ORDER_STATUSES } 
+          }, 
+          attributes: ['total_amount'] 
+        },
+        { 
+          model: InDiningOrder, 
+          where: { 
+            branch_id: { [Op.in]: (await MerchantBranch.findAll({ where: { merchant_id: merchantId }, attributes: ['id'], transaction })).map(b => b.id) },
+            status: { [Op.in]: mtablesConstants.IN_DINING_STATUSES }
+          }, 
+          attributes: ['total_amount'] 
+        },
+        { 
+          model: ParkingBooking, 
+          where: { 
+            merchant_id: merchantId, 
+            status: { [Op.in]: mparkConstants.BOOKING_CONFIG.BOOKING_STATUSES } 
+          }, 
+          attributes: [] 
+        },
       ],
+      transaction,
     });
 
     const segments = {
@@ -53,200 +78,198 @@ async function segmentCustomers(merchantId, criteria, io) {
       const orders = [...customer.orders, ...customer.inDiningOrders];
       const totalSpending = orders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
       const orderCount = orders.length;
-      const bookingCount = (await Booking.count({ where: { customer_id: customer.id, merchant_id: merchantId } })) || 0;
+      const bookingCount = await Booking.count({ 
+        where: { 
+          customer_id: customer.id, 
+          merchant_id: merchantId, 
+          status: { [Op.in]: mtablesConstants.BOOKING_STATUSES } 
+        }, 
+        transaction 
+      }) || 0;
+      const parkingBookingCount = await ParkingBooking.count({ 
+        where: { 
+          customer_id: customer.id, 
+          merchant_id: merchantId, 
+          status: { [Op.in]: mparkConstants.BOOKING_CONFIG.BOOKING_STATUSES } 
+        }, 
+        transaction 
+      }) || 0;
+      const rideCount = await CustomerBehavior.findOne({ 
+        where: { customer_id: customer.id }, 
+        attributes: ['rideFrequency'], 
+        transaction 
+      })?.rideFrequency || 0;
 
       if (spending && totalSpending >= spending.high) {
-        segments.highValue.push({ customerId: customer.id, totalSpending, orderCount, bookingCount });
-      } else if (orderCount >= orderFrequency?.frequent || bookingCount >= bookingFrequency?.frequent) {
-        segments.frequent.push({ customerId: customer.id, totalSpending, orderCount, bookingCount });
+        segments.highValue.push({ customerId: customer.id, totalSpending, orderCount, bookingCount, parkingBookingCount, rideCount });
+      } else if (
+        orderCount >= (orderFrequency?.frequent || 0) || 
+        bookingCount >= (bookingFrequency?.frequent || 0) || 
+        parkingBookingCount >= (bookingFrequency?.frequent || 0) || 
+        rideCount >= (rideFrequency?.frequent || 0)
+      ) {
+        segments.frequent.push({ customerId: customer.id, totalSpending, orderCount, bookingCount, parkingBookingCount, rideCount });
       } else {
-        segments.occasional.push({ customerId: customer.id, totalSpending, orderCount, bookingCount });
+        segments.occasional.push({ customerId: customer.id, totalSpending, orderCount, bookingCount, parkingBookingCount, rideCount });
       }
     }
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'segment_customers',
-      details: { merchantId, criteria, segmentCounts: { highValue: segments.highValue.length, frequent: segments.frequent.length, occasional: segments.occasional.length } },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'crm:customersSegmented', {
+    logger.info(`Customers segmented for merchant ${merchantId}: ${JSON.stringify({ highValue: segments.highValue.length, frequent: segments.frequent.length, occasional: segments.occasional.length })}`);
+    return {
       merchantId,
+      segments,
       segmentCounts: { highValue: segments.highValue.length, frequent: segments.frequent.length, occasional: segments.occasional.length },
-    }, `merchant:${merchantId}`);
-
-    return segments;
+      language: merchant.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      action: customerConstants.SUCCESS_MESSAGES.includes('profile_updated') ? 'profile_updated' : 'customersSegmented',
+    };
   } catch (error) {
-    logger.error('Error segmenting customers', { error: error.message });
-    throw error;
+    throw handleServiceError('segmentCustomers', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Identifies customer behavior trends.
- * @param {number} merchantId - Merchant ID.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Behavior trends.
- */
-async function analyzeBehavior(merchantId, customerId, io) {
+async function analyzeBehavior(merchantId, customerId, ipAddress, transaction = null) {
   try {
-    if (!merchantId || !customerId) throw new Error('Merchant ID and customer ID required');
+    if (!merchantId || !customerId) {
+      throw new AppError('Invalid input provided', 400, customerConstants.ERROR_CODES.includes('INVALID_INPUT') ? 'INVALID_INPUT' : merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { attributes: ['id', 'user_id'], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, customerConstants.ERROR_CODES.includes('CUSTOMER_NOT_FOUND') ? 'CUSTOMER_NOT_FOUND' : merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    }
 
-    const customer = await Customer.findByPk(customerId, { include: [CustomerBehavior] });
-    if (!customer) throw new Error('Customer not found');
-
-    const orders = await Order.findAll({ where: { customer_id: customerId, merchant_id: merchantId } });
-    const inDiningOrders = await InDiningOrder.findAll({
-      where: { customer_id: customerId, branch_id: { [Op.in]: (await merchant.getBranches()).map(b => b.id) } },
+    const customer = await Customer.findByPk(customerId, { 
+      attributes: ['id', 'preferred_language', 'updated_at'],
+      include: [{ model: CustomerBehavior, attributes: ['orderFrequency', 'bookingFrequency', 'rideFrequency', 'lastUpdated'] }],
+      transaction,
     });
-    const bookings = await Booking.findAll({ where: { customer_id: customerId, merchant_id: merchantId } });
+    if (!customer) {
+      throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND);
+    }
+
+    const orders = await Order.findAll({ 
+      where: { 
+        customer_id: customerId, 
+        merchant_id: merchantId, 
+        status: { [Op.in]: munchConstants.ORDER_CONSTANTS.ORDER_STATUSES } 
+      }, 
+      attributes: ['total_amount'], 
+      transaction,
+    });
+    const inDiningOrders = await InDiningOrder.findAll({
+      where: { 
+        customer_id: customerId, 
+        branch_id: { [Op.in]: (await MerchantBranch.findAll({ where: { merchant_id: merchantId }, attributes: ['id'], transaction })).map(b => b.id) },
+        status: { [Op.in]: mtablesConstants.IN_DINING_STATUSES }
+      },
+      attributes: ['total_amount'],
+      transaction,
+    });
+    const bookings = await Booking.findAll({ 
+      where: { 
+        customer_id: customerId, 
+        merchant_id: merchantId, 
+        status: { [Op.in]: mtablesConstants.BOOKING_STATUSES } 
+      }, 
+      attributes: ['booking_type'], 
+      transaction,
+    });
+    const parkingBookings = await ParkingBooking.findAll({
+      where: { 
+        customer_id: customerId, 
+        merchant_id: merchantId, 
+        status: { [Op.in]: mparkConstants.BOOKING_CONFIG.BOOKING_STATUSES } 
+      },
+      attributes: ['booking_type'],
+      transaction,
+    });
 
     const totalSpending = [...orders, ...inDiningOrders].reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
     const trends = {
       orderFrequency: customer.customerBehavior?.orderFrequency || 0,
       bookingFrequency: customer.customerBehavior?.bookingFrequency || 0,
+      parkingBookingFrequency: parkingBookings.length || 0,
+      rideFrequency: customer.customerBehavior?.rideFrequency || 0,
       totalSpending,
-      averageOrderValue: orders.length > 0 ? totalSpending / (orders.length + inDiningOrders.length) : 0,
-      preferredBookingType: bookings.length > 0 ? bookings[0].booking_type : null,
+      averageOrderValue: (orders.length + inDiningOrders.length) > 0 ? totalSpending / (orders.length + inDiningOrders.length) : 0,
+      preferredBookingType: bookings.length > 0 ? bookings[0].booking_type : (parkingBookings.length > 0 ? parkingBookings[0].booking_type : null),
       lastActivity: customer.customerBehavior?.lastUpdated || customer.updated_at,
     };
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'analyze_behavior',
-      details: { merchantId, customerId, trends },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'crm:behaviorAnalyzed', {
+    logger.info(`Behavior analyzed for customer ${customerId} by merchant ${merchantId}`);
+    return {
       merchantId,
       customerId,
       trends,
-    }, `merchant:${merchantId}`);
-
-    return trends;
+      language: customer.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      action: customerConstants.SUCCESS_MESSAGES.includes('profile_updated') ? 'profile_updated' : 'behaviorAnalyzed',
+    };
   } catch (error) {
-    logger.error('Error analyzing behavior', { error: error.message });
-    throw error;
+    throw handleServiceError('analyzeBehavior', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Creates targeted promotions for a segment.
- * @param {number} merchantId - Merchant ID.
- * @param {string} segmentId - Segment ID (highValue, frequent, occasional).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Promotion details.
- */
-async function targetOffers(merchantId, segmentId, io) {
+async function targetOffers(merchantId, segmentId, ipAddress, transaction = null) {
   try {
-    if (!merchantId || !segmentId) throw new Error('Merchant ID and segment ID required');
+    if (!merchantId || !segmentId) {
+      throw new AppError('Invalid input provided', 400, customerConstants.ERROR_CODES.includes('INVALID_INPUT') ? 'INVALID_INPUT' : merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { attributes: ['id', 'user_id', 'preferred_language'], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, customerConstants.ERROR_CODES.includes('CUSTOMER_NOT_FOUND') ? 'CUSTOMER_NOT_FOUND' : merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    }
 
     const validSegments = ['highValue', 'frequent', 'occasional'];
-    if (!validSegments.includes(segmentId)) throw new Error('Invalid segment ID');
+    if (!validSegments.includes(segmentId)) {
+      throw new AppError('Invalid segment provided', 400, customerConstants.ERROR_CODES.includes('INVALID_INPUT') ? 'INVALID_INPUT' : merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    }
 
     const offerDetails = {
-      highValue: { discount: 20, minSpend: 100, type: 'percentage' },
-      frequent: { discount: 10, minSpend: 50, type: 'percentage' },
-      occasional: { discount: 5, type: 'fixed' },
+      highValue: { 
+        discount_percentage: 20, 
+        reward_amount: 0, 
+        type: munchConstants.PROMOTION_TYPES.includes('percentage') ? 'percentage' : 'DISCOUNT', 
+        service_type: 'all', 
+        is_reusable: false, 
+        expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) 
+      },
+      frequent: { 
+        discount_percentage: 10, 
+        reward_amount: 0, 
+        type: munchConstants.PROMOTION_TYPES.includes('percentage') ? 'percentage' : 'DISCOUNT', 
+        service_type: 'all', 
+        is_reusable: false, 
+        expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) 
+      },
+      occasional: { 
+        discount_percentage: 0, 
+        reward_amount: 5, 
+        type: munchConstants.PROMOTION_TYPES.includes('loyalty') ? 'loyalty' : 'CASHBACK', 
+        service_type: 'all', 
+        is_reusable: true, 
+        expiry_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) 
+      },
     }[segmentId];
 
     const promotion = await Promotion.create({
       merchant_id: merchantId,
       criteria: { segment: segmentId },
-      offer_details: offerDetails,
-      status: 'active',
+      ...offerDetails,
+      is_active: true,
       created_at: new Date(),
-    });
+    }, { transaction });
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'target_offers',
-      details: { merchantId, segmentId, offerDetails },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'crm:offersTargeted', {
+    logger.info(`Offers targeted for segment ${segmentId} by merchant ${merchantId}`);
+    return {
       merchantId,
       segmentId,
       promotionId: promotion.id,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: merchant.user_id,
-      notificationType: 'offers_targeted',
-      messageKey: 'crm.offers_targeted',
-      messageParams: { segment: segmentId },
-      role: 'merchant',
-      module: 'crm',
-      languageCode: merchant.preferred_language || 'en',
-    });
-
-    return promotion;
+      language: merchant.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      action: munchConstants.SUCCESS_MESSAGES.includes('Promotion created') ? 'Promotion created' : 'offersTargeted',
+    };
   } catch (error) {
-    logger.error('Error targeting offers', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Awards engagement points for customer actions.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points awarded.
- */
-async function trackEngagementGamification(customerId, io) {
-  try {
-    if (!customerId) throw new Error('Customer ID required');
-
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
-
-    const points = await pointService.awardPoints({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'engagement',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'track_engagement_gamification',
-      details: { customerId, points: points.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'crm:engagementPointsAwarded', {
-      customerId,
-      points: points.points,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'engagement_points_awarded',
-      messageKey: 'crm.engagement_points_awarded',
-      messageParams: { points: points.points },
-      role: 'customer',
-      module: 'crm',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return points;
-  } catch (error) {
-    logger.error('Error tracking engagement gamification', { error: error.message });
-    throw error;
+    throw handleServiceError('targetOffers', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
@@ -254,5 +277,4 @@ module.exports = {
   segmentCustomers,
   analyzeBehavior,
   targetOffers,
-  trackEngagementGamification,
 };

@@ -1,45 +1,36 @@
 'use strict';
 
-/**
- * dataProtectionService.js
- * Manages data encryption, GDPR/CCPA compliance, access control, and security gamification for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const crypto = require('crypto');
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
+const { Merchant, Customer, Staff, DataAccess } = require('@models');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Merchant, Customer, Staff, Driver, DataAccess, GamificationPoints, AuditLog, Notification } = require('@models');
+const complianceConstants = require('@constants/common/complianceConstants');
+const AppError = require('@utils/AppError');
+const { handleServiceError } = require('@utils/errorHandling');
+const logger = require('@utils/logger');
 
-/**
- * Encrypts sensitive customer, staff, or driver data.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} data - Data to encrypt (userId, role, sensitiveData).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Encryption result.
- */
-async function encryptData(merchantId, data, io) {
+async function encryptData(merchantId, data, ipAddress, transaction = null) {
   try {
     if (!merchantId || !data?.userId || !data?.role || !data?.sensitiveData) {
-      throw new Error('Merchant ID, user ID, role, and sensitive data required');
+      throw new AppError('Invalid input data', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_INPUT);
     }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { attributes: ['id', 'user_id', 'preferred_language'], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, complianceConstants.COMPLIANCE_ERRORS.MERCHANT_NOT_FOUND);
+    }
 
-    const validRoles = ['customer', 'staff', 'driver'];
-    if (!validRoles.includes(data.role)) throw new Error('Invalid role');
+    const validRoles = ['customer', 'staff'];
+    if (!validRoles.includes(data.role)) {
+      throw new AppError('Invalid role', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_ROLE);
+    }
 
-    const Model = data.role === 'customer' ? Customer : data.role === 'staff' ? Staff : Driver;
-    const entity = await Model.findByPk(data.userId);
-    if (!entity) throw new Error(`${data.role} not found`);
+    const Model = data.role === 'customer' ? Customer : Staff;
+    const entity = await Model.findByPk(data.userId, { transaction });
+    if (!entity) {
+      throw new AppError(`${data.role} not found`, 404, complianceConstants.COMPLIANCE_ERRORS[`${data.role.toUpperCase()}_NOT_FOUND`]);
+    }
 
-    const algorithm = merchantConstants.SECURITY_CONSTANTS.ENCRYPTION_ALGORITHM;
+    const algorithm = complianceConstants.ENCRYPTION_ALGORITHM;
     const key = crypto.randomBytes(32); // In production, use secure key management
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(algorithm, key, iv);
@@ -47,199 +38,97 @@ async function encryptData(merchantId, data, io) {
     encrypted += cipher.final('hex');
 
     await entity.update({
-      personal_data: {
-        ...entity.personal_data,
+      preferences: {
+        ...entity.preferences,
         encrypted: { data: encrypted, iv: iv.toString('hex'), key: key.toString('hex') }, // Store securely in production
       },
-    });
+    }, { transaction });
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'encrypt_data',
-      details: { merchantId, userId: data.userId, role: data.role },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'dataProtection:encrypted', {
+    logger.info(`Data encrypted for ${data.role} ${data.userId} by merchant ${merchantId}`);
+    return {
       merchantId,
       userId: data.userId,
       role: data.role,
-    }, `merchant:${merchantId}`);
-
-    return { encrypted, userId: data.userId, role: data.role };
+      encrypted,
+      language: merchant.preferred_language || 'en',
+      action: 'dataEncrypted',
+    };
   } catch (error) {
-    logger.error('Error encrypting data', { error: error.message });
-    throw error;
+    throw handleServiceError('encryptData', error, complianceConstants.COMPLIANCE_ERRORS.SYSTEM_ERROR);
   }
 }
 
-/**
- * Ensures GDPR/CCPA compliance for a merchant.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Compliance status.
- */
-async function enforceGDPR(merchantId, io) {
+async function enforceGDPR(merchantId, ipAddress, transaction = null) {
   try {
-    if (!merchantId) throw new Error('Merchant ID required');
+    if (!merchantId) {
+      throw new AppError('Invalid merchant ID', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_MERCHANT_ID);
+    }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { attributes: ['id', 'user_id', 'preferred_language', 'business_type_details'], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, complianceConstants.COMPLIANCE_ERRORS.MERCHANT_NOT_FOUND);
+    }
 
     const complianceChecks = {
       hasDataProtectionPolicy: !!merchant.business_type_details?.dataProtectionPolicy,
-      dataEncrypted: (await Customer.findAll({ where: { merchant_id: merchantId } }))
-        .every(c => c.personal_data?.encrypted),
-      consentObtained: (await Customer.findAll({ where: { merchant_id: merchantId } }))
-        .every(c => c.personal_data?.consent),
+      dataEncrypted: (await Customer.findAll({ where: { merchant_id: merchantId }, transaction }))
+        .every(c => c.preferences?.encrypted),
+      consentObtained: (await Customer.findAll({ where: { merchant_id: merchantId }, transaction }))
+        .every(c => c.preferences?.consent),
       dataRetentionCompliant: true, // Placeholder for retention policy check
     };
 
     const isCompliant = Object.values(complianceChecks).every(check => check);
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'enforce_gdpr',
-      details: { merchantId, isCompliant, complianceChecks },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'dataProtection:gdprEnforced', {
+    logger.info(`GDPR compliance checked for merchant ${merchantId}: ${isCompliant}`);
+    return {
       merchantId,
       isCompliant,
-    }, `merchant:${merchantId}`);
-
-    if (!isCompliant) {
-      await notificationService.sendNotification({
-        userId: merchant.user_id,
-        notificationType: 'gdpr_compliance_issue',
-        messageKey: 'dataProtection.gdpr_compliance_issue',
-        messageParams: {},
-        role: 'merchant',
-        module: 'dataProtection',
-        languageCode: merchant.preferred_language || 'en',
-      });
-    }
-
-    return { isCompliant, complianceChecks };
+      complianceChecks,
+      language: merchant.preferred_language || 'en',
+      action: 'gdprEnforced',
+    };
   } catch (error) {
-    logger.error('Error enforcing GDPR', { error: error.message });
-    throw error;
+    throw handleServiceError('enforceGDPR', error, complianceConstants.COMPLIANCE_ERRORS.SYSTEM_ERROR);
   }
 }
 
-/**
- * Controls data access permissions for a merchant.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} accessData - Access settings (userId, role, resource, permissions).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated access record.
- */
-async function manageDataAccess(merchantId, accessData, io) {
+async function manageDataAccess(merchantId, accessData, ipAddress, transaction = null) {
   try {
     if (!merchantId || !accessData?.userId || !accessData?.role || !accessData?.resource || !accessData?.permissions) {
-      throw new Error('Merchant ID, user ID, role, resource, and permissions required');
+      throw new AppError('Invalid access data', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_ACCESS_DATA);
     }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    const merchant = await Merchant.findByPk(merchantId, { attributes: ['id', 'user_id', 'preferred_language'], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, complianceConstants.COMPLIANCE_ERRORS.MERCHANT_NOT_FOUND);
+    }
 
-    const validRoles = ['customer', 'staff', 'driver'];
-    if (!validRoles.includes(accessData.role)) throw new Error('Invalid role');
+    const validRoles = ['customer', 'staff'];
+    if (!validRoles.includes(accessData.role)) {
+      throw new AppError('Invalid role', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_ROLE);
+    }
 
-    const validPermissions = merchantConstants.SECURITY_CONSTANTS.PERMISSION_LEVELS;
+    const validPermissions = complianceConstants.PERMISSION_LEVELS;
     if (!accessData.permissions.every(p => Object.values(validPermissions).includes(p))) {
-      throw new Error('Invalid permissions');
+      throw new AppError('Invalid permissions', 400, complianceConstants.COMPLIANCE_ERRORS.INVALID_PERMISSIONS);
     }
 
-    const [accessRecord, created] = await DataAccess.upsert({
+    const [accessRecord] = await DataAccess.upsert({
       user_id: accessData.userId,
-      role: accessData.role,
-      merchant_id: merchantId,
-      resource: accessData.resource,
-      permissions: accessData.permissions,
-    });
+      shareWithMerchants: accessData.permissions.includes('read'),
+      shareWithThirdParties: accessData.permissions.includes('write'),
+    }, { transaction });
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'manage_data_access',
-      details: { merchantId, accessData },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'dataProtection:accessManaged', {
+    logger.info(`Data access managed for ${accessData.role} ${accessData.userId} by merchant ${merchantId}`);
+    return {
       merchantId,
-      userId: accessData.userId,
-      resource: accessData.resource,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: accessData.userId,
-      notificationType: 'data_access_updated',
-      messageKey: 'dataProtection.data_access_updated',
-      messageParams: { resource: accessData.resource },
-      role: accessData.role,
-      module: 'dataProtection',
-      languageCode: merchant.preferred_language || 'en',
-    });
-
-    return accessRecord;
+      accessRecord,
+      language: merchant.preferred_language || 'en',
+      action: 'dataAccessManaged',
+    };
   } catch (error) {
-    logger.error('Error managing data access', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Awards privacy points for customer security actions.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points awarded.
- */
-async function trackSecurityGamification(customerId, io) {
-  try {
-    if (!customerId) throw new Error('Customer ID required');
-
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
-
-    const points = await pointService.awardPoints({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'security_features',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'track_security_gamification',
-      details: { customerId, points: points.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'dataProtection:securityPointsAwarded', {
-      customerId,
-      points: points.points,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'security_points_awarded',
-      messageKey: 'dataProtection.security_points_awarded',
-      messageParams: { points: points.points },
-      role: 'customer',
-      module: 'dataProtection',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return points;
-  } catch (error) {
-    logger.error('Error tracking security gamification', { error: error.message });
-    throw error;
+    throw handleServiceError('manageDataAccess', error, complianceConstants.COMPLIANCE_ERRORS.SYSTEM_ERROR);
   }
 }
 
@@ -247,5 +136,4 @@ module.exports = {
   encryptData,
   enforceGDPR,
   manageDataAccess,
-  trackSecurityGamification,
 };

@@ -1,7 +1,0 @@
-{
-  "dataProtection": {
-    "gdpr_compliance_issue": "GDPR/CCPA compliance issue detected. Update data policies.",
-    "data_access_updated": "Data access updated for resource {resource}.",
-    "security_points_awarded": "Awarded {points} points for security actions."
-  }
-}

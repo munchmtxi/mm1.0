@@ -1,0 +1,94 @@
+{
+  "munch": {
+    "analytics": {
+      "orderTrendsUpdated": "Order trends updated for restaurant {restaurantId}.",
+      "orderTrendsUpdatedDescription": "New order analytics for {period}.",
+      "deliveryPerformanceUpdated": "Delivery performance updated for restaurant {restaurantId}.",
+      "deliveryPerformanceUpdatedDescription": "Delivery metrics for {period}.",
+      "customerInsightsUpdated": "Customer insights updated for restaurant {restaurantId}.",
+      "customerInsightsUpdatedDescription": "Customer data for {period}.",
+      "gamificationUpdated": "Gamification data updated for restaurant {restaurantId}.",
+      "gamificationUpdatedDescription": "Gamification metrics for {period}.",
+      "deliveryLocationsUpdated": "Delivery locations updated for restaurant {restaurantId}.",
+      "deliveryLocationsUpdatedDescription": "Delivery location analytics for {period}.",
+      "highCustomerEngagement": "High engagement: {count} unique customers in {period}.",
+      "highCustomerEngagementDescription": "Significant customer engagement achieved."
+    },
+    "delivery": {
+      "assigned": "Delivery assigned for order {orderNumber}.",
+      "assignedDescription": "Your delivery task has been assigned.",
+      "statusUpdated": "Delivery status updated for order {orderNumber}.",
+      "statusUpdatedDescription": "Delivery progress updated.",
+      "message": "Message for order {orderNumber}: {message}.",
+      "messageDescription": "New message from merchant."
+    },
+    "inventory": {
+      "stockLevelsUpdated": "Stock levels updated for restaurant {restaurantId}.",
+      "stockLevelsUpdatedDescription": "Inventory levels tracked.",
+      "inventoryUpdated": "Inventory updated for order {orderId}.",
+      "inventoryUpdatedDescription": "Stock adjusted post-order.",
+      "restocking": "Restocking alert: {lowStockItems}.",
+      "restockingDescription": "Low stock items need restocking.",
+      "noRestockingNeeded": "No restocking needed."
+    },
+    "order": {
+      "confirmed": "Order {orderNumber} confirmed for ${amount}.",
+      "confirmedDescription": "Order successfully processed.",
+      "status": {
+        "pending": "Order {orderNumber} is pending.",
+        "confirmed": "Order {orderNumber} is confirmed.",
+        "preparing": "Order {orderNumber} is being prepared.",
+        "ready": "Order {orderNumber} is ready for pickup/delivery.",
+        "out_for_delivery": "Order {orderNumber} is out for delivery.",
+        "completed": "Order {orderNumber} has been completed.",
+        "cancelled": "Order {orderNumber} has been cancelled."
+      },
+      "statusDescription": "Order status updated.",
+      "paymentConfirmed": "Payment of ${amount} confirmed for order {orderNumber}.",
+      "paymentConfirmedDescription": "Payment processed successfully."
+    },
+    "promotion": {
+      "created": "Promotion {name} created for restaurant {restaurantId}.",
+      "createdDescription": "New promotion available.",
+      "loyaltyUpdated": "Loyalty program updated for restaurant {restaurantId}.",
+      "loyaltyUpdatedDescription": "Loyalty tiers adjusted.",
+      "rewardRedeemed": "Reward {reward} redeemed for ${amount} by customer {customerId}.",
+      "rewardRedeemedDescription": "Points redeemed for reward."
+    },
+    "support": {
+      "inquirySubmitted": "Inquiry submitted for ticket {ticketNumber}, order {orderNumber}.",
+      "inquirySubmittedDescription": "Support ticket created.",
+      "ticketAssigned": "Ticket {ticketNumber} for order {orderNumber} assigned to you.",
+      "ticketAssignedDescription": "New ticket assigned.",
+      "disputeResolved": "Dispute for ticket {ticketNumber} resolved with {resolution}.",
+      "disputeResolvedDescription": "Support ticket resolved.",
+      "orderPolicies": "Refund and order policies for order {orderNumber} shared.",
+      "orderPoliciesDescription": "Policies communicated."
+    },
+    "errors": {
+      "invalidInput": "Invalid input provided.",
+      "merchantNotFound": "Restaurant not found.",
+      "orderNotFound": "Order not found.",
+      "invalidOrderStatus": "Order not ready for delivery.",
+      "driverUnavailable": "Driver unavailable.",
+      "orderOrDriverNotFound": "Order or driver not found.",
+      "invalidMessage": "Invalid message.",
+      "inventoryItemNotFound": "Inventory item {itemId} not found.",
+      "insufficientStock": "Insufficient stock for item {name}.",
+      "noStaffAvailable": "No available back-of-house staff found.",
+      "orderAlreadyProcessed": "Order already processed.",
+      "itemUnavailable": "Item {itemId} unavailable.",
+      "customerNotFound": "Customer not found.",
+      "invalidStatus": "Invalid order status.",
+      "orderAlreadyPaid": "Order already paid.",
+      "invalidPromotionType": "Invalid promotion type.",
+      "invalidMenuItems": "Invalid menu items.",
+      "invalidReward": "Invalid or inactive reward.",
+      "rewardNotFound": "Reward not found in loyalty program.",
+      "insufficientPoints": "Insufficient points for redemption.",
+      "invalidIssueType": "Invalid issue type.",
+      "ticketNotFound": "Support ticket or order not found.",
+      "invalidResolutionAction": "Invalid resolution action."
+    }
+  }
+}

@@ -1,61 +1,43 @@
-/**
- * analyticsAdminConstants.js
- *
- * Defines constants for the Analytics Admin role, managing platform analytics and reporting.
- * Supports global operations (Malawi, Tanzania, Kenya, Mozambique, Nigeria, South Africa,
- * India, Brazil) and aligns with driverConstants.js, staffConstants.js, customerConstants.js,
- * and merchantConstants.js.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
-  // Role Definition
   ROLE: 'analytics_admin',
-
-  // Permissions
+  DESCRIPTION: 'Manages platform analytics and reporting.',
   PERMISSIONS: {
-    manageAnalytics: ['read', 'write', 'export'], // Platform analytics
-    manageUsers: ['read'], // View user activity data
-    manageLogs: ['read'] // Analytics-related logs
+    manageAnalytics: ['read', 'write', 'export'],
+    manageUsers: ['read'],
+    manageLogs: ['read']
   },
-
-  // Admin Configuration
   SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: ['USD', 'MWK', 'TZS', 'KES', 'MZN', 'NGN', 'ZAR', 'INR', 'BRL'],
-    DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: ['en'],
-    DEFAULT_TIMEZONE: 'UTC',
-    MAX_LOGIN_SESSIONS: 3,
-    SESSION_TIMEOUT_MINUTES: 30,
-    PROFILE_FIELDS: {
-      REQUIRED: ['full_name', 'email', 'phone_number', 'role'],
-      OPTIONAL: ['preferred_language']
-    }
+    MAX_LOGIN_SESSIONS: 5,
+    SESSION_TIMEOUT_MINUTES: 60,
+    TWO_FACTOR_AUTH: { ENABLED: true, METHODS: ['sms', 'email', 'authenticator_app'] },
+    PROFILE_FIELDS: { REQUIRED: ['full_name', 'email', 'phone_number', 'role'], OPTIONAL: ['preferred_language'] }
   },
-
-  // Analytics Operations
   ANALYTICS_OPERATIONS: {
-    METRICS: ['user_activity', 'financial_performance', 'gamification_engagement', 'support_ticket_resolution', 'cross_vertical_usage', 'user_retention'],
-    REPORT_FORMATS: ['pdf', 'csv', 'json'],
-    DATA_RETENTION_DAYS: 365,
+    METRICS: [
+      'user_activity', 'financial_performance', 'support_ticket_resolution',
+      'cross_vertical_usage', 'user_retention', 'merchant_performance', 'parking_usage'
+    ],
+    REPORT_FORMATS: ['pdf', 'csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730,
     PERFORMANCE_THRESHOLDS: {
-      SUPPORT_RESPONSE_TIME_HOURS: 24,
-      FINANCIAL_REPORT_GENERATION_MINUTES: 5,
-      API_RESPONSE_TIME_MS: 500,
-      ERROR_RATE_PERCENTAGE: 1
+      SUPPORT_RESPONSE_TIME_HOURS: 12,
+      FINANCIAL_REPORT_GENERATION_MINUTES: 3,
+      API_RESPONSE_TIME_MS: 300,
+      ERROR_RATE_PERCENTAGE: 0.5
     },
-    DASHBOARD_TYPES: ['executive', 'operational', 'financial', 'support'],
-    EXPORT_LIMITS: {
-      MAX_ROWS_CSV: 100000,
-      MAX_PAGES_PDF: 50
-    }
+    DASHBOARD_TYPES: ['executive', 'operational', 'financial', 'support', 'parking'],
+    EXPORT_LIMITS: { MAX_ROWS_CSV: 200000, MAX_PAGES_PDF: 100 },
+    AI_ANALYTICS_ENABLED: true
   },
-
-  // Error Codes
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['analytics_report', 'performance_alert', 'announcement'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    MAX_PER_HOUR: 15,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
+  },
   ERROR_CODES: ['PERMISSION_DENIED', 'ANALYTICS_GENERATION_FAILED'],
-
-  // Success Messages
-  SUCCESS_MESSAGES: ['Analytics report exported']
+  SUCCESS_MESSAGES: ['analytics_report_exported']
 };

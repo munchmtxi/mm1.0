@@ -4,10 +4,10 @@ module.exports = {
   TIP_SETTINGS: {
     MIN_AMOUNT: 0.01,
     MAX_AMOUNT: 1000.00,
-    TIP_STATUSES: ['pending', 'completed', 'failed'],
-    SERVICE_TYPES: ['ride', 'order', 'booking', 'event_service', 'in_dining_order'],
-    RECIPIENT_ROLES: ['driver', 'staff'],
-    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP'],
+    TIP_STATUSES: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
+    SERVICE_TYPES: ['ORDER', 'BOOKING', 'EVENT_SERVICE', 'PARKING', 'RIDE'],
+    RECIPIENT_ROLES: ['STAFF', 'DRIVER'],
+    TIP_SUGGESTIONS: [5, 10, 15, 20] // Percentage-based suggestions
   },
   NOTIFICATION_CONSTANTS: {
     NOTIFICATION_TYPES: {
@@ -15,29 +15,30 @@ module.exports = {
       TIP_RECEIVED: 'TIP_RECEIVED',
       TIP_UPDATED: 'TIP_UPDATED',
       TIP_FAILED: 'TIP_FAILED',
+      TIP_REFUNDED: 'TIP_REFUNDED'
     },
-    DELIVERY_METHODS: {
-      PUSH: 'push',
-      EMAIL: 'email',
-    },
-    PRIORITY_LEVELS: {
-      MEDIUM: 'medium',
-      HIGH: 'high',
-    },
+    DELIVERY_METHODS: ['PUSH', 'EMAIL', 'SMS', 'WHATSAPP', 'TELEGRAM'],
+    PRIORITY_LEVELS: ['MEDIUM', 'HIGH']
   },
   ERROR_CODES: [
     'INVALID_CUSTOMER',
     'INVALID_RECIPIENT',
-    'INVALID_RIDE',
     'INVALID_ORDER',
     'INVALID_BOOKING',
     'INVALID_EVENT_SERVICE',
-    'INVALID_IN_DINING_ORDER',
+    'INVALID_PARKING',
+    'INVALID_RIDE',
     'INVALID_WALLET',
     'INSUFFICIENT_BALANCE',
     'INVALID_AMOUNT',
     'TIP_ALREADY_EXISTS',
     'TIP_NOT_FOUND',
-    'TIP_ACTION_FAILED',
+    'TIP_ACTION_FAILED'
   ],
+  SUCCESS_MESSAGES: [
+    'TIP_SENT',
+    'TIP_RECEIVED',
+    'TIP_UPDATED',
+    'TIP_REFUNDED'
+  ]
 };

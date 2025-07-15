@@ -1,0 +1,32 @@
+{
+  "success": {
+    "user_registered": "User successfully registered",
+    "user_logged_in": "User successfully logged in",
+    "mfa_enabled": "Multi-factor authentication enabled",
+    "mfa_verified": "Multi-factor authentication verified",
+    "user_verified": "User verification approved",
+    "session_terminated": "Session successfully terminated",
+    "token_refreshed": "Token successfully refreshed"
+  },
+  "errors": {
+    "validation_error": "Validation failed: {message}",
+    "permission_denied": "Permission denied",
+    "unauthorized": "Unauthorized access",
+    "user_not_found": "User not found",
+    "socket_error": "Socket communication error",
+    "invalid_staff_type": "Invalid staff type",
+    "invalid_event": "Invalid socket event: {event}",
+    "invalid_room": "Invalid socket room",
+    "payload_too_large": "Payload size exceeds {max}MB",
+    "socket_disconnected": "Socket.IO instance required",
+    "invalid_role": "Invalid role: {role}"
+  },
+  "notifications": {
+    "user_registered": "Welcome to the platform! Your account has been created.",
+    "user_logged_in": "You have successfully logged in.",
+    "mfa_enabled": "Multi-factor authentication has been enabled for your account.",
+    "mfa_verified": "Your multi-factor authentication code was verified.",
+    "session_terminated": "Your session has been terminated.",
+    "token_refreshed": "Your session token has been refreshed."
+  }
+}

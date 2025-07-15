@@ -2,30 +2,62 @@
 
 module.exports = {
   SOCIAL_SETTINGS: {
-    FRIEND_ACTIONS: ['add', 'remove', 'accept', 'reject', 'block'],
-    PERMISSION_TYPES: ['view_profile', 'view_posts', 'view_stories', 'send_messages', 'view_bookings', 'view_orders', 'view_rides', 'view_events', 'split_payment'],
-    POST_TYPES: ['text', 'image', 'video', 'booking', 'order', 'ride', 'event'],
-    POST_PRIVACY: ['public', 'friends', 'private'],
-    REACTION_TYPES: ['like', 'love', 'yum', 'wow', 'fun'],
-    STORY_TYPES: ['image', 'video'],
+    FRIEND_ACTIONS: ['ADD', 'REMOVE', 'ACCEPT', 'REJECT', 'BLOCK'],
+    PERMISSION_TYPES: [
+      'VIEW_PROFILE',
+      'VIEW_BOOKINGS', // mtables
+      'VIEW_ORDERS', // munch
+      'VIEW_RIDES', // mtxi
+      'VIEW_EVENTS', // mevents
+      'VIEW_PARKING', // mpark
+      'SPLIT_PAYMENT',
+      'SEND_INVITES',
+      'SHARE_POSTS'
+    ],
+    POST_TYPES: ['TEXT', 'IMAGE', 'VIDEO', 'BOOKING', 'ORDER', 'RIDE', 'EVENT', 'PARKING', 'LIVE_EVENT'],
+    POST_PRIVACY: ['PUBLIC', 'FRIENDS', 'PRIVATE'],
+    REACTION_TYPES: ['LIKE', 'LOVE', 'YUM', 'WOW', 'FUN'],
+    STORY_TYPES: ['IMAGE', 'VIDEO', 'LIVE'],
     STORY_DURATION_HOURS: 24,
     GROUP_CHAT_SETTINGS: {
-      MAX_PARTICIPANTS: 50,
-      MAX_MESSAGES_PER_HOUR: 100,
-      ROLES: ['admin', 'member'],
-      MAX_MEDIA_SIZE_MB: 50,
+      MAX_PARTICIPANTS: 100,
+      MAX_MESSAGES_PER_HOUR: 200,
+      ROLES: ['ADMIN', 'MEMBER'],
+      MAX_MEDIA_SIZE_MB: 100,
+      SUPPORTED_PLATFORMS: ['in_app', 'whatsapp', 'telegram']
     },
-    INVITE_METHODS: ['app', 'sms', 'email'],
-    BILL_SPLIT_TYPES: ['equal', 'custom', 'itemized'],
-    MAX_SPLIT_PARTICIPANTS: 10,
-    MAX_POST_LENGTH: 1000,
-    MAX_MEDIA_FILES: 5,
+    INVITE_METHODS: ['APP', 'SMS', 'EMAIL', 'WHATSAPP', 'TELEGRAM'],
+    BILL_SPLIT_TYPES: ['EQUAL', 'CUSTOM', 'ITEMIZED', 'PERCENTAGE', 'SPONSOR_CONTRIBUTION'],
+    MAX_SPLIT_PARTICIPANTS: 50,
+    MAX_POST_LENGTH: 2000,
+    MAX_MEDIA_FILES: 10
   },
   ERROR_CODES: [
-    'INVALID_CUSTOMER', 'INVALID_FRIEND', 'INVALID_ACTION', 'PENDING_REQUEST',
-    'NOT_FRIEND', 'INVALID_PERMISSIONS', 'INVALID_CHAT', 'NOT_CHAT_MEMBER',
-    'SOCIAL_ACTION_FAILED', 'INVALID_POST', 'INVALID_REACTION', 'INVALID_STORY',
-    'CHAT_LIMIT_EXCEEDED', 'UNAUTHORIZED', 'ALREADY_REACTED', 'INVALID_INVITE',
-    'MAX_FRIENDS_EXCEEDED', 'INVALID_BILL_SPLIT', 'INVALID_SERVICE'
+    'INVALID_CUSTOMER',
+    'INVALID_FRIEND',
+    'INVALID_ACTION',
+    'PENDING_REQUEST',
+    'NOT_FRIEND',
+    'INVALID_PERMISSIONS',
+    'INVALID_CHAT',
+    'NOT_CHAT_MEMBER',
+    'SOCIAL_ACTION_FAILED',
+    'INVALID_POST',
+    'INVALID_REACTION',
+    'INVALID_STORY',
+    'CHAT_LIMIT_EXCEEDED',
+    'UNAUTHORIZED',
+    'ALREADY_REACTED',
+    'INVALID_INVITE',
+    'MAX_FRIENDS_EXCEEDED',
+    'INVALID_BILL_SPLIT'
   ],
+  SUCCESS_MESSAGES: [
+    'FRIEND_ADDED',
+    'POST_CREATED',
+    'STORY_SHARED',
+    'CHAT_MESSAGE_SENT',
+    'BILL_SPLIT_COMPLETED',
+    'INVITE_SENT'
+  ]
 };

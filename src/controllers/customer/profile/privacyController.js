@@ -1,97 +1,115 @@
 'use strict';
 
-const { sequelize } = require('@models');
-const { setPrivacySettings, manageDataAccess } = require('@services/customer/profile/privacy/privacyService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
+const privacyService = require('@services/customer/privacyService');
 const pointService = require('@services/common/pointService');
-const customerConstants = require('@constants/customer/customerConstants');
-const gamificationConstants = require('@constants/common/gamificationConstants');
-const privacyEvents = require('@socket/events/customer/profile/privacy/privacyEvents');
-const catchAsync = require('@utils/catchAsync');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
+const { formatMessage } = require('@utils/localization');
+const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
+const customerConstants = require('@constants/customer/customerConstants');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
 
-const updatePrivacySettings = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const settings = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await setPrivacySettings(userId, settings, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'privacy_settings_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.privacy_settings_updated',
-      messageParams: {},
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, privacyEvents.PRIVACY_SETTINGS_UPDATED, {
-      userId,
-      settings: result.settings,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'UPDATE_PRIVACY_SETTINGS',
-      userId,
-      role: 'customer',
-      details: `Privacy settings updated for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Privacy settings updated', { userId });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
+module.exports = {
+  async setPrivacySettings(req, res, next) {
+    const { userId, body: { location_visibility, data_sharing }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const settings = { location_visibility, data_sharing };
+      const result = await privacyService.setPrivacySettings(userId, settings, transaction);
 
-const updateDataAccess = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const permissions = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await manageDataAccess(userId, permissions, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'privacy_settings_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.data_access_updated',
-      messageParams: {},
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, privacyEvents.DATA_ACCESS_UPDATED, {
-      userId,
-      permissions: result.permissions,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'UPDATE_DATA_ACCESS',
-      userId,
-      role: 'customer',
-      details: `Data access permissions updated for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Data access permissions updated', { userId });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
+      await pointService.awardPoints(userId, 'privacy_settings_updated', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'privacy_settings_updated').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
 
-module.exports = { updatePrivacySettings, updateDataAccess };
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.privacy_settings_updated',
+        messageParams: { settings: Object.keys(settings).join(', ') },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'PRIVACY_SETTINGS_UPDATED', {
+        userId,
+        role: 'customer',
+        auditAction: 'PRIVACY_UPDATED',
+        details: settings,
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'PRIVACY_UPDATED'),
+        details: settings,
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.privacy_updated_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Privacy settings update failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Privacy settings update failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PRIVACY_UPDATE_FAILED')));
+    }
+  },
+
+  async manageDataAccess(req, res, next) {
+    const { userId, body: { permissions }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await privacyService.manageDataAccess(userId, permissions, transaction);
+
+      await pointService.awardPoints(userId, 'privacy_settings_updated', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'privacy_settings_updated').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.data_access_updated',
+        messageParams: { permissions: Object.keys(permissions).join(', ') },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'DATA_ACCESS_UPDATED', {
+        userId,
+        role: 'customer',
+        auditAction: 'PRIVACY_UPDATED',
+        details: permissions,
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'PRIVACY_UPDATED'),
+        details: permissions,
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.privacy_updated_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Data access update failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Data access update failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PRIVACY_UPDATE_FAILED')));
+    }
+  },
+};

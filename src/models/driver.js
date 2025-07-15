@@ -135,6 +135,7 @@ module.exports = (sequelize, DataTypes) => {
       { unique: true, fields: ['phone_number'], name: 'drivers_phone_number_unique' },
       { unique: true, fields: ['license_number'], name: 'drivers_license_number_unique' },
       { fields: ['active_route_id'], name: 'drivers_active_route_id_index' },
+      { fields: ['current_location'], using: 'gist', name: 'drivers_current_location_index' },
     ],
   });
 

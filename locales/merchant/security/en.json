@@ -1,0 +1,17 @@
+{
+  "security": {
+    "dataProtection": {
+      "dataEncrypted": "Data of type {dataType} encrypted successfully for merchant {merchantId}.",
+      "regulationsComplied": "Compliance with {standards} verified for merchant {merchantId}.",
+      "accessRestricted": "Data access restricted for user {userId} with permission {permission} for merchant {merchantId}.",
+      "securityAudited": "Security audit completed with {auditCount} logs for merchant {merchantId}.",
+      "pointsAwarded": "{points} points awarded for {action}."
+    },
+    "errors": {
+      "invalidMerchant": "Merchant not found or invalid.",
+      "invalidStandards": "Invalid or unsupported data protection standards.",
+      "invalidPermission": "Invalid permission level.",
+      "invalidUser": "Invalid user for access restriction."
+    }
+  }
+}

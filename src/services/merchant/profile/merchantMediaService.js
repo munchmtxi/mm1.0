@@ -1,337 +1,242 @@
 'use strict';
 
-/**
- * Merchant Media Service
- * Manages media-related operations, including menu photos, promotional media, metadata updates,
- * and media deletion for the Merchant Role System. Integrates with merchantConstants.js for configuration
- * and ensures compliance with security requirements.
- *
- * Last Updated: May 16, 2025
- */
-
-const { MerchantBranch, Media, Merchant } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const imageService = require('@services/common/imageService');
-const auditService = require('@services/common/auditService');
-const AppError = require('@utils/AppError');
+const { sequelize, MerchantBranch, Media, Merchant } = require('@models');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const restaurantConstants = require('@constants/merchant/restaurantConstants');
+const parkingLotConstants = require('@constants/merchant/parkingLotConstants');
+const groceryConstants = require('@constants/merchant/groceryConstants');
+const darkKitchenConstants = require('@constants/merchant/darkKitchenConstants');
+const catererConstants = require('@constants/merchant/catererConstants');
+const cafeConstants = require('@constants/merchant/cafeConstants');
+const butcherConstants = require('@constants/merchant/butcherConstants');
+const bakeryConstants = require('@constants/merchant/bakeryConstants');
+const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
-const { formatMessage } = require('@utils/localization/localization');
-const validation = require('@utils/validation');
-const catchAsync = require('@utils/catchAsync');
 
-/**
- * Uploads dish photos for a restaurant menu.
- * @param {string} restaurantId - Branch ID (restaurant).
- * @param {Array<Object>} photos - Array of photo files.
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<Array<string>>} URLs of the uploaded photos.
- */
-const uploadMenuPhotos = catchAsync(async (restaurantId, photos, ipAddress) => {
-  const branch = await MerchantBranch.findByPk(restaurantId, { include: [{ model: Merchant, as: 'merchant' }] });
-  if (!branch) {
-    throw new AppError(
-      'Restaurant not found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
+const typeConstantsMap = {
+  restaurant: restaurantConstants,
+  parking_lot: parkingLotConstants,
+  grocery: groceryConstants,
+  dark_kitchen: darkKitchenConstants,
+  caterer: catererConstants,
+  cafe: cafeConstants,
+  butcher: butcherConstants,
+  bakery: bakeryConstants,
+};
+
+async function getAllowedMediaTypes(merchantId) {
+  const merchant = await Merchant.findByPk(merchantId);
+  if (!merchant || !merchant.merchant_types || !merchant.merchant_types.length) {
+    return merchantConstants.SOCIAL_MEDIA_CONSTANTS.ALLOWED_MEDIA_TYPES;
   }
+  const allowedMediaTypes = new Set();
+  merchant.merchant_types.forEach(type => {
+    const typeConstants = typeConstantsMap[type] || merchantConstants;
+    const mediaTypes = typeConstants.MUNCH_CONSTANTS?.MENU_SETTINGS?.ALLOWED_MEDIA_TYPES ||
+                      merchantConstants.SOCIAL_MEDIA_CONSTANTS.ALLOWED_MEDIA_TYPES;
+    mediaTypes.forEach(mt => allowedMediaTypes.add(mt));
+  });
+  return Array.from(allowedMediaTypes);
+}
 
-  // Validate photos
-  if (!photos || !Array.isArray(photos) || photos.some(photo => !photo.originalname)) {
-    throw new AppError(
-      'Invalid photo data',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_FILE_DATA
+async function uploadMenuPhotos(restaurantId, photos) {
+  const transaction = await sequelize.transaction();
+  try {
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    if (!photos || !Array.isArray(photos) || photos.some((photo) => !photo.originalname)) {
+      throw new AppError('Invalid file data', 400, merchantConstants.ERROR_CODES[3]);
+    }
+
+    const allowedMediaTypes = await getAllowedMediaTypes(branch.merchant_id);
+    const photoUrls = await Promise.all(
+      photos.map(async (photo) => {
+        const extension = photo.originalname.split('.').pop().toLowerCase();
+        if (!allowedMediaTypes.includes(extension)) {
+          throw new AppError('Invalid media type', 400, merchantConstants.ERROR_CODES[3]);
+        }
+        const mediaRecord = await Media.create(
+          {
+            branch_id: restaurantId,
+            merchant_id: branch.merchant_id,
+            type: 'menu_photos',
+            url: photo.path,
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+          { transaction }
+        );
+        return { url: photo.path, mediaId: mediaRecord.id };
+      })
     );
-  }
 
-  const photoUrls = await Promise.all(
-    photos.map(async (photo) => {
-      const imageUrl = await imageService.uploadImage(restaurantId, photo, 'menu_photos');
-      const mediaRecord = await Media.create({
+    await transaction.commit();
+    logger.info('Menu photos uploaded', { restaurantId, photoCount: photoUrls.length });
+    return photoUrls.map((p) => p.url);
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error uploading menu photos', { error: error.message });
+    throw error;
+  }
+}
+
+async function managePromotionalMedia(restaurantId, media) {
+  const transaction = await sequelize.transaction();
+  try {
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    const { file, type } = media;
+    const allowedMediaTypes = await getAllowedMediaTypes(branch.merchant_id);
+    const validTypes = ['menu_photos', 'promotional_media', 'branch_media', 'banner', 'promo_video'];
+    if (!validTypes.includes(type)) {
+      throw new AppError('Invalid media type', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (!file || !file.path || !allowedMediaTypes.includes(file.originalname.split('.').pop().toLowerCase())) {
+      throw new AppError('Invalid file', 400, merchantConstants.ERROR_CODES[3]);
+    }
+
+    const mediaRecord = await Media.create(
+      {
         branch_id: restaurantId,
         merchant_id: branch.merchant_id,
-        type: 'menu_photos',
-        url: imageUrl,
+        type,
+        url: file.path,
         created_at: new Date(),
         updated_at: new Date(),
-      });
-      return { url: imageUrl, mediaId: mediaRecord.id };
-    })
-  );
+      },
+      { transaction }
+    );
 
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPLOAD_MENU_PHOTOS,
-    userId: branch.merchant.user_id,
-    role: 'merchant',
-    details: { restaurantId, photoCount: photoUrls.length, mediaIds: photoUrls.map(p => p.mediaId) },
-    ipAddress: ipAddress || null,
-    metadata: { branchId: restaurantId },
-  });
+    await transaction.commit();
+    logger.info('Promotional media uploaded', { restaurantId, mediaId: mediaRecord.id });
+    return mediaRecord.url;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error uploading promotional media', { error: error.message });
+    throw error;
+  }
+}
 
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: branch.merchant.user_id,
-    merchantId: branch.merchant_id,
-    notificationType: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_UPLOADED,
-    messageKey: 'media.menu_uploaded',
-    messageParams: { restaurantId },
-    role: 'merchant',
-    module: 'media',
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-  });
-
-  // Emit real-time event
-  await socketService.emit(
-    `merchant:${branch.merchant.user_id}`,
-    'media:menu_uploaded',
-    {
-      userId: branch.merchant.user_id,
-      restaurantId,
-      photoCount: photoUrls.length,
-      photoUrls: photoUrls.map(p => p.url),
+async function updateMediaMetadata(mediaId, metadata) {
+  const transaction = await sequelize.transaction();
+  try {
+    const media = await Media.findByPk(mediaId, {
+      include: [{ model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] }],
+      transaction,
+    });
+    if (!media) {
+      throw new AppError('Media not found', 404, merchantConstants.ERROR_CODES[3]);
     }
-  );
 
-  logger.info('Menu photos uploaded successfully', { restaurantId, photoCount: photoUrls.length });
-  return photoUrls.map(p => p.url);
-});
-
-/**
- * Handles promotional media for a restaurant.
- * @param {string} restaurantId - Branch ID (restaurant).
- * @param {Object} media - Promotional media data (e.g., file, type).
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<string>} URL of the uploaded media.
- */
-const managePromotionalMedia = catchAsync(async (restaurantId, media, ipAddress) => {
-  const branch = await MerchantBranch.findByPk(restaurantId, { include: [{ model: Merchant, as: 'merchant' }] });
-  if (!branch) {
-    throw new AppError(
-      'Restaurant not found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
-  }
-
-  const { file, type } = media;
-
-  // Validate media type
-  if (!['banner', 'promo_video'].includes(type)) {
-    throw new AppError(
-      'Invalid promotional media type',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_MEDIA_TYPE
-    );
-  }
-
-  // Validate file
-  if (!file || !file.originalname) {
-    throw new AppError(
-      'Invalid file data',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_FILE_DATA
-    );
-  }
-
-  const imageUrl = await imageService.uploadImage(restaurantId, file, type);
-
-  // Save media record
-  const mediaRecord = await Media.create({
-    branch_id: restaurantId,
-    merchant_id: branch.merchant_id,
-    type,
-    url: imageUrl,
-    created_at: new Date(),
-    updated_at: new Date(),
-  });
-
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPLOAD_PROMOTIONAL_MEDIA,
-    userId: branch.merchant.user_id,
-    role: 'merchant',
-    details: { restaurantId, type, url: imageUrl, mediaId: mediaRecord.id },
-    ipAddress: ipAddress || null,
-    metadata: { branchId: restaurantId, mediaId: mediaRecord.id },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: branch.merchant.user_id,
-    merchantId: branch.merchant_id,
-    notificationType: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_UPLOADED,
-    messageKey: 'media.promo_uploaded',
-    messageParams: { restaurantId },
-    role: 'merchant',
-    module: 'media',
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-  });
-
-  // Emit real-time event
-  await socketService.emit(
-    `merchant:${branch.merchant.user_id}`,
-    'media:promo_uploaded',
-    {
-      userId: branch.merchant.user_id,
-      restaurantId,
-      mediaId: mediaRecord.id,
-      imageUrl,
+    const { title, description } = metadata;
+    if (title && title.length > 100) {
+      throw new AppError('Title too long', 400, merchantConstants.ERROR_CODES[3]);
     }
-  );
-
-  logger.info('Promotional media uploaded successfully', { restaurantId, mediaId: mediaRecord.id });
-  return imageUrl;
-});
-
-/**
- * Edits media metadata.
- * @param {string} mediaId - Media ID.
- * @param {Object} metadata - Metadata (e.g., title, description).
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<Object>} Updated media record.
- */
-const updateMediaMetadata = catchAsync(async (mediaId, metadata, ipAddress) => {
-  const media = await Media.findByPk(mediaId, { include: [{ model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] }] });
-  if (!media) {
-    throw new AppError(
-      'Media not found',
-      404,
-      merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND
-    );
-  }
-
-  const { title, description } = metadata;
-
-  // Validate inputs
-  if (title && title.length > merchantConstants.MEDIA_CONSTANTS.MAX_TITLE_LENGTH) {
-    throw new AppError(
-      'Title too long',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_MEDIA_METADATA
-    );
-  }
-  if (description && description.length > merchantConstants.MEDIA_CONSTANTS.MAX_DESCRIPTION_LENGTH) {
-    throw new AppError(
-      'Description too long',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_MEDIA_METADATA
-    );
-  }
-
-  // Update media
-  const updatedFields = {
-    title: title || media.title,
-    description: description || media.description,
-    updated_at: new Date(),
-  };
-
-  await media.update(updatedFields);
-
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPDATE_MEDIA_METADATA,
-    userId: media.branch.merchant.user_id,
-    role: 'merchant',
-    details: { mediaId, updatedFields },
-    ipAddress: ipAddress || null,
-    metadata: { branchId: media.branch_id },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: media.branch.merchant.user_id,
-    merchantId: media.merchant_id,
-    notificationType: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_UPDATED,
-    messageKey: 'media.metadata_updated',
-    messageParams: { mediaId },
-    role: 'merchant',
-    module: 'media',
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-  });
-
-  // Emit real-time event
-  await socketService.emit(
-    `merchant:${media.branch.merchant.user_id}`,
-    'media:metadata_updated',
-    {
-      userId: media.branch.merchant.user_id,
-      mediaId,
-      metadata: updatedFields,
+    if (description && description.length > 500) {
+      throw new AppError('Description too long', 400, merchantConstants.ERROR_CODES[3]);
     }
-  );
 
-  logger.info('Media metadata updated successfully', { mediaId });
-  return media;
-});
+    const updatedFields = {
+      title: title || media.title,
+      description: description || media.description,
+      updated_at: new Date(),
+    };
 
-/**
- * Removes outdated media.
- * @param {string} mediaId - Media ID.
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<void>}
- */
-const deleteMedia = catchAsync(async (mediaId, ipAddress) => {
-  const media = await Media.findByPk(mediaId, { include: [{ model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] }] });
-  if (!media) {
-    throw new AppError(
-      'Media not found',
-      404,
-      merchantConstants.ERROR_CODES.MEDIA_NOT_FOUND
-    );
+    await media.update(updatedFields, { transaction });
+    await transaction.commit();
+    logger.info('Media metadata updated', { mediaId });
+    return updatedFields;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error updating media metadata', { error: error.message });
+    throw error;
   }
+}
 
-  // Delete media file
-  if (['banner', 'promo_video'].includes(media.type)) {
-    await imageService.deleteBannerImage(media.url);
-  } else {
-    await imageService.deleteImage(media.branch_id, media.type);
-  }
-
-  // Delete media record
-  await media.destroy();
-
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.DELETE_MEDIA,
-    userId: media.branch.merchant.user_id,
-    role: 'merchant',
-    details: { mediaId, type: media.type },
-    ipAddress: ipAddress || null,
-    metadata: { branchId: media.branch_id },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: media.branch.merchant.user_id,
-    merchantId: media.merchant_id,
-    notificationType: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_DELETED,
-    messageKey: 'media.deleted',
-    messageParams: { mediaId },
-    role: 'merchant',
-    module: 'media',
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-  });
-
-  // Emit real-time event
-  await socketService.emit(
-    `merchant:${media.branch.merchant.user_id}`,
-    'media:deleted',
-    {
-      userId: media.branch.merchant.user_id,
-      mediaId,
+async function deleteMedia(mediaId) {
+  const transaction = await sequelize.transaction();
+  try {
+    const media = await Media.findByPk(mediaId, {
+      include: [{ model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] }],
+      transaction,
+    });
+    if (!media) {
+      throw new AppError('Media not found', 404, merchantConstants.ERROR_CODES[3]);
     }
-  );
 
-  logger.info('Media deleted successfully', { mediaId });
-});
+    await media.destroy({ transaction });
+    await transaction.commit();
+    logger.info('Media deleted', { mediaId });
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error deleting media', { error: error.message });
+    throw error;
+  }
+}
+
+async function listBranchMedia(restaurantId) {
+  try {
+    const branch = await MerchantBranch.findByPk(restaurantId, {
+      include: [{ model: Merchant, as: 'merchant' }],
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    const media = await Media.findAll({
+      where: { branch_id: restaurantId },
+      attributes: ['id', 'type', 'url', 'title', 'description', 'created_at', 'updated_at'],
+    });
+
+    logger.info('Branch media retrieved', { restaurantId, mediaCount: media.length });
+    return media;
+  } catch (error) {
+    logger.error('Error listing branch media', { error: error.message });
+    throw error;
+  }
+}
+
+async function bulkDeleteMedia(mediaIds) {
+  const transaction = await sequelize.transaction();
+  try {
+    const mediaRecords = await Media.findAll({
+      where: { id: mediaIds },
+      include: [{ model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] }],
+      transaction,
+    });
+
+    if (mediaRecords.length !== mediaIds.length) {
+      throw new AppError('Some media not found', 404, merchantConstants.ERROR_CODES[3]);
+    }
+
+    await Media.destroy({ where: { id: mediaIds }, transaction });
+    await transaction.commit();
+    logger.info('Media records deleted', { mediaIds });
+    return { deletedCount: mediaIds.length };
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error bulk deleting media', { error: error.message });
+    throw error;
+  }
+}
 
 module.exports = {
   uploadMenuPhotos,
   managePromotionalMedia,
   updateMediaMetadata,
   deleteMedia,
+  listBranchMedia,
+  bulkDeleteMedia,
 };

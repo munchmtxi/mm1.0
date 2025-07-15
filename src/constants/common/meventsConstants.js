@@ -1,46 +1,85 @@
-/**
- * meventsConstants.js
- *
- * Defines constants for the Mevents System, covering event planning and group coordination.
- * Supports customer interactions and inclusivity (e.g., halal filter). Aligns with customerConstants.js,
- * munchConstants.js, mtablesConstants.js, and rideConstants.js.
- *
- * Last Updated: May 27, 2025
- */
-
 'use strict';
 
 module.exports = {
-  // Event Statuses
-  EVENT_STATUSES: ['draft', 'confirmed', 'completed', 'cancelled'],
-
-  // Event Occasions
-  EVENT_OCCASIONS: ['corporate', 'pleasure', 'travel', 'other'],
-
-  // Payment Types
-  PAYMENT_TYPES: ['solo', 'split'],
-
-  // Participant Statuses
-  PARTICIPANT_STATUSES: ['invited', 'accepted', 'declined'],
-
-  // Event Settings
-  EVENT_SETTINGS: {
-    MAX_PARTICIPANTS: 50,
-    MAX_SERVICES: 20,
-    MAX_TITLE_LENGTH: 100,
-    MAX_DESCRIPTION_LENGTH: 1000
+  EVENT_STATUSES: ['DRAFT', 'CONFIRMED', 'ACTIVE', 'COMPLETED', 'CANCELLED'],
+  EVENT_OCCASIONS: ['BIRTHDAY', 'ANNIVERSARY', 'CORPORATE', 'SOCIAL', 'WEDDING', 'CONFERENCE', 'OTHER'],
+  PAYMENT_TYPES: ['SOLO', 'SPLIT', 'SPONSOR'],
+  PARTICIPANT_STATUSES: ['INVITED', 'ACCEPTED', 'DECLINED', 'CHECKED_IN'],
+  EVENT_CONFIG: {
+    MAX_PARTICIPANTS: 500,
+    MAX_SERVICES: 50,
+    MAX_TITLE_LENGTH: 150,
+    MAX_DESCRIPTION_LENGTH: 2000,
+    MIN_LEAD_TIME_DAYS: 0.5,
+    SUPPORTED_CITIES: {
+      US: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami', 'San Francisco'],
+      GB: ['London', 'Manchester', 'Birmingham', 'Glasgow', 'Edinburgh'],
+      EU: ['Berlin', 'Paris', 'Amsterdam', 'Rome', 'Madrid'],
+      CA: ['Toronto', 'Vancouver', 'Montreal', 'Calgary'],
+      AU: ['Sydney', 'Melbourne', 'Brisbane', 'Perth'],
+      MW: ['Lilongwe', 'Blantyre', 'Mzuzu', 'Zomba'],
+      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha', 'Mwanza'],
+      KE: ['Nairobi', 'Mombasa', 'Kisumu', 'Eldoret'],
+      MZ: ['Maputo', 'Beira', 'Nampula', 'Matola'],
+      ZA: ['Johannesburg', 'Cape Town', 'Durban', 'Pretoria'],
+      IN: ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad'],
+      CM: ['Douala', 'Yaoundé'],
+      GH: ['Accra', 'Kumasi'],
+      MX: ['Mexico City', 'Guadalajara', 'Monterrey', 'Puebla'],
+      ER: ['Asmara', 'Keren', 'Massawa']
+    },
+    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'ZAR', 'INR', 'XAF', 'GHS', 'MXN', 'ERN'],
+    ALLOWED_DIETARY_FILTERS: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE', 'NUT_FREE', 'DAIRY_FREE', 'HALAL', 'KOSHER', 'LOW_CARB', 'ORGANIC'],
+    SERVICE_INTEGRATIONS: ['MUNCH', 'MTXI', 'MTABLES', 'MPARK', 'EXTERNAL_VENDORS'],
+    EVENT_TEMPLATES: ['BIRTHDAY_BASH', 'CORPORATE_MEETING', 'WEDDING', 'SOCIAL_GATHERING', 'CUSTOM'],
+    AI_PLANNING_TOOLS: ['budget_optimizer', 'vendor_recommendations', 'schedule_generator', 'venue_suggestions']
   },
-
-  // Error Codes
-  ERROR_CODES: [
-    'EVENT_NOT_FOUND', 'INVALID_CUSTOMER', 'INVALID_PARTICIPANT', 'INVALID_SERVICE',
-    'UNAUTHORIZED_EVENT', 'MAX_PARTICIPANTS_EXCEEDED', 'MAX_SERVICES_EXCEEDED',
-    'INVALID_PAYMENT_TYPE', 'INSUFFICIENT_FUNDS', 'BILL_SPLIT_FAILED', 'INVALID_EVENT'
+  GROUP_CONFIG: {
+    MAX_FRIENDS_PER_EVENT: 500,
+    INVITE_STATUSES: ['PENDING', 'ACCEPTED', 'DECLINED', 'REMOVED'],
+    INVITE_METHODS: ['APP', 'SMS', 'EMAIL', 'WHATSAPP', 'TELEGRAM'],
+    BILL_SPLIT_TYPES: ['EQUAL', 'CUSTOM', 'PERCENTAGE', 'SPONSOR_CONTRIBUTION'],
+    MAX_SPLIT_PARTICIPANTS: 50,
+    GROUP_CHAT: ['in_app', 'whatsapp_integration', 'telegram_integration', 'real_time_updates'],
+    SOCIAL_MEDIA_SHARING: ['event_invite', 'post_event', 'live_updates', 'tag_friends']
+  },
+  VENDOR_COORDINATION: {
+    VENDOR_TYPES: ['CATERING', 'TRANSPORT', 'VENUE', 'PARKING', 'ENTERTAINMENT', 'DECOR', 'SECURITY'],
+    VENDOR_STATUSES: ['PENDING', 'CONFIRMED', 'ACTIVE', 'COMPLETED', 'CANCELLED'],
+    CONTRACT_TYPES: ['FIXED', 'HOURLY', 'PER_PERSON'],
+    AI_VENDOR_MATCHING: true
+  },
+  ANALYTICS_CONFIG: {
+    METRICS: ['PARTICIPANT_ENGAGEMENT', 'BUDGET_ADHERENCE', 'VENDOR_PERFORMANCE', 'EVENT_ATTENDANCE', 'SOCIAL_MEDIA_IMPACT'],
+    REPORT_FORMATS: ['PDF', 'CSV', 'JSON', 'DASHBOARD'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_TYPES: {
+    EVENT_CREATED: 'EVENT_CREATED',
+    EVENT_INVITATION: 'EVENT_INVITATION',
+    BILL_SPLIT_REQUEST: 'BILL_SPLIT_REQUEST',
+    EVENT_CHAT_MESSAGE: 'EVENT_CHAT_MESSAGE',
+    EVENT_UPDATED: 'EVENT_UPDATED',
+    VENDOR_CONFIRMED: 'VENDOR_CONFIRMED',
+    SOCIAL_MEDIA_POST: 'SOCIAL_MEDIA_POST',
+    EVENT_LIVE_UPDATE: 'EVENT_LIVE_UPDATE'
+  },
+  AUDIT_TYPES: {
+    EVENT_CREATED: 'EVENT_CREATED',
+    BILL_PROCESSED: 'BILL_PROCESSED',
+    CHAT_MESSAGE_SENT: 'CHAT_MESSAGE_SENT',
+    EVENT_UPDATED: 'EVENT_UPDATED',
+    PARTICIPANT_ADDED: 'PARTICIPANT_ADDED',
+    VENDOR_COORDINATED: 'VENDOR_COORDINATED',
+    SOCIAL_MEDIA_INTERACTION: 'SOCIAL_MEDIA_INTERACTION'
+  },
+  ERROR_TYPES: [
+    'EVENT_NOT_FOUND', 'INVALID_CUSTOMER', 'INVALID_PARTICIPANT', 'INVALID_SERVICE', 'UNAUTHORIZED_EVENT',
+    'MAX_PARTICIPANTS_EXCEEDED', 'MAX_SERVICES_EXCEEDED', 'INVALID_PAYMENT_TYPE', 'INSUFFICIENT_FUNDS',
+    'BILL_SPLIT_FAILED', 'INVALID_EVENT', 'VENDOR_NOT_AVAILABLE', 'WALLET_INSUFFICIENT_FUNDS'
   ],
-
-  // Success Messages
   SUCCESS_MESSAGES: [
-    'Event created', 'Event updated', 'Event cancelled', 'Participant added',
-    'Bill processed', 'Chat enabled', 'Points awarded'
+    'EVENT_CREATED', 'EVENT_UPDATED', 'EVENT_CANCELLED', 'PARTICIPANT_ADDED', 'BILL_PROCESSED',
+    'CHAT_ENABLED', 'VENDOR_CONFIRMED', 'SOCIAL_POST_SHARED'
   ]
 };

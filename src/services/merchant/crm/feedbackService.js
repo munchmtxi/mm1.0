@@ -1,44 +1,74 @@
 'use strict';
 
-/**
- * feedbackService.js
- * Manages customer reviews, community interactions, and feedback responses with gamification for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
+const { Review, ReviewInteraction, Customer, Merchant, MerchantBranch } = require('@models');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Review, ReviewInteraction, Customer, Merchant, GamificationPoints, AuditLog, Notification } = require('@models');
+const mtablesConstants = require('@constants/common/mtablesConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const mtxiConstants = require('@constants/common/mtxiConstants');
+const mparkConstants = require('@constants/common/mparkConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { handleServiceError } = require('@utils/errorHandling');
+const logger = require('@utils/logger');
 
-/**
- * Gathers customer reviews for a merchant.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} reviewData - Review details (customerId, rating, comment, serviceType, serviceId).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Review record.
- */
-async function collectReviews(merchantId, reviewData, io) {
+async function collectReviews(merchantId, reviewData, ipAddress, transaction = null) {
   try {
+    // Validate input data
     if (!merchantId || !reviewData?.customerId || !reviewData?.rating || !reviewData?.serviceType || !reviewData?.serviceId) {
-      throw new Error('Merchant ID, customer ID, rating, service type, and service ID required');
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
     }
 
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    // Validate merchant and branch
+    const merchant = await Merchant.findByPk(merchantId, { 
+      attributes: ['id', 'user_id', 'preferred_language', 'business_type'], 
+      transaction 
+    });
+    if (!merchant) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
 
-    const customer = await Customer.findByPk(reviewData.customerId);
-    if (!customer) throw new Error('Customer not found');
+    const branch = await MerchantBranch.findOne({ 
+      where: { merchant_id: merchantId, is_active: true }, 
+      attributes: ['id', 'preferred_language', 'currency'], 
+      transaction 
+    });
+    if (!branch) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
 
-    const validServiceTypes = ['order', 'in_dining_order', 'booking', 'ride'];
-    if (!validServiceTypes.includes(reviewData.serviceType)) throw new Error('Invalid service type');
+    // Validate customer
+    const customer = await Customer.findByPk(reviewData.customerId, { 
+      attributes: ['id', 'user_id', 'preferred_language', 'country'], 
+      transaction 
+    });
+    if (!customer) {
+      throw new AppError(customerConstants.ERROR_TYPES.CUSTOMER_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
 
-    if (reviewData.rating < 1 || reviewData.rating > 5) throw new Error('Rating must be between 1 and 5');
+    // Validate service type against all supported services
+    const validServiceTypes = [
+      ...mtablesConstants.BOOKING_TYPES,
+      ...munchConstants.ORDER_CONSTANTS.ORDER_TYPES,
+      ...Object.keys(mtxiConstants.RIDE_TYPES),
+      ...mparkConstants.BOOKING_CONFIG.BOOKING_TYPES,
+      ...customerConstants.MEVENTS_CONSTANTS.EVENT_TYPES,
+    ].flat();
+    if (!validServiceTypes.includes(reviewData.serviceType)) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
 
+    // Validate rating
+    if (reviewData.rating < mtablesConstants.FEEDBACK_SETTINGS.MIN_RATING || 
+        reviewData.rating > mtablesConstants.FEEDBACK_SETTINGS.MAX_RATING) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_FEEDBACK_RATING, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Validate comment length if provided
+    if (reviewData.comment && reviewData.comment.length > Review.getAttributes().comment.validate.len[1]) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Create review
     const review = await Review.create({
       customer_id: reviewData.customerId,
       merchant_id: merchantId,
@@ -46,200 +76,171 @@ async function collectReviews(merchantId, reviewData, io) {
       service_id: reviewData.serviceId,
       rating: reviewData.rating,
       comment: reviewData.comment,
-      status: 'pending',
-    });
+      status: mtablesConstants.BOOKING_STATUSES[0], // 'PENDING'
+      target_type: reviewData.targetType || 'merchant',
+      target_id: reviewData.targetId || merchantId,
+      anonymous: reviewData.anonymous || false,
+      photos: reviewData.photos || [],
+    }, { transaction });
 
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'collect_reviews',
-      details: { merchantId, reviewId: review.id, rating: reviewData.rating },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'feedback:reviewCollected', {
+    logger.info(`Review collected for merchant ${merchantId}, branch ${branch.id}: Review ID ${review.id}`);
+    return {
       merchantId,
+      branchId: branch.id,
       reviewId: review.id,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: merchant.user_id,
-      notificationType: 'review_received',
-      messageKey: 'feedback.review_received',
-      messageParams: { rating: reviewData.rating },
-      role: 'merchant',
-      module: 'feedback',
-      languageCode: merchant.preferred_language || 'en',
-    });
-
-    return review;
+      customerId: reviewData.customerId,
+      rating: reviewData.rating,
+      language: customer.preferred_language || branch.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      currency: branch.currency || localizationConstants.COUNTRY_CURRENCY_MAP[customer.country] || localizationConstants.DEFAULT_CURRENCY,
+      action: customerConstants.SUCCESS_MESSAGES.find(msg => msg === 'feedback_submitted'),
+    };
   } catch (error) {
-    logger.error('Error collecting reviews', { error: error.message });
-    throw error;
+    throw handleServiceError('collectReviews', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Handles upvotes or comments on a review.
- * @param {number} reviewId - Review ID.
- * @param {Object} action - Interaction details (customerId, type, comment).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Interaction record.
- */
-async function manageCommunityInteractions(reviewId, action, io) {
+async function manageCommunityInteractions(reviewId, action, ipAddress, transaction = null) {
   try {
+    // Validate input data
     if (!reviewId || !action?.customerId || !action?.type) {
-      throw new Error('Review ID, customer ID, and action type required');
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
     }
 
-    const review = await Review.findByPk(reviewId);
-    if (!review) throw new Error('Review not found');
+    // Validate review
+    const review = await Review.findByPk(reviewId, { 
+      attributes: ['id', 'merchant_id', 'customer_id'], 
+      transaction 
+    });
+    if (!review) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
 
-    const customer = await Customer.findByPk(action.customerId);
-    if (!customer) throw new Error('Customer not found');
+    // Validate merchant and branch
+    const merchant = await Merchant.findByPk(review.merchant_id, { 
+      attributes: ['id', 'preferred_language'], 
+      transaction 
+    });
+    if (!merchant) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
 
-    const validTypes = ['upvote', 'comment'];
-    if (!validTypes.includes(action.type)) throw new Error('Invalid action type');
+    const branch = await MerchantBranch.findOne({ 
+      where: { merchant_id: review.merchant_id, is_active: true }, 
+      attributes: ['id', 'preferred_language', 'currency'], 
+      transaction 
+    });
+    if (!branch) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
 
+    // Validate customer
+    const customer = await Customer.findByPk(action.customerId, { 
+      attributes: ['id', 'user_id', 'preferred_language', 'country'], 
+      transaction 
+    });
+    if (!customer) {
+      throw new AppError(customerConstants.ERROR_TYPES.CUSTOMER_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Validate interaction type
+    const validTypes = ReviewInteraction.getAttributes().action.values; // ['upvote', 'comment']
+    if (!validTypes.includes(action.type)) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Validate comment length for comment action
+    if (action.type === 'comment' && action.comment?.length > ReviewInteraction.getAttributes().comment.validate?.len?.[1]) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Create interaction
     const interaction = await ReviewInteraction.create({
       review_id: reviewId,
       customer_id: action.customerId,
       action: action.type,
       comment: action.type === 'comment' ? action.comment : null,
-    });
+    }, { transaction });
 
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'manage_community_interactions',
-      details: { reviewId, actionType: action.type },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'feedback:interactionManaged', {
+    logger.info(`Community interaction managed for review ${reviewId}, branch ${branch.id}: ${action.type}`);
+    return {
       reviewId,
       interactionId: interaction.id,
+      customerId: action.customerId,
       actionType: action.type,
-    }, `merchant:${review.merchant_id}`);
-
-    await notificationService.sendNotification({
-      userId: review.customer_id,
-      notificationType: 'review_interaction',
-      messageKey: 'feedback.review_interaction',
-      messageParams: { action: action.type },
-      role: 'customer',
-      module: 'feedback',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return interaction;
+      merchantId: review.merchant_id,
+      branchId: branch.id,
+      language: customer.preferred_language || branch.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      currency: branch.currency || localizationConstants.COUNTRY_CURRENCY_MAP[customer.country] || localizationConstants.DEFAULT_CURRENCY,
+      action: mtablesConstants.SUCCESS_MESSAGES.find(msg => msg === 'SOCIAL_POST_SHARED'),
+    };
   } catch (error) {
-    logger.error('Error managing community interactions', { error: error.message });
-    throw error;
+    throw handleServiceError('manageCommunityInteractions', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Replies to customer feedback.
- * @param {number} reviewId - Review ID.
- * @param {Object} response - Response details (merchantId, content).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated review.
- */
-async function respondToFeedback(reviewId, response, io) {
+async function respondToFeedback(reviewId, response, ipAddress, transaction = null) {
   try {
+    // Validate input data
     if (!reviewId || !response?.merchantId || !response?.content) {
-      throw new Error('Review ID, merchant ID, and response content required');
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
     }
 
-    const review = await Review.findByPk(reviewId);
-    if (!review) throw new Error('Review not found');
+    // Validate review
+    const review = await Review.findByPk(reviewId, { 
+      attributes: ['id', 'customer_id', 'comment', 'merchant_id'], 
+      transaction 
+    });
+    if (!review) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
 
-    const merchant = await Merchant.findByPk(response.merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
+    // Validate merchant and branch
+    const merchant = await Merchant.findByPk(response.merchantId, { 
+      attributes: ['id', 'user_id', 'preferred_language'], 
+      transaction 
+    });
+    if (!merchant) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
 
+    const branch = await MerchantBranch.findOne({ 
+      where: { merchant_id: response.merchantId, is_active: true }, 
+      attributes: ['id', 'preferred_language', 'currency'], 
+      transaction 
+    });
+    if (!branch) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND, 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    // Validate response comment length
+    if (response.content.length > Review.getAttributes().comment.validate.len[1]) {
+      throw new AppError(mtablesConstants.ERROR_TYPES.INVALID_INPUT, 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    // Update review with merchant response
     await review.update({
       comment: review.comment ? `${review.comment}\nMerchant Response: ${response.content}` : `Merchant Response: ${response.content}`,
-      status: 'approved',
+      status: mtablesConstants.BOOKING_STATUSES[1], // 'APPROVED'
+    }, { transaction });
+
+    // Fetch customer for language preference
+    const customer = await Customer.findByPk(review.customer_id, { 
+      attributes: ['preferred_language', 'country'], 
+      transaction 
     });
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'respond_to_feedback',
-      details: { reviewId, responseContent: response.content },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'feedback:feedbackResponded', {
+    logger.info(`Feedback response added for review ${reviewId} by merchant ${response.merchantId}, branch ${branch.id}`);
+    return {
       reviewId,
       merchantId: response.merchantId,
-    }, `merchant:${response.merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: review.customer_id,
-      notificationType: 'feedback_response',
-      messageKey: 'feedback.feedback_response',
-      messageParams: { content: response.content },
-      role: 'customer',
-      module: 'feedback',
-      languageCode: (await Customer.findByPk(review.customer_id)).preferred_language || 'en',
-    });
-
-    return review;
+      branchId: branch.id,
+      customerId: review.customer_id,
+      language: customer?.preferred_language || branch.preferred_language || localizationConstants.DEFAULT_LANGUAGE,
+      currency: branch.currency || localizationConstants.COUNTRY_CURRENCY_MAP[customer?.country] || localizationConstants.DEFAULT_CURRENCY,
+      action: mtablesConstants.SUCCESS_MESSAGES.find(msg => msg === 'FEEDBACK_SUBMITTED'),
+    };
   } catch (error) {
-    logger.error('Error responding to feedback', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Awards review or tipping points for customers.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points awarded.
- */
-async function trackFeedbackGamification(customerId, io) {
-  try {
-    if (!customerId) throw new Error('Customer ID required');
-
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
-
-    const points = await pointService.awardPoints({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'feedback_interaction',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'track_feedback_gamification',
-      details: { customerId, points: points.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'feedback:pointsAwarded', {
-      customerId,
-      points: points.points,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'feedback_points_awarded',
-      messageKey: 'feedback.feedback_points_awarded',
-      messageParams: { points: points.points },
-      role: 'customer',
-      module: 'feedback',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return points;
-  } catch (error) {
-    logger.error('Error tracking feedback gamification', { error: error.message });
-    throw error;
+    throw handleServiceError('respondToFeedback', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
@@ -247,5 +248,4 @@ module.exports = {
   collectReviews,
   manageCommunityInteractions,
   respondToFeedback,
-  trackFeedbackGamification,
 };

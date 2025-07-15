@@ -2,24 +2,28 @@
 
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
 const authEvents = require('@socket/events/common/authEvents');
 const authConstants = require('@constants/common/authConstants');
 
-const handleMfaEnabled = (io, user, mfaMethod) => {
+const handleMfaEnabled = async (io, user, mfaMethod) => {
   try {
     const room = `role:${user.role}`;
-    io.to(room).emit(authEvents.MFA_ENABLED, {
+    await socketService.emit(io, authEvents.MFA_ENABLED, {
       userId: user.id,
       role: user.role,
       mfaMethod,
-      timestamp: new Date(),
-      message: authConstants.SUCCESS_MESSAGES.MFA_ENABLED,
-    });
-    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.MFA_ATTEMPT, {
+      timestamp: new Date().toISOString(),
+      message: authConstants.SUCCESS_MESSAGES[2], // MFA_ENABLED
+    }, room);
+
+    await auditService.logAction({
       userId: user.id,
       role: user.role,
-      mfaMethod,
-      success: true,
+      action: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.MFA_ATTEMPT,
+      details: { mfaMethod, success: true },
+      ipAddress: '0.0.0.0', // Placeholder
     });
   } catch (error) {
     logger.logErrorEvent('Failed to handle MFA enabled event', { error: error.message });
@@ -27,21 +31,23 @@ const handleMfaEnabled = (io, user, mfaMethod) => {
   }
 };
 
-const handleMfaVerified = (io, user, mfaMethod) => {
+const handleMfaVerified = async (io, user, mfaMethod) => {
   try {
     const room = `role:${user.role}`;
-    io.to(room).emit(authEvents.MFA_VERIFIED, {
+    await socketService.emit(io, authEvents.MFA_VERIFIED, {
       userId: user.id,
       role: user.role,
       mfaMethod,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       message: 'MFA verification successful',
-    });
-    logger.logSecurityEvent(authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.MFA_ATTEMPT, {
+    }, room);
+
+    await auditService.logAction({
       userId: user.id,
       role: user.role,
-      mfaMethod,
-      success: true,
+      action: authConstants.AUDIT_LOG_CONSTANTS.LOG_TYPES.MFA_ATTEMPT,
+      details: { mfaMethod, success: true },
+      ipAddress: '0.0.0.0', // Placeholder
     });
   } catch (error) {
     logger.logErrorEvent('Failed to handle MFA verified event', { error: error.message });

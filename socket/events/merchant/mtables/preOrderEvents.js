@@ -1,7 +1,7 @@
+'use strict';
+
 module.exports = {
-  PRE_ORDER_CREATED: 'pre_order:created',
-  PAYMENT_COMPLETED: 'payment:completed',
-  FEEDBACK_SUBMITTED: 'feedback:submitted',
-  POINTS_AWARDED: 'points:awarded',
-  ORDER_STATUS: 'order:status',
+  PRE_ORDER_CREATED: 'merchant:mtables:preOrderCreated',
+  PAYMENT_COMPLETED: 'merchant:mtables:paymentCompleted',
+  FEEDBACK_SUBMITTED: 'merchant:mtables:feedbackSubmitted',
 };

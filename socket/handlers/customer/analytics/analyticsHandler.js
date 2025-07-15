@@ -2,6 +2,7 @@
 
 const logger = require('@utils/logger');
 
+/** Handles analytics-related socket events */
 const analyticsHandler = (io, socket) => {
   socket.on('joinAnalyticsRoom', ({ customerId }) => {
     const room = `customer:${customerId}`;

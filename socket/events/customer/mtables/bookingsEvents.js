@@ -1,10 +1,9 @@
 'use strict';
 
 module.exports = {
-  BOOKING_CREATED: 'created',
-  BOOKING_UPDATED: 'updated',
-  BOOKING_CANCELLED: 'cancelled',
-  CHECK_IN_PROCESSED: 'processed',
-  FEEDBACK_SUBMITTED: 'feedbacked',
-  PARTY_MEMBER_ADDED: 'added',
+  BOOKING_CREATED: 'booking_created',
+  BOOKING_UPDATED: 'booking_updated',
+  BOOKING_CANCELLED: 'booking_cancelled',
+  BOOKING_CHECKED_IN: 'booking_checked_in',
+  BOOKING_FEEDBACK_SUBMITTED: 'booking_feedback_submitted',
 };

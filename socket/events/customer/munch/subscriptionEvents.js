@@ -1,9 +1,7 @@
 'use strict';
 
 module.exports = {
-  SUBSCRIPTION_ENROLLED: 'subscription:enrolled',
-  SUBSCRIPTION_UPGRADED: 'subscription:upgrade',
-  SUBSCRIPTION_DOWNGRADED: 'subscription:downgrade',
-  SUBSCRIPTION_PAUSED: 'subscription:pause',
-  SUBSCRIPTION_CANCELLED: 'subscription:cancel',
+  SUBSCRIPTION_ENROLLED: 'subscription_enrolled',
+  SUBSCRIPTION_UPDATED: 'subscription_updated',
+  SUBSCRIPTION_RENEWED: 'subscription_renewed',
 };

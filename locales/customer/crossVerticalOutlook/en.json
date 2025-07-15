@@ -1,0 +1,18 @@
+{
+  "success": {
+    "services_fetched": "Services fetched successfully",
+    "service_cancelled": "Service cancelled successfully"
+  },
+  "errors": {
+    "services_fetch_failed": "Failed to fetch services",
+    "invalid_service_type": "Invalid service type",
+    "booking_cancellation_failed": "Booking not found or not cancellable",
+    "order_cancellation_failed": "Order not found or not cancellable",
+    "ride_cancellation_failed": "Ride not found or not cancellable",
+    "parking_cancellation_failed": "Parking booking not found or not cancellable",
+    "cancellation_window_expired": "Cancellation window has expired",
+    "invalid_customer_id": "Invalid customer ID",
+    "socket_event_failed": "Socket event processing failed",
+    "service_cancellation_failed": "Failed to cancel service"
+  }
+}

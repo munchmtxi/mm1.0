@@ -1,117 +1,103 @@
 'use strict';
 
-/**
- * customerAnalyticsService.js
- * Manages customer analytics for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const { Op } = require('sequelize');
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
+const { Customer, CustomerBehavior, Order, InDiningOrder, Booking, MenuInventory, ProductCategory, ParkingBooking } = require('@models');
+const customerConstants = require('@constants/customer/customerConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const {
-  Customer,
-  CustomerBehavior,
-  Order,
-  InDiningOrder,
-  Booking,
-  Notification,
-  GamificationPoints,
-  AuditLog,
-  MenuInventory,
-  ProductCategory,
-} = require('@models');
+const { handleServiceError } = require('@utils/errorHandling');
+const logger = require('@utils/logger');
 
-/**
- * Monitors customer order and booking patterns.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Behavior patterns.
- */
-async function trackCustomerBehavior(customerId, io) {
+async function trackCustomerBehavior(customerId, ipAddress, transaction = null) {
   try {
-    if (!customerId) throw new Error('Customer ID required');
+    if (!customerId) {
+      throw new AppError(customerConstants.ERROR_CODES.INVALID_CUSTOMER, 400);
+    }
 
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
+    const customer = await Customer.findByPk(customerId, { attributes: ['user_id', 'preferred_language'], transaction });
+    if (!customer) {
+      throw new AppError(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND, 404);
+    }
 
-    const [behavior, orders, inDiningOrders, bookings] = await Promise.all([
-      CustomerBehavior.findOne({ where: { user_id: customer.user_id } }),
-      Order.count({ where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } } }),
-      InDiningOrder.count({ where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } } }),
-      Booking.count({ where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } } }),
+    const [behavior, orders, inDiningOrders, bookings, parkingBookings] = await Promise.all([
+      CustomerBehavior.findOne({ where: { user_id: customer.user_id }, transaction }),
+      Order.count({
+        where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } },
+        transaction,
+      }),
+      InDiningOrder.count({
+        where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } },
+        transaction,
+      }),
+      Booking.count({
+        where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } },
+        transaction,
+      }),
+      ParkingBooking.count({
+        where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 1)) } },
+        transaction,
+      }),
     ]);
 
-    const updatedBehavior = await CustomerBehavior.upsert({
-      user_id: customer.user_id,
-      bookingFrequency: bookings,
-      orderFrequency: orders + inDiningOrders,
-      rideFrequency: behavior?.rideFrequency || 0,
-      lastUpdated: new Date(),
-    }, { returning: true });
+    const [updatedBehavior] = await CustomerBehavior.upsert(
+      {
+        user_id: customer.user_id,
+        bookingFrequency: bookings,
+        orderFrequency: orders + inDiningOrders,
+        rideFrequency: behavior?.rideFrequency || 0,
+        parkingFrequency: parkingBookings,
+        lastUpdated: new Date(),
+      },
+      { returning: true, transaction }
+    );
 
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'track_customer_behavior',
-      details: { customerId, orders: orders + inDiningOrders, bookings },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'analytics:behaviorTracked', {
+    logger.info(`Customer behavior tracked for customer ${customerId}`);
+    return {
       customerId,
-      behavior: { orders: orders + inDiningOrders, bookings },
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'customer_behavior_tracked',
-      messageKey: 'analytics.customer_behavior_tracked',
-      messageParams: { orderCount: orders + inDiningOrders },
-      role: 'customer',
-      module: 'analytics',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return updatedBehavior[0];
+      behavior: { orders: orders + inDiningOrders, bookings, rideFrequency: updatedBehavior.rideFrequency, parkingFrequency: updatedBehavior.parkingFrequency },
+      language: customer.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
+      action: customerConstants.ANALYTICS_CONSTANTS.AUDIT_TYPES.track_behavior,
+    };
   } catch (error) {
-    logger.error('Error tracking customer behavior', { error: error.message });
-    throw error;
+    throw handleServiceError('trackCustomerBehavior', error, customerConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Identifies customer spending habits.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Spending trends.
- */
-async function analyzeSpendingTrends(customerId, io) {
+async function analyzeSpendingTrends(customerId, ipAddress, transaction = null) {
   try {
-    if (!customerId) throw new Error('Customer ID required');
+    if (!customerId) {
+      throw new AppError(customerConstants.ERROR_CODES.INVALID_CUSTOMER, 400);
+    }
 
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
+    const customer = await Customer.findByPk(customerId, { attributes: ['user_id', 'preferred_language'], transaction });
+    if (!customer) {
+      throw new AppError(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND, 404);
+    }
 
-    const [orders, inDiningOrders] = await Promise.all([
+    const [orders, inDiningOrders, parkingBookings] = await Promise.all([
       Order.findAll({
         where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 3)) } },
         attributes: ['total_amount', 'created_at', 'items'],
+        transaction,
       }),
       InDiningOrder.findAll({
         where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 3)) } },
         attributes: ['total_amount', 'created_at'],
+        transaction,
+      }),
+      ParkingBooking.findAll({
+        where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 3)) } },
+        attributes: ['start_time', 'end_time'],
+        include: [{ model: Payment, as: 'payment', attributes: ['amount'] }],
+        transaction,
       }),
     ]);
 
     const totalSpent = orders.reduce((sum, o) => sum + parseFloat(o.total_amount), 0) +
-                      inDiningOrders.reduce((sum, o) => sum + parseFloat(o.total_amount), 0);
-    const avgOrderValue = (orders.length + inDiningOrders.length) ? (totalSpent / (orders.length + inDiningOrders.length)).toFixed(2) : 0;
+      inDiningOrders.reduce((sum, o) => sum + parseFloat(o.total_amount), 0) +
+      parkingBookings.reduce((sum, b) => sum + (b.payment?.amount || 0), 0);
+    const avgOrderValue = (orders.length + inDiningOrders.length + parkingBookings.length)
+      ? (totalSpent / (orders.length + inDiningOrders.length + parkingBookings.length)).toFixed(2)
+      : 0;
     const favoriteItems = orders
       .flatMap((o) => o.items)
       .reduce((acc, item) => {
@@ -123,59 +109,33 @@ async function analyzeSpendingTrends(customerId, io) {
       .slice(0, 3)
       .map(([name, count]) => ({ name, count }));
 
-    const trends = {
-      totalSpent,
-      averageOrderValue: avgOrderValue,
-      orderCount: orders.length + inDiningOrders.length,
-      topItems,
-    };
-
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'analyze_spending_trends',
-      details: { customerId, totalSpent, orderCount: orders.length + inDiningOrders.length },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'analytics:spendingTrendsAnalyzed', {
+    logger.info(`Spending trends analyzed for customer ${customerId}`);
+    return {
       customerId,
-      totalSpent,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'spending_trends_analyzed',
-      messageKey: 'analytics.spending_trends_analyzed',
-      messageParams: { totalSpent },
-      role: 'customer',
-      module: 'analytics',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return trends;
+      trends: { totalSpent, averageOrderValue: avgOrderValue, orderCount: orders.length + inDiningOrders.length, parkingCount: parkingBookings.length, topItems },
+      language: customer.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
+      action: customerConstants.ANALYTICS_CONSTANTS.AUDIT_TYPES.analyze_spending,
+    };
   } catch (error) {
-    logger.error('Error analyzing spending trends', { error: error.message });
-    throw error;
+    throw handleServiceError('analyzeSpendingTrends', error, customerConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Offers personalized item recommendations.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Recommendations.
- */
-async function provideRecommendations(customerId, io) {
+async function provideRecommendations(customerId, ipAddress, transaction = null) {
   try {
-    if (!customerId) throw new Error('Customer ID required');
+    if (!customerId) {
+      throw new AppError(customerConstants.ERROR_CODES.INVALID_CUSTOMER, 400);
+    }
 
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
+    const customer = await Customer.findByPk(customerId, { attributes: ['user_id', 'preferred_language'], transaction });
+    if (!customer) {
+      throw new AppError(customerConstants.ERROR_CODES.CUSTOMER_NOT_FOUND, 404);
+    }
 
     const orders = await Order.findAll({
       where: { customer_id: customerId, created_at: { [Op.gte]: new Date(new Date().setMonth(new Date().getMonth() - 3)) } },
       include: [{ model: MenuInventory, as: 'orderedItems', include: [{ model: ProductCategory, as: 'category' }] }],
+      transaction,
     });
 
     const categoryCounts = orders
@@ -187,100 +147,29 @@ async function provideRecommendations(customerId, io) {
         return acc;
       }, {});
 
-    const topCategory = Object.entries(categoryCounts)
-      .sort((a, b) => b[1] - a[1])[0]?.[0];
+    const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const previousCategory = orders[0]?.orderedItems[0]?.category?.name || topCategory;
 
     const recommendations = topCategory
       ? await MenuInventory.findAll({
-          where: { category_id: (await ProductCategory.findOne({ where: { name: topCategory } }))?.id },
+          where: { category_id: (await ProductCategory.findOne({ where: { name: topCategory }, transaction }))?.id },
           limit: 5,
           attributes: ['id', 'name', 'price', 'description'],
+          transaction,
         })
       : [];
 
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'provide_recommendations',
-      details: { customerId, recommendationCount: recommendations.length },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'analytics:recommendationsProvided', {
+    logger.info(`Recommendations provided for customer ${customerId}`);
+    return {
       customerId,
-      recommendationCount: recommendations.length,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'recommendations_provided',
-      messageKey: 'analytics.recommendations_provided',
-      messageParams: { itemCount: recommendations.length },
-      role: 'customer',
-      module: 'analytics',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return recommendations;
+      recommendations,
+      language: customer.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
+      action: customerConstants.ANALYTICS_CONSTANTS.AUDIT_TYPES.provide_recommendations,
+      metadata: { topCategory, previousCategory },
+    };
   } catch (error) {
-    logger.error('Error providing recommendations', { error: error.message });
-    throw error;
+    throw handleServiceError('provideRecommendations', error, customerConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-/**
- * Awards points for dashboard analytics engagement.
- * @param {number} customerId - Customer ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points awarded.
- */
-async function trackAnalyticsGamification(customerId, io) {
-  try {
-    if (!customerId) throw new Error('Customer ID required');
-
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
-
-    const points = await pointService.awardPoints({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'analytics_dashboard_engagement',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: customer.user_id,
-      role: 'customer',
-      action: 'track_analytics_gamification',
-      details: { customerId, points: points.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'analytics:pointsAwarded', {
-      customerId,
-      points: points.points,
-    }, `customer:${customerId}`);
-
-    await notificationService.sendNotification({
-      userId: customer.user_id,
-      notificationType: 'analytics_points_awarded',
-      messageKey: 'analytics.analytics_points_awarded',
-      messageParams: { points: points.points },
-      role: 'customer',
-      module: 'analytics',
-      languageCode: customer.preferred_language || 'en',
-    });
-
-    return points;
-  } catch (error) {
-    logger.error('Error tracking analytics gamification', { error: error.message });
-    throw error;
-  }
-}
-
-module.exports = {
-  trackCustomerBehavior,
-  analyzeSpendingTrends,
-  provideRecommendations,
-  trackAnalyticsGamification,
-};
+module.exports = { trackCustomerBehavior, analyzeSpendingTrends, provideRecommendations };

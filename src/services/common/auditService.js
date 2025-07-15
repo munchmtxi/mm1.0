@@ -5,21 +5,20 @@
  * Logs actions for admins, merchants, customers, staff, and drivers for compliance and audit trails.
  * Admins can audit all user actions; merchants can audit staff and customer actions.
  * Used across all service files for consistent logging.
- * Last Updated: May 28, 2025
+ * Last Updated: June 25, 2025
  */
 
 const { AuditLog, User } = require('@models');
-const adminSystemConstants = require('@constants/admin/adminCoreConstants');
+const adminCoreConstants = require('@constants/admin/adminCoreConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
 const customerConstants = require('@constants/customer/customerConstants');
 const staffConstants = require('@constants/staff/staffConstants');
 const driverConstants = require('@constants/driver/driverConstants');
-const meventsConstants = require('@constants/meventsConstants');
-const meventsTrackingConstants = require('@constants/meventsTrackingConstants');
 const { sanitize } = require('sanitize-html');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const NodeCache = require('node-cache');
+const { Op } = require('sequelize');
 
 // Initialize cache for audit queries
 const auditCache = new NodeCache({ stdTTL: 300, checkperiod: 120 });
@@ -232,23 +231,28 @@ async function getAuditLogs(query) {
 function getValidActions(role) {
   switch (role) {
     case 'admin':
-      return adminSystemConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES;
+      return adminCoreConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.reduce((acc, action) => {
+        acc[action] = action;
+        return acc;
+      }, {});
     case 'merchant':
-      return merchantConstants.STAFF_CONSTANTS.TASK_TYPES;
+      return merchantConstants.STAFF_CONSTANTS.DEFAULT_TASK_TYPES.reduce((acc, action) => {
+        acc[action] = action;
+        return acc;
+      }, {});
     case 'customer':
-      return {
-        ...customerConstants.ANALYTICS_CONSTANTS.AUDIT_TYPES,
-        [meventsConstants.AUDIT_TYPES.EVENT_CREATED]: 'event_created',
-        [meventsConstants.AUDIT_TYPES.BILL_PROCESSED]: 'bill_processed',
-        [meventsConstants.AUDIT_TYPES.CHAT_MESSAGE_SENT]: 'chat_message_sent',
-        [meventsTrackingConstants.AUDIT_TYPES.INTERACTION_TRACKED]: 'interaction_tracked',
-        [meventsTrackingConstants.AUDIT_TYPES.ENGAGEMENT_ANALYZED]: 'engagement_analyzed',
-      };
+      return customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.reduce((acc, action) => {
+        acc[action] = action;
+        return acc;
+      }, {});
     case 'staff':
-      return staffConstants.STAFF_AUDIT_ACTIONS;
+      return staffConstants.STAFF_AUDIT_ACTIONS.reduce((acc, action) => {
+        acc[action] = action;
+        return acc;
+      }, {});
     case 'driver':
-      return driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.reduce((acc, action) => {
-        acc[action.action] = action.action;
+      return driverConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.reduce((acc, action) => {
+        acc[action] = action;
         return acc;
       }, {});
     default:
@@ -264,15 +268,15 @@ function getValidActions(role) {
 function getErrorCode(role) {
   switch (role) {
     case 'admin':
-      return adminSystemConstants.ERROR_CODES.AUDIT_LOG_ACCESS_DENIED;
+      return adminCoreConstants.ERROR_CODES.find((code) => code === 'PERMISSION_DENIED') || 'PERMISSION_DENIED';
     case 'merchant':
-      return merchantConstants.ERROR_CODES.PERMISSION_DENIED;
+      return merchantConstants.ERROR_CODES.find((code) => code === 'PERMISSION_DENIED') || 'PERMISSION_DENIED';
     case 'customer':
-      return customerConstants.ERROR_CODES.PERMISSION_DENIED;
+      return customerConstants.ERROR_CODES.find((code) => code === 'PERMISSION_DENIED') || 'PERMISSION_DENIED';
     case 'staff':
-      return staffConstants.STAFF_ERROR_CODES.find((code) => code === 'PERMISSION_DENIED');
+      return staffConstants.STAFF_ERROR_CODES.find((code) => code === 'PERMISSION_DENIED') || 'PERMISSION_DENIED';
     case 'driver':
-      return driverConstants.ERROR_CODES.find((code) => code === 'PERMISSION_DENIED');
+      return driverConstants.ERROR_CODES.find((code) => code === 'PERMISSION_DENIED') || 'PERMISSION_DENIED';
     default:
       return 'UNKNOWN_ERROR';
   }

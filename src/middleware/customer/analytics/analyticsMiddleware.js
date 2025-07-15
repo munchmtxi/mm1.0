@@ -1,11 +1,11 @@
 'use strict';
 
-const { authenticate, restrictTo, checkPermissions } = require('@middleware/common/auth/authMiddleware');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const catchAsync = require('@utils/catchAsync');
 const customerConstants = require('@constants/customer/customerConstants');
 
+/** Validates analytics access */
 const validateAnalyticsAccess = catchAsync(async (req, res, next) => {
   const customerId = req.params.customerId || req.body.customer_id;
   const userId = req.user.id;
@@ -27,8 +27,5 @@ const validateAnalyticsAccess = catchAsync(async (req, res, next) => {
 });
 
 module.exports = {
-  authenticate,
-  restrictTo,
-  checkPermissions,
   validateAnalyticsAccess,
 };

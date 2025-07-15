@@ -1,35 +1,17 @@
 'use strict';
 
-/**
- * Driver Safety Service
- * Manages driver safety incidents, SOS triggers, status checks, and discreet alerts.
- */
-
 const { v4: uuidv4 } = require('uuid');
 const { Driver, User, Ride, Order, DriverSafetyIncident, sequelize } = require('@models');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
 const driverConstants = require('@constants/driverConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-/**
- * Generates a unique incident number
- * @returns {string} - Unique incident number
- */
 function generateIncidentNumber() {
   return `INC-${uuidv4().substr(0, 8).toUpperCase()}`;
 }
 
-/**
- * Logs an emergency or safety incident.
- * @param {number} driverId - Driver ID.
- * @param {Object} incidentDetails - Incident details (incident_type, description, location, ride_id, delivery_order_id).
- * @returns {Promise<Object>} - Created incident details.
- */
-async function reportIncident(driverId, incidentDetails) {
+async function reportIncident(driverId, incidentDetails, auditService, notificationService, socketService, pointService) {
   const { incident_type, description, location, ride_id, delivery_order_id } = incidentDetails;
 
   if (!driverConstants.SAFETY_CONSTANTS.INCIDENT_TYPES.includes(incident_type)) {
@@ -47,7 +29,6 @@ async function reportIncident(driverId, incidentDetails) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Validate ride_id or delivery_order_id
     if (ride_id) {
       const ride = await Ride.findByPk(ride_id, { transaction });
       if (!ride || ride.driverId !== driverId) {
@@ -93,7 +74,7 @@ async function reportIncident(driverId, incidentDetails) {
         message: formatMessage(
           'driver',
           'safety',
-          driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
           'safety.incident_reported',
           { incident_number: incident.incident_number }
         ),
@@ -101,6 +82,13 @@ async function reportIncident(driverId, incidentDetails) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'safety_report').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'safety:incident_reported', {
       driverId,
@@ -124,12 +112,7 @@ async function reportIncident(driverId, incidentDetails) {
   }
 }
 
-/**
- * Activates immediate assistance for the driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} - SOS incident details.
- */
-async function triggerSOS(driverId) {
+async function triggerSOS(driverId, auditService, notificationService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -166,16 +149,15 @@ async function triggerSOS(driverId) {
         message: formatMessage(
           'driver',
           'safety',
-          driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
           'safety.sos_triggered',
-          { incident_number: incident.incident_number }
+          { incident_number: incident.incient_number }
         ),
         priority: 'CRITICAL',
       },
       { transaction }
     );
 
-    // Notify support team and authorities (simulated)
     await notificationService.sendNotification(
       {
         userId: driverConstants.SAFETY_CONSTANTS.SUPPORT_TEAM_ID,
@@ -185,6 +167,13 @@ async function triggerSOS(driverId) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'sos_trigger').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'safety:sos_triggered', {
       driverId,
@@ -207,12 +196,7 @@ async function triggerSOS(driverId) {
   }
 }
 
-/**
- * Retrieves safety alerts and incident reports for the driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} - Safety status and recent incidents.
- */
-async function getSafetyStatus(driverId) {
+async function getSafetyStatus(driverId, auditService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -259,6 +243,13 @@ async function getSafetyStatus(driverId) {
       { transaction }
     );
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'safety_status_check').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emitToUser(driver.user_id, 'safety:status_updated', { driverId, status });
 
     await transaction.commit();
@@ -270,13 +261,7 @@ async function getSafetyStatus(driverId) {
   }
 }
 
-/**
- * Sends a discreet safety alert to support.
- * @param {number} driverId - Driver ID.
- * @param {string} alertType - Alert type (e.g., 'UNSAFE_SITUATION', 'HARASSMENT').
- * @returns {Promise<Object>} - Alert incident details.
- */
-async function sendDiscreetAlert(driverId, alertType) {
+async function sendDiscreetAlert(driverId, alertType, auditService, notificationService, socketService, pointService) {
   if (!driverConstants.SAFETY_CONSTANTS.ALERT_TYPES.includes(alertType)) {
     throw new AppError('Invalid alert type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
@@ -319,6 +304,13 @@ async function sendDiscreetAlert(driverId, alertType) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'discreet_alert').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'safety:discreet_alert_sent', {
       driverId,

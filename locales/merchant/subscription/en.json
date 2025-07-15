@@ -1,0 +1,19 @@
+{
+  "subscriptionManagement": {
+    "planCreated": "Subscription plan {name} created successfully",
+    "subscriptionManaged": "Subscription {subscriptionName} {operation} successfully",
+    "pointsAwarded": "You earned {points} points for subscription activity!",
+    "errors": {
+      "invalidCurrency": "Invalid currency provided",
+      "invalidPrice": "Price must be greater than zero",
+      "invalidDuration": "Duration must be greater than zero",
+      "invalidMerchant": "Merchant not found",
+      "invalidCustomer": "Customer not found",
+      "subscriptionNotFound": "Subscription not found",
+      "subscriptionAlreadyActive": "Subscription is already active",
+      "maxSubscriptionsReached": "Maximum active subscriptions reached",
+      "unauthorizedSubscription": "Unauthorized subscription operation",
+      "invalidOperation": "Invalid subscription operation"
+    }
+  }
+}

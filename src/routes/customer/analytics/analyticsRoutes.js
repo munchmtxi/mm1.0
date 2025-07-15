@@ -11,11 +11,9 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  * /api/customer/analytics/behavior/{customerId}:
  *   post:
  *     summary: Track customer behavior
- *     description: Tracks customer behavior based on bookings, orders, and rides over the last 30 days. Awards gamification points automatically.
+ *     description: Tracks customer behavior based on bookings, orders, rides, and parking over the last 30 days.
  *     tags:
  *       - Customer Analytics
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: customerId
@@ -65,10 +63,13 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                         rideFrequency:
  *                           type: integer
  *                           example: 3
+ *                         parkingFrequency:
+ *                           type: integer
+ *                           example: 2
  *                         lastUpdated:
  *                           type: string
  *                           format: date-time
- *                           example: 2025-05-31T14:10:00.000Z
+ *                           example: 2025-06-27T10:45:00.000Z
  *                     gamificationError:
  *                       type: object
  *                       nullable: true
@@ -78,84 +79,22 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                           example: Failed to award points
  *       400:
  *         description: Invalid request parameters
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Invalid request parameters
- *                 code:
- *                   type: string
- *                   example: INVALID_REQUEST
- *                 details:
- *                   type: array
- *                   items:
- *                     type: string
- *                   example: ["Customer ID must be a positive integer"]
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Unauthorized
- *                 code:
- *                   type: string
- *                   example: UNAUTHORIZED
  *       403:
  *         description: Forbidden
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Forbidden
- *                 code:
- *                   type: string
- *                   example: PERMISSION_DENIED
  *       404:
  *         description: Customer not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Customer not found
- *                 code:
- *                   type: string
- *                   example: CUSTOMER_NOT_FOUND
+ *       400:
+ *         description: Behavior tracking failed
+ */
 
 /**
  * @swagger
  * /api/customer/analytics/spending/{customerId}:
  *   post:
  *     summary: Analyze customer spending trends
- *     description: Analyzes spending trends over the last 90 days, including payments, subscriptions, and promotions. Awards gamification points automatically.
+ *     description: Analyzes spending trends over the last 90 days, including payments, subscriptions, and promotions.
  *     tags:
  *       - Customer Analytics
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: customerId
@@ -216,7 +155,7 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                           example: USD
  *                         period:
  *                           type: string
- *                           example: last 90 days
+ *                           example: monthly
  *                     gamificationError:
  *                       type: object
  *                       nullable: true
@@ -226,84 +165,22 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                           example: Failed to award points
  *       400:
  *         description: Invalid request parameters
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Invalid request parameters
- *                 code:
- *                   type: string
- *                   example: INVALID_REQUEST
- *                 details:
- *                   type: array
- *                   items:
- *                     type: string
- *                   example: ["Customer ID must be a positive integer"]
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Unauthorized
- *                 code:
- *                   type: string
- *                   example: UNAUTHORIZED
  *       403:
  *         description: Forbidden
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Forbidden
- *                 code:
- *                   type: string
- *                   example: PERMISSION_DENIED
  *       404:
  *         description: Customer not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Customer not found
- *                 code:
- *                   type: string
- *                   example: CUSTOMER_NOT_FOUND
+ *       400:
+ *         description: Spending analysis failed
+ */
 
 /**
  * @swagger
  * /api/customer/analytics/recommendations/{customerId}:
  *   post:
  *     summary: Provide personalized recommendations
- *     description: Provides personalized product recommendations based on customer preferences and feedback. Sends a notification and awards gamification points automatically.
+ *     description: Provides personalized product recommendations based on customer preferences and feedback.
  *     tags:
  *       - Customer Analytics
- *     security:
- *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: customerId
@@ -354,7 +231,7 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                                 example: 456
  *                               recommendationType:
  *                                 type: string
- *                                 example: food
+ *                                 example: restaurants
  *                               eventType:
  *                                 type: string
  *                                 example: purchase
@@ -379,59 +256,45 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *                           example: Failed to award points
  *       400:
  *         description: Invalid request parameters
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Invalid request parameters
- *                 code:
- *                   type: string
- *                   example: INVALID_REQUEST
- *                 details:
- *                   type: array
- *                   items:
- *                     type: string
- *                   example: ["Customer ID must be a positive integer"]
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Unauthorized
- *                 code:
- *                   type: string
- *                   example: UNAUTHORIZED
  *       403:
  *         description: Forbidden
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: error
- *                 message:
- *                   type: string
- *                   example: Forbidden
- *                 code:
- *                   type: string
- *                   example: PERMISSION_DENIED
  *       404:
  *         description: Customer not found
+ *       400:
+ *         description: Recommendation failed
+ */
+
+/**
+ * @swagger
+ * /api/customer/analytics/parking/{customerId}:
+ *   post:
+ *     summary: Track customer parking behavior
+ *     description: Tracks customer parking behavior over the last 30 days.
+ *     tags:
+ *       - Customer Analytics
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the customer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - customer_id
+ *             properties:
+ *               customer_id:
+ *                 type: integer
+ *                 description: ID of the customer (alternative to path parameter)
+ *                 example: 123
+ *     responses:
+ *       200:
+ *         description: Parking behavior tracked successfully
  *         content:
  *           application/json:
  *             schema:
@@ -439,26 +302,53 @@ const analyticsValidator = require('@validators/customer/analytics/analyticsVali
  *               properties:
  *                 status:
  *                   type: string
- *                   example: error
+ *                   example: success
  *                 message:
  *                   type: string
- *                   example: Customer not found
- *                 code:
- *                   type: string
- *                   example: CUSTOMER_NOT_FOUND
- * components:
- *   securitySchemes:
- *     bearerAuth:
- *       type: http
- *       scheme: bearer
- *       bearerFormat: JWT
+ *                   example: Parking behavior tracked for customer 123
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     behavior:
+ *                       type: object
+ *                       properties:
+ *                         parkingFrequency:
+ *                           type: integer
+ *                           example: 2
+ *                         preferredSpaceTypes:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               type:
+ *                                 type: string
+ *                                 example: HOURLY
+ *                               count:
+ *                                 type: integer
+ *                                 example: 1
+ *                         lastUpdated:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2025-06-27T10:45:00.000Z
+ *                     gamificationError:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         message:
+ *                           type: string
+ *                           example: Failed to award points
+ *       400:
+ *         description: Invalid request parameters
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Customer not found
+ *       400:
+ *         description: Parking behavior tracking failed
  */
 
 router.post(
   '/behavior/:customerId',
-  analyticsMiddleware.authenticate,
-  analyticsMiddleware.restrictTo('customer'),
-  analyticsMiddleware.checkPermissions('track_behavior'),
   analyticsValidator.validateAnalytics,
   analyticsMiddleware.validateAnalyticsAccess,
   analyticsController.trackBehavior
@@ -466,9 +356,6 @@ router.post(
 
 router.post(
   '/spending/:customerId',
-  analyticsMiddleware.authenticate,
-  analyticsMiddleware.restrictTo('customer'),
-  analyticsMiddleware.checkPermissions('analyze_spending'),
   analyticsValidator.validateAnalytics,
   analyticsMiddleware.validateAnalyticsAccess,
   analyticsController.analyzeSpending
@@ -476,12 +363,16 @@ router.post(
 
 router.post(
   '/recommendations/:customerId',
-  analyticsMiddleware.authenticate,
-  analyticsMiddleware.restrictTo('customer'),
-  analyticsMiddleware.checkPermissions('get_recommendations'),
   analyticsValidator.validateAnalytics,
   analyticsMiddleware.validateAnalyticsAccess,
   analyticsController.getRecommendations
+);
+
+router.post(
+  '/parking/:customerId',
+  analyticsValidator.validateAnalytics,
+  analyticsMiddleware.validateAnalyticsAccess,
+  analyticsController.trackParkingBehavior
 );
 
 module.exports = router;

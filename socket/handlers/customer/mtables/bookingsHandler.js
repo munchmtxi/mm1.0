@@ -1,19 +1,27 @@
 'use strict';
 
-const logger = require('@utils/logger');
+const socketService = require('@services/common/socketService');
+const customerConstants = require('@constants/customer/customerConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 
-const bookingHandler = (io, socket) => {
-  socket.on('joinBookingRoom', ({ bookingId }) => {
-    const room = `booking:${bookingId}`;
-    socket.join(room);
-    logger.info('User joined booking room', { room, userId: socket.user_id });
-  });
+module.exports = {
+  handleBookingCreated(io, data, room, languageCode) {
+    socketService.emit(io, customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], data, room, languageCode);
+  },
 
-  socket.on('leaveBookingRoom', ({ bookingId }) => {
-    const room = `booking:${bookingId}`;
-    socket.leave(room);
-    logger.info('User left booking room', { room, userId: socket.user_id });
-  });
+  handleBookingUpdated(io, data, room, languageCode) {
+    socketService.emit(io, customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[2], data, room, languageCode);
+  },
+
+  handleBookingCancelled(io, data, room, languageCode) {
+    socketService.emit(io, customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], data, room, languageCode);
+  },
+
+  handleBookingCheckedIn(io, data, room, languageCode) {
+    socketService.emit(io, customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[1], data, room, languageCode);
+  },
+
+  handleBookingFeedbackSubmitted(io, data, room, languageCode) {
+    socketService.emit(io, customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[2], data, room, languageCode);
+  },
 };
-
-module.exports = bookingHandler;

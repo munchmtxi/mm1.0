@@ -1,63 +1,46 @@
 'use strict';
 
-/**
- * Driver Route Optimization Service
- * Manages route optimization operations, including calculating optimal routes,
- * updating routes, retrieving route details, and awarding gamification points.
- */
-
 const { Driver, Route, sequelize } = require('@models');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
 const driverConstants = require('@constants/driverConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const routeOptimizationConstants = require('@constants/driver/routeOptimizationConstants');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-/**
- * Calculates the optimal route between origin and destination.
- * @param {Object} origin - Origin coordinates { lat, lng }.
- * @param {Object} destination - Destination coordinates { lat, lng }.
- * @returns {Promise<Object>} Optimal route details.
- */
-async function calculateOptimalRoute(origin, destination) {
+async function calculateOptimalRoute(origin, destination, pointService) {
   if (!origin || !origin.lat || !origin.lng || !destination || !destination.lat || !destination.lng) {
     throw new AppError('Missing origin or destination coordinates', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
 
-  // Simulate external routing API call (e.g., Google Maps Directions API)
-  const distance = calculateDistance(origin, destination); // In km
-  const duration = calculateEstimatedTime(origin, destination); // In minutes
+  const distance = calculateDistance(origin, destination);
+  const duration = calculateEstimatedTime(origin, destination);
   const routeDetails = {
     origin,
     destination,
-    waypoints: [], // Simplified; real API would return optimized waypoints
-    distance, // In km
-    duration, // In minutes
-    polyline: 'encoded_polyline_string', // Placeholder
+    waypoints: [],
+    distance,
+    duration,
+    polyline: 'encoded_polyline_string',
     steps: [
       { instruction: 'Start at origin', distance: 0, duration: 0 },
       { instruction: `Head to destination (${destination.lat}, ${destination.lng})`, distance, duration },
-    ], // Simplified steps
-    trafficModel: 'best_guess', // Default traffic model
-    fuel_efficiency_score: driverConstants.LOCATION_CONSTANTS.ROUTE_OPTIMIZATION.FUEL_EFFICIENCY_WEIGHT * 100,
-    time_efficiency_score: driverConstants.LOCATION_CONSTANTS.ROUTE_OPTIMIZATION.TIME_EFFICIENCY_WEIGHT * 100,
+    ],
+    trafficModel: 'best_guess',
+    fuel_efficiency_score: routeOptimizationConstants.ROUTE_OPTIMIZATION.FUEL_EFFICIENCY_WEIGHT * 100,
+    time_efficiency_score: routeOptimizationConstants.ROUTE_OPTIMIZATION.TIME_EFFICIENCY_WEIGHT * 100,
   };
+
+  await pointService.awardPoints({
+    userId: 'system', // System-initiated action
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_calculate').action,
+    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Optimal route calculated', { origin, destination });
   return routeDetails;
 }
 
-/**
- * Updates an existing route with new waypoints.
- * @param {number} driverId - Driver ID.
- * @param {number} routeId - Route ID.
- * @param {Array<Object>} newWaypoints - Array of waypoints [{ lat, lng }].
- * @returns {Promise<void>}
- */
-async function updateRoute(driverId, routeId, newWaypoints) {
+async function updateRoute(driverId, routeId, newWaypoints, auditService, notificationService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -80,7 +63,6 @@ async function updateRoute(driverId, routeId, newWaypoints) {
     const updates = { updated_at: new Date() };
     if (newWaypoints) {
       updates.waypoints = newWaypoints;
-      // Recalculate distance and duration (simplified)
       updates.distance = calculateDistance(route.origin, route.destination);
       updates.duration = calculateEstimatedTime(route.origin, route.destination);
     }
@@ -90,14 +72,14 @@ async function updateRoute(driverId, routeId, newWaypoints) {
     await auditService.logAction({
       userId: driverId.toString(),
       role: 'driver',
-      action: 'UPDATE_ROUTE',
+      action: routeOptimizationConstants.AUDIT_TYPES.UPDATE_ROUTE,
       details: { driverId, routeId, newWaypoints },
       ipAddress: 'unknown',
     });
 
     await notificationService.sendNotification({
       userId: driver.user_id,
-      notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SCHEDULE_UPDATE,
+      notificationType: routeOptimizationConstants.NOTIFICATION_TYPES.ROUTE_UPDATED,
       message: formatMessage(
         'driver',
         'route',
@@ -108,7 +90,14 @@ async function updateRoute(driverId, routeId, newWaypoints) {
       priority: 'MEDIUM',
     });
 
-    socketService.emit(null, 'route:updated', { driverId, routeId, newWaypoints });
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_update').action,
+      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    socketService.emit(null, routeOptimizationConstants.EVENT_TYPES.ROUTE_UPDATED, { driverId, routeId, newWaypoints });
 
     await transaction.commit();
     logger.info('Route updated', { driverId, routeId });
@@ -118,12 +107,7 @@ async function updateRoute(driverId, routeId, newWaypoints) {
   }
 }
 
-/**
- * Retrieves route details.
- * @param {number} routeId - Route ID.
- * @returns {Promise<Object>} Route details.
- */
-async function getRouteDetails(routeId) {
+async function getRouteDetails(routeId, auditService, pointService) {
   const route = await Route.findByPk(routeId, {
     include: [
       { model: sequelize.models.Order, as: 'orders', attributes: ['id', 'status'] },
@@ -131,6 +115,21 @@ async function getRouteDetails(routeId) {
     ],
   });
   if (!route) throw new AppError('Route not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+
+  await auditService.logAction({
+    userId: 'system',
+    role: 'driver',
+    action: routeOptimizationConstants.AUDIT_TYPES.GET_ROUTE_DETAILS,
+    details: { routeId },
+    ipAddress: 'unknown',
+  });
+
+  await pointService.awardPoints({
+    userId: 'system',
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_details_access').action,
+    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Route details retrieved', { routeId });
   return {
@@ -150,65 +149,25 @@ async function getRouteDetails(routeId) {
   };
 }
 
-/**
- * Awards gamification points for efficient route optimization.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Points awarded record.
- */
-async function awardRoutePoints(driverId) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
-
-  if (!driver.active_route_id) {
-    throw new AppError('No active route found', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
-  }
-
-  const route = await Route.findByPk(driver.active_route_id);
-  if (!route) throw new AppError('Route not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
-
-  const pointsRecord = await pointService.awardPoints({
-    userId: driver.user_id,
-    role: 'driver',
-    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.EFFICIENT_ROUTER.action,
-    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-  });
-
-  logger.info('Route points awarded', { driverId, points: pointsRecord.points });
-  return pointsRecord;
-}
-
-/**
- * Helper: Calculates approximate distance between two points (Haversine formula).
- * @param {Object} start - Start coordinates { lat, lng }.
- * @param {Object} end - End coordinates { lat, lng }.
- * @returns {number} Distance in kilometers.
- */
 function calculateDistance(start, end) {
-  const R = 6371; // Earth's radius in km
+  const R = 6371;
   const dLat = (end.lat - start.lat) * Math.PI / 180;
   const dLng = (end.lng - start.lng) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
             Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) *
             Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in km
+  return R * c;
 }
 
-/**
- * Helper: Estimates travel time based on distance.
- * @param {Object} start - Start coordinates { lat, lng }.
- * @param {Object} end - End coordinates { lat, lng }.
- * @returns {number} Estimated time in minutes.
- */
 function calculateEstimatedTime(start, end) {
   const distance = calculateDistance(start, end);
-  const averageSpeedKmh = 40; // Assume average speed
-  return (distance / averageSpeedKmh) * 60; // Time in minutes
+  const averageSpeedKmh = routeOptimizationConstants.ROUTE_OPTIMIZATION.AVERAGE_SPEED_KMH;
+  return (distance / averageSpeedKmh) * 60;
 }
 
 module.exports = {
   calculateOptimalRoute,
   updateRoute,
   getRouteDetails,
-  awardRoutePoints,
 };

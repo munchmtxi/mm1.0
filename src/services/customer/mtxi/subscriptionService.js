@@ -4,37 +4,38 @@ const { Subscription, Customer } = require('@models');
 const customerConstants = require('@constants/customer/customerConstants');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-const { sequelize } = require('sequelize');
 
 async function enrollSubscription(customerId, planId, serviceType, transaction) {
   const customer = await Customer.findByPk(customerId, { transaction });
   if (!customer) throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
 
-  if (!['mtxi', 'munch', 'mtables'].includes(serviceType)) {
+  if (!customerConstants.CROSS_VERTICAL_CONSTANTS.SERVICES.includes(serviceType)) {
     throw new AppError('Invalid service type', 400, customerConstants.ERROR_CODES[0]);
   }
 
-  if (!['BASIC', 'PREMIUM'].includes(planId)) {
+  if (!customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS.some(plan => plan.name === planId)) {
     throw new AppError('Invalid plan', 400, customerConstants.ERROR_CODES[0]);
   }
 
   const activeSubscriptions = await Subscription.count({
-    where: { customer_id: customerId, status: 'active' },
+    where: { customer_id: customerId, status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0] },
     transaction,
   });
   if (activeSubscriptions >= customerConstants.SUBSCRIPTION_CONSTANTS.MAX_ACTIVE_SUBSCRIPTIONS) {
-    throw new AppError('Max subscriptions exceeded', 400, customerConstants.ERROR_CODES[2]);
+    throw new AppError('Max subscriptions exceeded', 400, customerConstants.ERROR_CODES[0]);
   }
 
-  const plan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS[planId];
-  const paymentAmount = plan.amount || (serviceType === 'mtxi' ? 10 : 15);
+  const plan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS.find(p => p.name === planId);
+  const paymentAmount = plan.price === 'dynamic'
+    ? customerConstants.SUBSCRIPTION_CONSTANTS.DYNAMIC_PRICING[serviceType] || 10
+    : plan.price;
 
   const subscription = await Subscription.create(
     {
       customer_id: customerId,
       service_type: serviceType,
       plan: planId,
-      status: 'active',
+      status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0],
       start_date: new Date(),
       end_date: new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000),
       total_amount: paymentAmount,
@@ -54,21 +55,23 @@ async function manageSubscription(customerId, subscriptionId, action, newPlanId,
   if (!customer) throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
 
   const subscription = await Subscription.findOne({
-    where: { id: subscriptionId, customer_id: customerId, status: 'active' },
+    where: { id: subscriptionId, customer_id: customerId, status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0] },
     transaction,
   });
-  if (!subscription) throw new AppError('Active subscription not found', 404, customerConstants.ERROR_CODES[3]);
+  if (!subscription) throw new AppError('Active subscription not found', 404, customerConstants.ERROR_CODES[0]);
 
   if (action === 'UPGRADE') {
-    if (!['BASIC', 'PREMIUM'].includes(newPlanId)) {
+    if (!customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS.some(plan => plan.name === newPlanId)) {
       throw new AppError('Invalid plan', 400, customerConstants.ERROR_CODES[0]);
     }
     if (newPlanId === subscription.plan) {
       throw new AppError('Same plan selected', 400, customerConstants.ERROR_CODES[0]);
     }
 
-    const newPlan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS[newPlanId];
-    const paymentAmount = newPlan.amount || (subscription.service_type === 'mtxi' ? 15 : 20);
+    const newPlan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS.find(p => p.name === newPlanId);
+    const paymentAmount = newPlan.price === 'dynamic'
+      ? customerConstants.SUBSCRIPTION_CONSTANTS.DYNAMIC_PRICING[subscription.service_type] || 15
+      : newPlan.price;
 
     await subscription.update(
       {
@@ -81,12 +84,12 @@ async function manageSubscription(customerId, subscriptionId, action, newPlanId,
       { transaction }
     );
   } else if (action === 'PAUSE') {
-    if (subscription.status === 'paused') {
-      throw new AppError('Subscription already paused', 400, customerConstants.ERROR_CODES[4]);
+    if (subscription.status === customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[1]) {
+      throw new AppError('Subscription already paused', 400, customerConstants.ERROR_CODES[0]);
     }
     await subscription.update(
       {
-        status: 'paused',
+        status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[1],
         updated_at: new Date(),
       },
       { transaction }
@@ -104,14 +107,21 @@ async function cancelSubscription(customerId, subscriptionId, transaction) {
   if (!customer) throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
 
   const subscription = await Subscription.findOne({
-    where: { id: subscriptionId, customer_id: customerId, status: ['active', 'paused'] },
+    where: {
+      id: subscriptionId,
+      customer_id: customerId,
+      status: [
+        customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0],
+        customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[1],
+      ],
+    },
     transaction,
   });
-  if (!subscription) throw new AppError('Subscription not found or not cancellable', 404, customerConstants.ERROR_CODES[3]);
+  if (!subscription) throw new AppError('Subscription not found or not cancellable', 404, customerConstants.ERROR_CODES[0]);
 
   await subscription.update(
     {
-      status: 'cancelled',
+      status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[2],
       updated_at: new Date(),
     },
     { transaction }
@@ -126,7 +136,7 @@ async function trackSubscriptionTiers(customerId, transaction) {
   if (!customer) throw new AppError('Customer not found', 404, customerConstants.ERROR_CODES[1]);
 
   const subscription = await Subscription.findOne({
-    where: { customer_id: customerId, status: 'active' },
+    where: { customer_id: customerId, status: customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_STATUSES[0] },
     transaction,
   });
 
@@ -135,17 +145,10 @@ async function trackSubscriptionTiers(customerId, transaction) {
     subscriptionId: subscription?.id || null,
     serviceType: subscription?.service_type || null,
     plan: subscription?.plan || null,
-    tier: null,
-    benefits: [],
-    sharingEnabled: false,
+    tier: subscription ? (subscription.plan === 'PREMIUM' ? 'SILVER' : 'BRONZE') : null,
+    benefits: subscription ? customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS.find(p => p.name === subscription.plan)?.benefits || [] : [],
+    sharingEnabled: subscription?.sharing_enabled || false,
   };
-
-  if (subscription) {
-    const plan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS[subscription.plan];
-    tierDetails.tier = customerConstants.PROMOTION_CONSTANTS.LOYALTY_TIERS[subscription.plan === 'PREMIUM' ? 'GOLD' : 'BRONZE'].name;
-    tierDetails.benefits = plan.benefits || [];
-    tierDetails.sharingEnabled = subscription.sharing_enabled;
-  }
 
   logger.info('Subscription tiers tracked', { customerId, tier: tierDetails.tier });
   return tierDetails;

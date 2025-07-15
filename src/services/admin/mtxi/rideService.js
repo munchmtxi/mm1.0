@@ -1,38 +1,16 @@
 'use strict';
 
-/**
- * Ride Service for mtxi (Admin)
- * Manages ride progress, shared ride coordination, ride points, and route optimization.
- * Integrates with notification, socket, audit, localization, point, and location services.
- *
- * Last Updated: May 27, 2025
- */
-
 const { Ride, Route, RideCustomer, Driver } = require('@models');
 const rideConstants = require('@constants/common/rideConstants');
 const driverConstants = require('@constants/common/driverConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
-const pointService = require('@services/common/pointService');
-const locationService = require('@services/common/locationService');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils');
 const { AppError } = require('@utils/AppError');
 
-/**
- * Tracks real-time ride progress.
- * @param {number} rideId - Ride ID.
- * @returns {Object} Ride progress details.
- */
-async function monitorRides(rideId) {
+async function monitorRides(rideId, { notificationService, socketService, auditService }) {
   try {
     if (!rideId) {
-      throw new AppError(
-        'ride_id required',
-        400,
-        rideConstants.ERROR_CODES.INVALID_RIDE
-      );
+      throw new AppError('ride_id required', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
     }
 
     const ride = await Ride.findByPk(rideId, {
@@ -42,11 +20,7 @@ async function monitorRides(rideId) {
       ],
     });
     if (!ride) {
-      throw new AppError(
-        'ride not found',
-        404,
-        rideConstants.ERROR_CODES.RIDE_NOT_FOUND
-      );
+      throw new AppError('ride not found', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
     }
 
     const progress = {
@@ -57,7 +31,6 @@ async function monitorRides(rideId) {
       estimatedTimeRemaining: ride.route?.duration || 0,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: ride.driver?.user_id.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_UPDATE,
@@ -67,14 +40,12 @@ async function monitorRides(rideId) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'ride:progress_updated', {
       rideId,
       status: ride.status,
       currentLocation: progress.currentLocation,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: ride.driver?.user_id.toString(),
       action: rideConstants.ANALYTICS_CONSTANTS.METRICS.ROUTE_EFFICIENCY,
@@ -90,49 +61,29 @@ async function monitorRides(rideId) {
   }
 }
 
-/**
- * Oversees shared ride coordination.
- * @param {number} rideId - Ride ID.
- * @param {Object} coordination - { customerIds: number[], stops: { lat: number, lng: number }[] }.
- * @returns {Object} Shared ride details.
- */
-async function manageSharedRides(rideId, coordination) {
+async function manageSharedRides(rideId, coordination, { notificationService, socketService, auditService }) {
   try {
     if (!rideId || !coordination?.customerIds?.length || !coordination?.stops?.length) {
-      throw new AppError(
-        'invalid ride_id or coordination details',
-        400,
-        rideConstants.ERROR_CODES.INVALID_RIDE
-      );
+      throw new AppError('invalid ride_id or coordination details', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
     }
 
     const ride = await Ride.findByPk(rideId, {
       include: [{ model: Route, as: 'route' }],
     });
     if (!ride || ride.rideType !== rideConstants.RIDE_TYPES.SHARED) {
-      throw new AppError(
-        'ride not found or not shared',
-        404,
-        rideConstants.ERROR_CODES.RIDE_NOT_FOUND
-      );
+      throw new AppError('ride not found or not shared', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
     }
 
-    if (coordinationDetails.customerIds.length > rideConstants.SHARED_RIDE_COUNT.MAX_PERSONS || coordination.stops.length > rideConstants.SHARED_RIDE_COUNT.MAX_STOPS) {
-      throw new AppError(
-        'exceeds shared ride limits',
-        400,
-        rideConstants.ERROR_CODES.RIDE_BOOKING_FAILED
-      );
+    if (coordination.customerIds.length > rideConstants.SHARED_RIDE_COUNT.MAX_PERSONS || coordination.stops.length > rideConstants.SHARED_RIDE_COUNT.MAX_STOPS) {
+      throw new AppError('exceeds shared ride limits', 400, rideConstants.ERROR_CODES.RIDE_BOOKING_FAILED);
     }
 
-    // Update ride customers
-    await RideCustomer.destroy({ where: { rideId: rideId });
-    await RideCustomer.bulkCreate(coordinationDetails.customerIds.map(customerId => ({
-      rideId: rideId,
-      customerId: customerId,
+    await RideCustomer.destroy({ where: { rideId } });
+    await RideCustomer.bulkCreate(coordination.customerIds.map(customerId => ({
+      rideId,
+      customerId,
     })));
 
-    // Update route waypoints
     await ride.route.update({
       stops: coordination.stops,
     });
@@ -144,7 +95,6 @@ async function manageSharedRides(rideId, coordination) {
       updatedAt: new Date(),
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: ride.driverId?.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_UPDATE,
@@ -154,14 +104,12 @@ async function manageSharedRides(rideId, coordination) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'ride:shared_updated', {
       rideId,
       customerCount: sharedRideDetails.customerCount,
       stops: sharedRideDetails.stops,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: ride.driverId?.toString(),
       action: rideConstants.ANALYTICS_CONSTANTS.METRICS.ROUTE_EFFICIENCY,
@@ -177,28 +125,15 @@ async function manageSharedRides(rideId, coordination) {
   }
 }
 
-/**
- * Awards ride completion points to a driver.
- * @param {number} driverId - Driver ID.
- * @returns {Object} Points awarded details.
- */
-async function awardRidePoints(driverId) {
+async function awardRidePoints(driverId, { notificationService, socketService, auditService, pointService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const completedRides = await Ride.count({
@@ -206,11 +141,7 @@ async function awardRidePoints(driverId) {
     });
 
     if (!completedRides) {
-      throw new AppError(
-        'no completed rides',
-        404,
-        rideConstants.ERROR_CODES.NO_COMPLETED_RIDES
-      );
+      throw new AppError('no completed rides', 404, rideConstants.ERROR_CODES.NO_COMPLETED_RIDES);
     }
 
     const points = completedRides * driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.RIDE_COMPLETION.points;
@@ -219,6 +150,7 @@ async function awardRidePoints(driverId) {
       points,
       action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.RIDE_COMPLETION.action,
       module: 'mtxi',
+      details: { driverId, completedRides },
     });
 
     const pointsDetails = {
@@ -227,17 +159,15 @@ async function awardRidePoints(driverId) {
       totalRides: completedRides,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       messageKey: 'ride.points_awarded',
-      messageParams: { driverId, points: points },
+      messageParams: { driverId, points },
       role: 'driver',
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'ride:points_awarded', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -245,7 +175,6 @@ async function awardRidePoints(driverId) {
       points,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.RIDE_COMPLETION.action,
@@ -261,43 +190,30 @@ async function awardRidePoints(driverId) {
   }
 }
 
-/**
- * Adjusts routes based on traffic.
- * @param {number} rideId - Ride ID.
- * @returns {Object} Optimized route details.
- */
-async function optimizeRouting(rideId) {
+async function optimizeRouting(rideId, { notificationService, socketService, auditService, locationService }) {
   try {
     if (!rideId) {
-      throw new AppError(
-        'ride_id required',
-        400,
-        rideConstants.ERROR_CODES.INVALID_RIDE
-      );
+      throw new AppError('ride_id required', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
     }
 
     const ride = await Ride.findByPk(rideId, {
       include: [{ model: Route, as: 'route' }],
     });
     if (!ride) {
-      throw new AppError(
-        'ride not found',
-        404,
-        rideConstants.ERROR_CODES.RIDE_NOT_FOUND
-      );
+      throw new AppError('ride not found', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
     }
 
     const optimizedRoute = await locationService.optimizeRoute({
       origin: ride.route.origin,
       destination: ride.route.destination,
-      waypoints: ride.route.waypoints || [],
+      waypoints: ride.route.stops || [],
       trafficModel: 'best_guess',
     });
 
     await ride.route.update({
       distance: optimizedRoute.distance,
       duration: optimizedRoute.duration,
-      waypoints: optimizedRoute.waypoints,
+      stops: optimizedRoute.waypoints,
       polyline: optimizedRoute.polyline,
       trafficModel: optimizedRoute.trafficModel,
     });
@@ -309,7 +225,6 @@ async function optimizeRouting(rideId) {
       waypoints: optimizedRoute.waypoints,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: ride.driverId?.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_UPDATE,
@@ -319,14 +234,12 @@ async function optimizeRouting(rideId) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'ride:route_optimized', {
       rideId,
       distance: routeDetails.distance,
       duration: routeDetails.duration,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: ride.driverId?.toString(),
       action: rideConstants.ANALYTICS_CONSTANTS.METRICS.ROUTE_EFFICIENCY,

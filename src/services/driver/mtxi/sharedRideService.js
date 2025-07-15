@@ -1,32 +1,14 @@
 'use strict';
 
-/**
- * Driver Shared Ride Service
- * Manages driver-side shared ride operations, including adding/removing passengers, retrieving details,
- * optimizing routes, and awarding gamification points. Integrates with common services.
- */
-
 const { Ride, Customer, Driver, Route, sequelize } = require('@models');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const locationService = require('@services/common/locationService');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const driverConstants = require('@constants/driver/driverConstants');
+const driverConstants = require('@constants/driverConstants');
 const rideConstants = require('@constants/common/rideConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const axios = require('axios');
 
-/**
- * Adds a passenger to a shared ride.
- * @param {number} rideId - Ride ID.
- * @param {number} passengerId - Customer ID.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Updated ride object.
- */
-async function addPassengerToSharedRide(rideId, passengerId, driverId) {
+async function addPassengerToSharedRide(rideId, passengerId, driverId, auditService, notificationService, socketService, pointService) {
   const ride = await Ride.findByPk(rideId, {
     include: [{ model: Customer, as: 'customer', through: { attributes: [] } }],
   });
@@ -42,8 +24,6 @@ async function addPassengerToSharedRide(rideId, passengerId, driverId) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Simulate adding passenger (no direct many-to-many support in provided models)
-    // Assuming a junction table or custom logic for shared ride passengers
     await sequelize.models.RideCustomer.create(
       { rideId, customerId: passengerId },
       { transaction }
@@ -70,6 +50,13 @@ async function addPassengerToSharedRide(rideId, passengerId, driverId) {
       priority: 'MEDIUM',
     });
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'shared_ride_completion').action,
+      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emit(null, 'shared_ride:passenger_added', { rideId, passengerId, driverId });
 
     await transaction.commit();
@@ -81,14 +68,7 @@ async function addPassengerToSharedRide(rideId, passengerId, driverId) {
   }
 }
 
-/**
- * Removes a passenger from a shared ride.
- * @param {number} rideId - Ride ID.
- * @param {number} passengerId - Customer ID.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function removePassengerFromSharedRide(rideId, passengerId, driverId) {
+async function removePassengerFromSharedRide(rideId, passengerId, driverId, auditService, notificationService, socketService, pointService) {
   const ride = await Ride.findByPk(rideId);
   if (!ride || ride.rideType !== rideConstants.RIDE_TYPES.SHARED) {
     throw new AppError('Invalid shared ride', 404, rideConstants.ERROR_CODES.INVALID_RIDE);
@@ -99,7 +79,6 @@ async function removePassengerFromSharedRide(rideId, passengerId, driverId) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Simulate removing passenger
     const deleted = await sequelize.models.RideCustomer.destroy({
       where: { rideId, customerId: passengerId },
       transaction,
@@ -129,6 +108,13 @@ async function removePassengerFromSharedRide(rideId, passengerId, driverId) {
       priority: 'MEDIUM',
     });
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'shared_ride_completion').action,
+      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emit(null, 'shared_ride:passenger_removed', { rideId, passengerId, driverId });
 
     await transaction.commit();
@@ -139,12 +125,7 @@ async function removePassengerFromSharedRide(rideId, passengerId, driverId) {
   }
 }
 
-/**
- * Retrieves shared ride details.
- * @param {number} rideId - Ride ID.
- * @returns {Promise<Object>} Shared ride details.
- */
-async function getSharedRideDetails(rideId) {
+async function getSharedRideDetails(rideId, auditService, pointService) {
   const ride = await Ride.findByPk(rideId, {
     include: [
       { model: Customer, as: 'customer', attributes: ['user_id', 'full_name', 'phone_number'], through: { attributes: [] } },
@@ -154,6 +135,21 @@ async function getSharedRideDetails(rideId) {
   if (!ride || ride.rideType !== rideConstants.RIDE_TYPES.SHARED) {
     throw new AppError('Invalid shared ride', 404, rideConstants.ERROR_CODES.INVALID_RIDE);
   }
+
+  await auditService.logAction({
+    userId: 'system',
+    role: 'driver',
+    action: 'GET_SHARED_RIDE_DETAILS',
+    details: { rideId },
+    ipAddress: 'unknown',
+  });
+
+  await pointService.awardPoints({
+    userId: 'system',
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'shared_ride_details_access').action,
+    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Shared ride details retrieved', { rideId });
   return {
@@ -166,13 +162,7 @@ async function getSharedRideDetails(rideId) {
   };
 }
 
-/**
- * Calculates optimal route for shared ride.
- * @param {number} rideId - Ride ID.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Optimized route.
- */
-async function optimizeSharedRideRoute(rideId, driverId) {
+async function optimizeSharedRideRoute(rideId, driverId, auditService, socketService, pointService) {
   const ride = await Ride.findByPk(rideId, {
     include: [{ model: Customer, as: 'customer', through: { attributes: [] } }, { model: Route, as: 'route' }],
   });
@@ -199,8 +189,8 @@ async function optimizeSharedRideRoute(rideId, driverId) {
 
   const routeData = response.data.routes[0];
   const optimizedRoute = {
-    distance: routeData.legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000, // in km
-    duration: routeData.legs.reduce((sum, leg) => sum + leg.duration.value, 0) / 60, // in minutes
+    distance: routeData.legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000,
+    duration: routeData.legs.reduce((sum, leg) => sum + leg.duration.value, 0) / 60,
     polyline: routeData.overview_polyline.points,
   };
 
@@ -224,6 +214,13 @@ async function optimizeSharedRideRoute(rideId, driverId) {
       ipAddress: 'unknown',
     });
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_calculate').action,
+      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emit(null, 'shared_ride:route_updated', { rideId, route: optimizedRoute });
 
     await transaction.commit();
@@ -235,42 +232,9 @@ async function optimizeSharedRideRoute(rideId, driverId) {
   }
 }
 
-/**
- * Awards gamification points for shared ride completion.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Points awarded record.
- */
-async function awardSharedRidePoints(driverId) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
-
-  const completedSharedRides = await Ride.count({
-    where: {
-      driverId,
-      rideType: rideConstants.RIDE_TYPES.SHARED,
-      status: rideConstants.RIDE_STATUSES.COMPLETED,
-      updated_at: { [Op.gte]: sequelize.literal('CURRENT_DATE') },
-    },
-  });
-  if (completedSharedRides === 0) {
-    throw new AppError('No completed shared rides today', 400, rideConstants.ERROR_CODES.NO_COMPLETED_RIDES);
-  }
-
-  const pointsRecord = await pointService.awardPoints({
-    userId: driver.user_id,
-    role: 'driver',
-    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.SHARED_RIDE_COMPLETION.action,
-    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-  });
-
-  logger.info('Shared ride points awarded', { driverId, points: pointsRecord.points });
-  return pointsRecord;
-}
-
 module.exports = {
   addPassengerToSharedRide,
   removePassengerFromSharedRide,
   getSharedRideDetails,
   optimizeSharedRideRoute,
-  awardSharedRidePoints,
 };

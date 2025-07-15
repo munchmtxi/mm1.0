@@ -5,11 +5,11 @@ module.exports = (sequelize, DataTypes) => {
   class Ride extends Model {
     static associate(models) {
       this.belongsToMany(models.Customer, {
-  through: 'RideCustomer',
-  foreignKey: 'rideId',
-  otherKey: 'customerId',
-  as: 'customer',
-});
+        through: 'RideCustomer',
+        foreignKey: 'rideId',
+        otherKey: 'customerId',
+        as: 'customer',
+      });
       this.belongsTo(models.Driver, {
         foreignKey: 'driverId',
         as: 'driver',
@@ -24,9 +24,11 @@ module.exports = (sequelize, DataTypes) => {
       });
       this.hasOne(models.Route, {
         foreignKey: 'rideId',
-        as: 'route', // Added Route association
-
-
+        as: 'route',
+      });
+      this.hasOne(models.Feedback, {
+        foreignKey: 'rideId',
+        as: 'feedback',
       });
     }
   }
@@ -42,21 +44,15 @@ module.exports = (sequelize, DataTypes) => {
       customerId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'customers',
-          key: 'id',
-        },
+        references: { model: 'customers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
         field: 'customer_id',
       },
       driverId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'drivers',
-          key: 'id',
-        },
+        allowNull: true, // Changed to nullable to match service logic
+        references: { model: 'drivers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         field: 'driver_id',
@@ -64,17 +60,13 @@ module.exports = (sequelize, DataTypes) => {
       pickupLocation: {
         type: DataTypes.JSONB,
         allowNull: false,
-        validate: {
-          notEmpty: { msg: 'Pickup location is required' },
-        },
+        validate: { notEmpty: { msg: 'Pickup location is required' } },
         field: 'pickup_location',
       },
       dropoffLocation: {
         type: DataTypes.JSONB,
         allowNull: false,
-        validate: {
-          notEmpty: { msg: 'Dropoff location is required' },
-        },
+        validate: { notEmpty: { msg: 'Dropoff location is required' } },
         field: 'dropoff_location',
       },
       rideType: {
@@ -83,8 +75,8 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 'STANDARD',
         validate: {
           isIn: {
-            args: [['STANDARD', 'PREMIUM', 'FREE', 'XL', 'ECO', 'MOTORBIKE', 'SCHEDULED']],
-            msg: 'Ride type must be one of: STANDARD, PREMIUM, FREE, XL, ECO, MOTORBIKE, SCHEDULED',
+            args: [['STANDARD', 'SHARED', 'PREMIUM', 'SCHEDULED']],
+            msg: 'Ride type must be one of: STANDARD, SHARED, PREMIUM, SCHEDULED',
           },
         },
         field: 'ride_type',
@@ -92,27 +84,24 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.STRING(255),
         allowNull: false,
-        defaultValue: 'PENDING',
+        defaultValue: 'REQUESTED',
         validate: {
           isIn: {
-            args: [['PENDING', 'SCHEDULED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'PAYMENT_CONFIRMED']],
-            msg: 'Status must be one of: PENDING, SCHEDULED, ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED, PAYMENT_CONFIRMED',
+            args: [['REQUESTED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'DELAYED']],
+            msg: 'Status must be one of: REQUESTED, ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED, DELAYED',
           },
         },
         field: 'status',
       },
       scheduledTime: {
-        type: DataTypes.DATE,
+        type: DataTypes.FLOAT,
         allowNull: true,
         field: 'scheduled_time',
       },
       paymentId: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'payments',
-          key: 'id',
-        },
+        references: { model: 'payments', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         field: 'payment_id',
@@ -120,10 +109,7 @@ module.exports = (sequelize, DataTypes) => {
       routeOptimizationId: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'route_optimizations',
-          key: 'id',
-        },
+        references: { model: 'route_optimizations', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         field: 'route_optimization_id',
@@ -131,13 +117,15 @@ module.exports = (sequelize, DataTypes) => {
       routeId: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: {
-          model: 'routes',
-          key: 'id',
-        },
+        references: { model: 'routes', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         field: 'route_id',
+      },
+      reference: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        field: 'reference',
       },
       created_at: {
         type: DataTypes.DATE,
@@ -169,6 +157,7 @@ module.exports = (sequelize, DataTypes) => {
         { fields: ['payment_id'] },
         { fields: ['route_optimization_id'] },
         { fields: ['status'] },
+        { fields: ['reference'] },
       ],
     }
   );

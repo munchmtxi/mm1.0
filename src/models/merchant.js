@@ -13,11 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.MenuInventory, { foreignKey: 'merchant_id', as: 'menu_items' });
       this.hasMany(models.Booking, { foreignKey: 'merchant_id', as: 'bookings' });
       this.hasMany(models.Payment, { foreignKey: 'merchant_id', as: 'payments' });
-      // Media Association: support media uploads
       this.hasMany(models.Media, { foreignKey: 'merchant_id', as: 'media' });
-      // Remove incorrect Notification association; rely on User.notifications via merchant.user_id
-      // this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
-
       this.belongsTo(models.Geofence, { foreignKey: 'geofence_id', as: 'geofence' });
       this.hasMany(models.PasswordHistory, {
         foreignKey: 'user_id',
@@ -117,16 +113,14 @@ module.exports = (sequelize, DataTypes) => {
     password_lock_until: { type: DataTypes.DATE, allowNull: true },
     currency: { type: DataTypes.STRING, allowNull: false, defaultValue: 'MWK' },
     time_zone: { type: DataTypes.STRING, allowNull: false, defaultValue: 'Africa/Blantyre' },
-    // Preferred language for localization support
     preferred_language: {
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'en',
       validate: {
-        isIn: [['en', 'fr', 'es']], // add supported languages
+        isIn: [['en', 'fr', 'es']],
       },
     },
-    // Business hours with validation
     business_hours: {
       type: DataTypes.JSON,
       allowNull: true,
@@ -165,6 +159,7 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       { unique: true, fields: ['user_id'], name: 'merchants_user_id_unique' },
       { unique: true, fields: ['phone_number'], name: 'merchants_phone_number_unique' },
+      { fields: ['location'], using: 'gist', name: 'merchants_location_index' },
     ],
     hooks: {
       afterSave: async (merchant, options) => {

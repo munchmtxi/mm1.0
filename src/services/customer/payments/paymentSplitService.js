@@ -5,81 +5,105 @@ const { sequelize, User, Customer, Wallet, Order, InDiningOrder, Booking, Ride, 
 const walletService = require('@services/common/walletService');
 const munchConstants = require('@constants/customer/munch/munchConstants');
 const mtablesConstants = require('@constants/customer/mtables/mtablesConstants');
-const rideConstants = require('@constants/customer/ride/rideConstants');
+const mtxiConstants = require('@constants/customer/mtxi/mtxiConstants');
 const meventsConstants = require('@constants/customer/mevents/meventsConstants');
+const mparkConstants = require('@constants/customer/mpark/mparkConstants');
 const paymentConstants = require('@constants/common/paymentConstants');
-const { formatMessage } = require('@utils/localization/localization');
-const AppError = require('@utils/AppError');
+const socialConstants = require('@constants/common/socialConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 const logger = require('@utils/logger');
 
-async function splitPayment(serviceId, serviceType, payments, transaction) {
-  let service, totalAmount = 0, merchantId, paymentField;
+async function splitPayment(serviceId, serviceType, payments, billSplitType, transaction) {
+  if (!socialConstants.SOCIAL_SETTINGS.BILL_SPLIT_TYPES.includes(billSplitType.toUpperCase())) {
+    throw new Error('Invalid bill split type', { status: 400, code: socialConstants.ERROR_CODES.INVALID_BILL_SPLIT });
+  }
+  if (payments.length > socialConstants.SOCIAL_SETTINGS.MAX_SPLIT_PARTICIPANTS) {
+    throw new Error('Max split participants exceeded', { status: 400, code: socialConstants.ERROR_CODES.MAX_SPLIT_PARTICIPANTS_EXCEEDED });
+  }
+
+  let service, totalAmount = 0, merchantId, paymentField, transactionType;
   switch (serviceType) {
     case 'order':
       service = await Order.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'munch', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.order_not_found'), 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+      if (!service) throw new Error('Order not found', { status: 404, code: munchConstants.ERROR_CODES.ORDER_NOT_FOUND });
       totalAmount = service.total_amount;
       merchantId = service.merchant_id;
       paymentField = 'order_id';
+      transactionType = paymentConstants.TRANSACTION_TYPES.ORDER_PAYMENT;
       break;
     case 'in_dining_order':
-      service = await InDiningOrder.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'munch', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.order_not_found'), 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+      service = await InDiningOrder.findByPk(serviceId, { include: [{ model: Customer, as: 'customer' }], transaction });
+      if (!service) throw new Error('In-dining order not found', { status: 404, code: munchConstants.ERROR_CODES.ORDER_NOT_FOUND });
       totalAmount = service.total_amount;
       merchantId = service.branch_id ? (await service.getBranch({ transaction }))?.merchant_id : null;
+      if (!merchantId) throw new Error('Merchant ID required for in-dining order', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
       paymentField = 'in_dining_order_id';
+      transactionType = paymentConstants.TRANSACTION_TYPES.ORDER_PAYMENT;
       break;
     case 'booking':
       service = await Booking.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'mtables', mtablesConstants.MTABLES_SETTINGS.DEFAULT_LANGUAGE, 'error.booking_not_found'), 404, mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
+      if (!service) throw new Error('Booking not found', { status: 404, code: mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND });
       totalAmount = service.details?.total_amount || 0;
       merchantId = service.merchant_id;
-      paymentField = 'order_id';
+      paymentField = null;
+      transactionType = paymentConstants.TRANSACTION_TYPES.BOOKING_PAYMENT;
       break;
     case 'ride':
       service = await Ride.findByPk(serviceId, { include: [{ model: Payment, as: 'payment' }], transaction });
-      if (!service) throw new AppError(formatMessage('ride', 'ride', rideConstants.DEFAULT.DEFAULT_LANGUAGE, 'error.ride_not_found'), 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
+      if (!service) throw new Error('Ride not found', { status: 404, code: mtxiConstants.ERROR_TYPES.RIDE_NOT_FOUND });
       totalAmount = service.payment?.amount || 0;
       merchantId = null;
       paymentField = null;
+      transactionType = paymentConstants.TRANSACTION_TYPES.RIDE_PAYMENT;
+      break;
     case 'event':
       service = await Event.findByPk(serviceId, { include: [{ model: EventService, as: 'services', include: [Order, InDiningOrder, Booking, Ride] }], transaction });
-      if (!service) throw new AppError(formatMessage('event', 'mevents', meventsConstants.MEVENTS_SETTINGS.DEFAULT_LANGUAGE, 'error.event_not_found'), 404, meventsConstants.ERROR_CODES.EVENT_NOT_FOUND);
-      if (service.payment_type !== meventsConstants.PAYMENT_TYPES.SPLIT) {
-        throw new AppError(formatMessage('event', 'mevents', meventsConstants.MEVENTS_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_payment_type'), 400, meventsConstants.ERROR_CODES.INVALID_PAYMENT_TYPE);
+      if (!service) throw new Error('Event not found', { status: 404, code: meventsConstants.ERROR_CODES.EVENT_NOT_FOUND });
+      if (service.payment_type !== 'split') {
+        throw new Error('Invalid payment type for event', { status: 400, code: meventsConstants.ERROR_CODES.INVALID_PAYMENT_TYPE });
       }
       for (const eventService of service.services) {
         switch (eventService.service_type) {
-          case 'order':
+          case 'munch':
             const order = await Order.findByPk(eventService.service_id, { transaction });
             totalAmount += order?.total_amount || 0;
             merchantId = order?.merchant_id;
             break;
-          case 'in_dining_order':
+          case 'in_dining':
             const inDiningOrder = await InDiningOrder.findByPk(eventService.service_id, { transaction });
             totalAmount += inDiningOrder?.total_amount || 0;
             merchantId = inDiningOrder?.branch_id ? (await inDiningOrder.getBranch({ transaction }))?.merchant_id : null;
+            if (!merchantId) throw new Error('Merchant ID required for in-dining order in event', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
             break;
-          case 'booking':
+          case 'mtables':
             const booking = await Booking.findByPk(eventService.service_id, { transaction });
             totalAmount += booking?.details?.total_amount || 0;
             merchantId = booking?.merchant_id;
             break;
-          case 'ride':
+          case 'mtxi':
             const ride = await Ride.findByPk(eventService.service_id, { include: [{ model: Payment, as: 'payment' }], transaction });
             totalAmount += ride?.payment?.amount || 0;
+            merchantId = null;
             break;
+          case 'mpark':
+            const parking = await Parking.findByPk(eventService.service_id, { transaction });
+            totalAmount += parking?.details?.total_amount || 0;
+            merchantId = parking?.merchant_id;
+            break;
+          default:
+            throw new Error('Invalid event service type', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
         }
       }
       paymentField = null;
+      transactionType = paymentConstants.TRANSACTION_TYPES.EVENT_PAYMENT;
       break;
     default:
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_service_type'), 400, paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
+      throw new Error('Invalid service type', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
   }
 
   const totalPayment = payments.reduce((sum, p) => sum + p.amount, 0);
   if (totalPayment !== totalAmount && totalAmount > 0) {
-    throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.total_mismatch'), 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+    throw new Error('Total payment amount does not match service amount', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_AMOUNT });
   }
 
   const splitPayments = [];
@@ -89,46 +113,54 @@ async function splitPayment(serviceId, serviceType, payments, transaction) {
     const { customerId, amount, paymentMethod } = payment;
 
     if (processedCustomerIds.has(customerId)) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.duplicate_customer'), 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+      throw new Error('Duplicate customer in payment', { status: 400, code: socialConstants.ERROR_CODES.INVALID_BILL_SPLIT });
     }
     processedCustomerIds.add(customerId);
 
     const user = await User.findByPk(customerId, { include: [{ model: Customer, as: 'customer_profile' }], transaction });
     if (!user || !user.customer_profile) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_customer'), 400, meventsConstants.ERROR_CODES.INVALID_CUSTOMER);
+      throw new Error('Invalid customer', { status: 400, code: socialConstants.ERROR_CODES.INVALID_CUSTOMER });
     }
 
     const wallet = await Wallet.findOne({ where: { user_id: customerId }, transaction });
     if (!wallet) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.wallet_not_found'), 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+      throw new Error('Wallet not found', { status: 404, code: paymentConstants.ERROR_CODES.WALLET_NOT_FOUND });
     }
-    if (!wallet.payment_methods?.includes(paymentMethod) || !paymentConstants.PAYMENT_METHODS.includes(paymentMethod)) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_payment_method'), 400, paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
+    if (!paymentConstants.PAYMENT_METHODS.includes(paymentMethod.toUpperCase())) {
+      throw new Error('Invalid payment method', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
     }
     if (wallet.balance < amount) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.insufficient_funds'), 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
+      throw new Error('Insufficient funds in wallet', { status: 400, code: paymentConstants.ERROR_CODES.WALLET_INSUFFICIENT_FUNDS });
+    }
+    if (wallet.currency !== localizationConstants.DEFAULT_CURRENCY) {
+      throw new Error('Currency mismatch', { status: 400, code: paymentConstants.ERROR_CODES.CURRENCY_MISMATCH });
+    }
+
+    const financialLimit = paymentConstants.FINANCIAL_LIMITS.find(limit => limit.type === transactionType);
+    if (amount < financialLimit.min || amount > financialLimit.max) {
+      throw new Error('Amount outside allowed range', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_AMOUNT });
     }
 
     const transactionRecord = await walletService.processTransaction({
       walletId: wallet.id,
-      type: paymentConstants.TRANSACTION_TYPES[1],
+      type: paymentConstants.TRANSACTION_TYPES.SOCIAL_BILL_SPLIT,
       amount,
       currency: wallet.currency,
-      paymentMethod,
+      paymentMethod: paymentMethod.toUpperCase(),
       description: `Split payment for ${serviceType} #${serviceId}`,
     }, transaction);
 
     await WalletTransaction.update(
-      { status: paymentConstants.TRANSACTION_STATUSES[1] },
+      { status: paymentConstants.TRANSACTION_STATUSES.COMPLETED },
       { where: { id: transactionRecord.id }, transaction }
     );
 
     const paymentData = {
       customer_id: customerId,
-      merchant_id: merchantId || null,
+      merchant_id: merchantId,
       amount,
-      payment_method: paymentMethod,
-      status: paymentConstants.TRANSACTION_STATUSES[1],
+      payment_method: paymentMethod.toUpperCase(),
+      status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
       transaction_id: transactionRecord.id.toString(),
       currency: wallet.currency,
       created_at: new Date(),
@@ -165,22 +197,22 @@ async function splitPayment(serviceId, serviceType, payments, transaction) {
   switch (serviceType) {
     case 'order':
     case 'in_dining_order':
-      statusUpdate.payment_status = 'paid';
+      statusUpdate.payment_status = munchConstants.ORDER_CONSTANTS.ORDER_STATUSES.includes('refunded') && totalAmount === 0 ? 'REFUNDED' : 'COMPLETED';
       break;
     case 'booking':
-      statusUpdate.status = mtablesConstants.BOOKING_STATUSES[1];
+      statusUpdate.status = mtablesConstants.BOOKING_STATUSES.includes('cancelled') && totalAmount === 0 ? 'CANCELLED' : 'CONFIRMED';
       break;
     case 'ride':
-      statusUpdate.status = rideConstants.RIDE_STATUSES[3];
+      statusUpdate.status = mtxiConstants.RIDE_STATUSES.includes('CANCELLED') && totalAmount === 0 ? 'CANCELLED' : 'COMPLETED';
       break;
     case 'event':
-      statusUpdate.status = meventsConstants.EVENT_STATUSES[1];
+      statusUpdate.status = meventsConstants.EVENT_STATUSES.includes('cancelled') && totalAmount === 0 ? 'cancelled' : 'confirmed';
       break;
   }
   await service.update(statusUpdate, { transaction });
 
   logger.info('Split payment processed', { serviceId, serviceType, splitCount: payments.length });
-  return { serviceId, serviceType, splitPayments };
+  return { serviceId, serviceType, billSplitType, splitPayments };
 }
 
 async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transaction) {
@@ -188,36 +220,36 @@ async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transa
   switch (serviceType) {
     case 'order':
       service = await Order.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'munch', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.order_not_found'), 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+      if (!service) throw new Error('Order not found', { status: 404, code: munchConstants.ERROR_CODES.ORDER_NOT_FOUND });
       paymentQuery = { order_id: serviceId };
       break;
     case 'in_dining_order':
       service = await InDiningOrder.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'munch', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.order_not_found'), 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+      if (!service) throw new Error('In-dining order not found', { status: 404, code: munchConstants.ERROR_CODES.ORDER_NOT_FOUND });
       paymentQuery = { in_dining_order_id: serviceId };
       break;
     case 'booking':
       service = await Booking.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('customer', 'mtables', mtablesConstants.MTABLES_SETTINGS.DEFAULT_LANGUAGE, 'error.booking_not_found'), 404, mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      paymentQuery = { order_id: serviceId };
+      if (!service) throw new Error('Booking not found', { status: 404, code: mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND });
+      paymentQuery = { customer_id: service.customer_id, merchant_id: service.merchant_id };
       break;
     case 'ride':
       service = await Ride.findByPk(serviceId, { transaction });
-      if (!service) throw new AppError(formatMessage('ride', 'ride', rideConstants.DEFAULT.DEFAULT_LANGUAGE, 'error.ride_not_found'), 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
+      if (!service) throw new Error('Ride not found', { status: 404, code: mtxiConstants.ERROR_TYPES.RIDE_NOT_FOUND });
       paymentQuery = { id: service.paymentId };
       break;
     case 'event':
       service = await Event.findByPk(serviceId, { include: [{ model: EventService, as: 'services' }], transaction });
-      if (!service) throw new AppError(formatMessage('event', 'mevents', meventsConstants.MEVENTS_SETTINGS.DEFAULT_LANGUAGE, 'error.event_not_found'), 404, meventsConstants.ERROR_CODES.EVENT_NOT_FOUND);
+      if (!service) throw new Error('Event not found', { status: 404, code: meventsConstants.ERROR_CODES.EVENT_NOT_FOUND });
       paymentQuery = { id: { [Op.in]: service.services.map(s => s.payment_id).filter(id => id) } };
       break;
     default:
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_service_type'), 400, paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
+      throw new Error('Invalid service type', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD });
   }
 
   const payments = await Payment.findAll({ where: paymentQuery, transaction });
   if (!payments.length) {
-    throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.no_payments_found'), 404, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+    throw new Error('No payments found', { status: 404, code: paymentConstants.ERROR_CODES.TRANSACTION_FAILED });
   }
 
   const refundRecords = [];
@@ -227,31 +259,36 @@ async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transa
     const { customerId, amount } = refund;
 
     if (processedCustomerIds.has(customerId)) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.duplicate_customer'), 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+      throw new Error('Duplicate customer in refund', { status: 400, code: socialConstants.ERROR_CODES.INVALID_BILL_SPLIT });
     }
     processedCustomerIds.add(customerId);
 
     const user = await User.findByPk(customerId, { include: [{ model: Customer, as: 'customer_profile' }], transaction });
     if (!user || !user.customer_profile) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.invalid_customer'), 400, meventsConstants.ERROR_CODES.INVALID_CUSTOMER);
+      throw new Error('Invalid customer', { status: 400, code: socialConstants.ERROR_CODES.INVALID_CUSTOMER });
     }
 
     const payment = payments.find(p => p.customer_id === customerId);
     if (!payment) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.payment_not_found'), 404, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+      throw new Error('Payment not found', { status: 404, code: paymentConstants.ERROR_CODES.TRANSACTION_FAILED });
     }
     if (amount > payment.amount) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.refund_exceeds_payment'), 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+      throw new Error('Refund amount exceeds payment', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_AMOUNT });
     }
 
     const wallet = await Wallet.findOne({ where: { user_id: customerId }, transaction });
     if (!wallet) {
-      throw new AppError(formatMessage('customer', 'payments', munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE, 'error.wallet_not_found'), 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+      throw new Error('Wallet not found', { status: 404, code: paymentConstants.ERROR_CODES.WALLET_NOT_FOUND });
+    }
+
+    const financialLimit = paymentConstants.FINANCIAL_LIMITS.find(limit => limit.type === paymentConstants.TRANSACTION_TYPES.REFUND);
+    if (amount < financialLimit.min || amount > financialLimit.max) {
+      throw new Error('Refund amount outside allowed range', { status: 400, code: paymentConstants.ERROR_CODES.INVALID_AMOUNT });
     }
 
     const transactionRecord = await walletService.processTransaction({
       walletId: wallet.id,
-      type: paymentConstants.TRANSACTION_TYPES[2],
+      type: paymentConstants.TRANSACTION_TYPES.REFUND,
       amount,
       currency: wallet.currency,
       paymentMethod: payment.payment_method,
@@ -259,15 +296,15 @@ async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transa
     }, transaction);
 
     await WalletTransaction.update(
-      { status: paymentConstants.TRANSACTION_STATUSES[1] },
+      { status: paymentConstants.TRANSACTION_STATUSES.COMPLETED },
       { where: { id: transactionRecord.id }, transaction }
     );
 
     const newAmount = payment.amount - amount;
     await payment.update({
       amount: newAmount,
-      status: newAmount === 0 ? paymentConstants.TRANSACTION_STATUSES[3] : paymentConstants.TRANSACTION_STATUSES[1],
-      refund_status: 'processed',
+      status: newAmount === 0 ? paymentConstants.TRANSACTION_STATUSES.REFUNDED : paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+      refund_status: paymentConstants.PAYMENT_STATUSES[3], // REFUNDED
       refund_details: { reason: 'Split payment refund', amount, timestamp: new Date() },
       updated_at: new Date(),
     }, { transaction });
@@ -284,16 +321,16 @@ async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transa
   switch (serviceType) {
     case 'order':
     case 'in_dining_order':
-      statusUpdate.payment_status = remainingAmount === 0 ? 'refunded' : 'paid';
+      statusUpdate.payment_status = remainingAmount === 0 ? munchConstants.ORDER_CONSTANTS.ORDER_STATUSES[7] : munchConstants.ORDER_CONSTANTS.ORDER_STATUSES[2]; // REFUNDED or COMPLETED
       break;
     case 'booking':
-      statusUpdate.status = remainingAmount === 0 ? mtablesConstants.BOOKING_STATUSES[3] : mtablesConstants.BOOKING_STATUSES[1];
+      statusUpdate.status = remainingAmount === 0 ? mtablesConstants.BOOKING_STATUSES[4] : mtablesConstants.BOOKING_STATUSES[1]; // CANCELLED or CONFIRMED
       break;
     case 'ride':
-      statusUpdate.status = remainingAmount === 0 ? rideConstants.RIDE_STATUSES[4] : rideConstants.RIDE_STATUSES[3];
+      statusUpdate.status = remainingAmount === 0 ? mtxiConstants.RIDE_STATUSES[4] : mtxiConstants.RIDE_STATUSES[3]; // CANCELLED or COMPLETED
       break;
     case 'event':
-      statusUpdate.status = remainingAmount === 0 ? meventsConstants.EVENT_STATUSES[3] : meventsConstants.EVENT_STATUSES[1];
+      statusUpdate.status = remainingAmount === 0 ? meventsConstants.EVENT_STATUSES[4] : meventsConstants.EVENT_STATUSES[1]; // cancelled or confirmed
       break;
   }
   await service.update(statusUpdate, { transaction });
@@ -304,18 +341,21 @@ async function manageSplitPaymentRefunds(serviceId, serviceType, refunds, transa
 
 async function getServiceAmount(eventService, transaction) {
   switch (eventService.service_type) {
-    case 'order':
+    case 'munch':
       const order = await Order.findByPk(eventService.service_id, { transaction });
       return order?.total_amount || 0;
-    case 'in_dining_order':
+    case 'in_dining':
       const inDiningOrder = await InDiningOrder.findByPk(eventService.service_id, { transaction });
       return inDiningOrder?.total_amount || 0;
-    case 'booking':
+    case 'mtables':
       const booking = await Booking.findByPk(eventService.service_id, { transaction });
       return booking?.details?.total_amount || 0;
-    case 'ride':
+    case 'mtxi':
       const ride = await Ride.findByPk(eventService.service_id, { include: [{ model: Payment, as: 'payment' }], transaction });
       return ride?.payment?.amount || 0;
+    case 'mpark':
+      const parking = await Parking.findByPk(eventService.service_id, { transaction });
+      return parking?.details?.total_amount || 0;
     default:
       return 0;
   }

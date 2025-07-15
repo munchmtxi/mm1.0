@@ -1,8 +1,0 @@
-{
-  "tax": {
-    "calculated": "{period} tax obligation: {amount} {currency}.",
-    "report_generated": "{period} tax report generated: {amount} {currency}.",
-    "settings_updated": "Tax settings updated with {filingFrequency} filing.",
-    "compliance_issue": "Tax compliance issue detected for {country}. Update settings."
-  }
-}

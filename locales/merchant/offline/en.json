@@ -1,16 +1,17 @@
-
 {
   "offline": {
-    "ordersCached": "Cached {{count}} orders for offline processing",
-    "bookingsCached": "Cached {{count}} bookings for offline processing",
-    "dataSynced": "Synced {{orderCount}} orders and {{bookingCount}} bookings",
-    "pointsAwarded": "Awarded {{points}} points for offline usage",
+    "ordersCached": "{count} orders cached for merchant {merchantId}.",
+    "ordersCachedDescription": "Orders stored for offline processing.",
+    "bookingsCached": "{count} bookings cached for merchant {merchantId}.",
+    "bookingsCachedDescription": "Bookings stored for offline processing.",
+    "dataSynced": "Synced {orderCount} orders and {bookingCount} bookings for merchant {merchantId}.",
+    "dataSyncedDescription": "Offline data synchronized.",
     "errors": {
-      "invalidMerchant": "Invalid merchant",
-      "invalidCustomer": "Invalid customer",
-      "invalidBranch": "Invalid branch",
-      "invalidOrderData": "Invalid order data",
-      "invalidBookingData": "Invalid booking data"
+      "merchantNotFound": "Merchant not found.",
+      "branchNotFound": "Merchant branch not found.",
+      "invalidOrderData": "Invalid order data provided.",
+      "invalidBookingData": "Invalid booking data provided.",
+      "customerNotFound": "Customer not found."
     }
   }
 }

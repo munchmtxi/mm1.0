@@ -1,14 +1,39 @@
-
 {
   "crossVertical": {
-    "servicesUnified": "Unified mtables/munch: {{orders}} orders, {{bookings}} bookings",
-    "pointsSynced": "Synced {{totalPoints}} loyalty points across services",
-    "uiEnsured": "Ensured consistent UI with theme {{theme}}",
-    "pointsAwarded": "Awarded {{points}} points for cross-service usage",
+    "servicesUnified": "Unified {orders} orders and {bookings} bookings for merchant {merchantId}.",
+    "servicesUnifiedDescription": "Mtables and Munch services have been unified across branches.",
+    "pointsSynced": "Synced {totalPoints} loyalty points for customer {customerId}.",
+    "pointsSyncedDescription": "Loyalty points from Munch and Mtables have been synchronized.",
+    "uiEnsured": "Ensured consistent UI with theme {theme} for merchant {merchantId}.",
+    "uiEnsuredDescription": "UI settings have been applied across all branches.",
+    "pointsAwarded": "You earned {points} points for {action}!",
+    "pointsAwardedDescription": "Points can be redeemed for rewards or cross-vertical activities.",
+    "actions": {
+      "servicesUnified": "unifying services",
+      "pointsSynced": "syncing loyalty points",
+      "uiEnsured": "ensuring UI consistency"
+    },
     "errors": {
-      "invalidMerchant": "Invalid merchant",
-      "invalidCustomer": "Invalid customer",
-      "noBranches": "No branches found"
+      "invalidMerchantId": "The provided merchant ID is invalid.",
+      "invalidMerchantIdDescription": "Please provide a valid merchant ID.",
+      "invalidMerchant": "Merchant not found.",
+      "invalidMerchantDescription": "The specified merchant does not exist.",
+      "invalidCustomerId": "The provided customer ID is invalid.",
+      "invalidCustomerIdDescription": "Please provide a valid customer ID.",
+      "invalidCustomer": "Customer not found.",
+      "invalidCustomerDescription": "The specified customer does not exist.",
+      "noBranches": "No branches found for the merchant.",
+      "noBranchesDescription": "The merchant has no registered branches.",
+      "unauthorized": "You are not authorized to perform this action.",
+      "unauthorizedDescription": "Only merchants or customers can access cross-vertical features."
+    },
+    "gamification": {
+      "welcome": "Welcome to cross-vertical rewards! Earn points by unifying services, syncing loyalty points, and ensuring UI consistency.",
+      "welcomeDescription": "Points unlock exclusive benefits.",
+      "progress": "Great work! You've earned {points} so far.",
+      "progressDescription": "Continue using cross-vertical features to earn more.",
+      "milestone": "Milestone reached! You've earned {points} points!",
+      "milestoneDescription": "Check your dashboard for new rewards."
     }
   }
 }

@@ -3,7 +3,7 @@
     "behavior_tracked": "Customer behavior tracked for customer {customerId}",
     "spending_trends_analyzed": "Spending trends analyzed for customer {customerId}",
     "recommendations_provided": "Provided {count} recommendations for customer {customerId}",
-    "analytics_points_awarded": "Awarded {points} points to customer {customerId} for analytics engagement"
+    "analytics_points_awarded": "Awarded {points} points to customer {customerId} for analytics engagement (behavior_tracked, spending_analyzed, recommendations_received, or parking_behavior_tracked)"
   },
   "errors": {
     "customer_not_found": "Customer not found",
@@ -13,6 +13,7 @@
     "invalid_action": "Invalid gamification action",
     "behavior_tracking_failed": "Failed to track customer behavior",
     "spending_analysis_failed": "Failed to analyze spending trends",
-    "recommendation_failed": "Failed to provide recommendations"
+    "recommendation_failed": "Failed to provide recommendations",
+    "parking_tracking_failed": "Failed to track parking behavior"
   }
 }

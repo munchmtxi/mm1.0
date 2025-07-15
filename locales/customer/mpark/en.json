@@ -1,0 +1,15 @@
+{
+  "parking": {
+    "booking_created": "Parking booking {bookingId} created successfully.",
+    "booking_cancelled": "Parking booking {bookingId} cancelled successfully.",
+    "time_extended": "Parking booking {bookingId} extended by {duration} minutes.",
+    "checked_in": "Checked in to parking booking {bookingId} using {method}.",
+    "spaces_retrieved": "Available parking spaces retrieved successfully.",
+    "lot_details_retrieved": "Parking lot details retrieved successfully.",
+    "availability_retrieved": "Parking availability retrieved successfully.",
+    "subscription_create": "Parking subscription {plan} created successfully.",
+    "subscription_renew": "Parking subscription {plan} renewed successfully.",
+    "subscription_cancel": "Parking subscription {plan} cancelled successfully.",
+    "subscription_status_retrieved": "Parking subscription status retrieved successfully."
+  }
+}

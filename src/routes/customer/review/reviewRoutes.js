@@ -1,18 +1,22 @@
 'use strict';
 
+/**
+ * Review Routes
+ * Defines routes for customer review operations with Swagger documentation.
+ */
+
 const express = require('express');
 const router = express.Router();
-const { submitReviewAction, updateReviewAction, deleteReviewAction, manageInteraction } = require('@controllers/customer/review/reviewController');
-const { submitReviewSchema, updateReviewSchema, manageInteractionSchema } = require('@validators/customer/review/reviewValidator');
-const { submitReview: submitReviewMW, updateReview: updateReviewMW, deleteReview: deleteReviewMW, manageInteraction: manageInteractionMW } = require('@middleware/customer/review/reviewMiddleware');
-const { validate } = require('@middleware/validate');
+const reviewController = require('@controllers/customer/reviewController');
+const reviewValidator = require('@validators/customer/review/reviewValidator');
+const reviewMiddleware = require('@middleware/customer/review/reviewMiddleware');
 
 /**
  * @swagger
- * /api/customer/review:
+ * /api/v1/customer/reviews:
  *   post:
- *     summary: Submit a review for a service
- *     tags: [Review]
+ *     summary: Submit a new review
+ *     tags: [Customer Reviews]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -21,84 +25,53 @@ const { validate } = require('@middleware/validate');
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [serviceType, serviceId, targetType, targetId, rating]
  *             properties:
- *               serviceId:
- *                 type: number
- *               serviceType:
- *                 type: string
- *                 enum: [order, in_dining_order, booking, ride]
- *               rating:
- *                 type: number
- *                 minimum: 1
- *                 maximum: 5
- *               comment:
- *                 type: string
- *               title:
- *                 type: string
- *               photos:
- *                 type: array
- *                 items:
- *                   type: string
- *               anonymous:
- *                 type: boolean
+ *               serviceType: { type: string, enum: [mtables, munch, mtxi] }
+ *               serviceId: { type: string }
+ *               targetType: { type: string, enum: [merchant, staff, driver] }
+ *               targetId: { type: string }
+ *               rating: { type: number, minimum: 1, maximum: 5 }
+ *               comment: { type: string, maxLength: 500 }
+ *               title: { type: string, maxLength: 100 }
+ *               photos: { type: array, items: { type: string, format: uri } }
+ *               anonymous: { type: boolean }
  *     responses:
- *       200:
- *         description: Review submitted
+ *       201:
+ *         description: Review submitted successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     reviewId:
- *                       type: string
- *                     serviceType:
- *                       type: string
- *                     serviceId:
- *                       type: number
- *                     rating:
- *                       type: number
- *                     comment:
- *                       type: string
- *                     title:
- *                       type: string
- *                     photos:
- *                       type: array
- *                       items:
- *                         type: string
- *                     anonymous:
- *                       type: boolean
- *                     status:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
+ *                 status: { type: string, example: success }
+ *                 message: { type: string }
+ *                 data: { type: object }
  *       400:
  *         description: Invalid input
- *       404:
- *         description: Service not found
+ *       500:
+ *         description: Server error
  */
-router.post('/', submitReviewMW, validate(submitReviewSchema), submitReviewAction);
+router.post(
+  '/',
+  reviewValidator.validateSubmitReview,
+  reviewMiddleware.validateReviewSubmission,
+  reviewController.submitReview
+);
 
 /**
  * @swagger
- * /api/customer/review/{reviewId}:
- *   patch:
- *     summary: Update a review
- *     tags: [Review]
+ * /api/v1/customer/reviews/{reviewId}:
+ *   put:
+ *     summary: Update an existing review
+ *     tags: [Customer Reviews]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: reviewId
  *         required: true
- *         schema:
- *           type: number
+ *         schema: { type: string }
  *     requestBody:
  *       required: true
  *       content:
@@ -106,161 +79,113 @@ router.post('/', submitReviewMW, validate(submitReviewSchema), submitReviewActio
  *           schema:
  *             type: object
  *             properties:
- *               rating:
- *                 type: number
- *                 minimum: 1
- *                 maximum: 5
- *               comment:
- *                 type: string
- *               title:
- *                 type: string
- *               photos:
- *                 type: array
- *                 items:
- *                   type: string
- *               anonymous:
- *                 type: boolean
+ *               rating: { type: number, minimum: 1, maximum: 5 }
+ *               comment: { type: string, maxLength: 500 }
+ *               title: { type: string, maxLength: 100 }
+ *               photos: { type: array, items: { type: string, format: uri } }
+ *               anonymous: { type: boolean }
  *     responses:
  *       200:
- *         description: Review updated
+ *         description: Review updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     reviewId:
- *                       type: string
- *                     serviceType:
- *                       type: string
- *                     serviceId:
- *                       type: number
- *                     rating:
- *                       type: number
- *                     comment:
- *                       type: string
- *                     title:
- *                       type: string
- *                     photos:
- *                       type: array
- *                       items:
- *                         type: string
- *                     anonymous:
- *                       type: boolean
- *                     status:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
- *       400:
- *         description: Invalid input
+ *                 status: { type: string, example: success }
+ *                 message: { type: string }
+ *                 data: { type: object }
  *       404:
  *         description: Review not found
+ *       500:
+ *         description: Server error
  */
-router.patch('/:reviewId', updateReviewMW, validate(updateReviewSchema), updateReviewAction);
+router.put(
+  '/:reviewId',
+  reviewValidator.validateUpdateReview,
+  reviewMiddleware.validateReviewOwnership,
+  reviewController.updateReview
+);
 
 /**
  * @swagger
- * /api/customer/review/{reviewId}:
+ * /api/v1/customer/reviews/{reviewId}:
  *   delete:
  *     summary: Delete a review
- *     tags: [Review]
+ *     tags: [Customer Reviews]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: reviewId
  *         required: true
- *         schema:
- *           type: number
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Review deleted
+ *         description: Review deleted successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     reviewId:
- *                       type: string
- *                     status:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
+ *                 status: { type: string, example: success }
+ *                 message: { type: string }
+ *                 data: { type: object }
  *       404:
  *         description: Review not found
+ *       500:
+ *         description: Server error
  */
-router.delete('/:reviewId', deleteReviewMW, deleteReviewAction);
+router.delete(
+  '/:reviewId',
+  reviewMiddleware.validateReviewOwnership,
+  reviewController.deleteReview
+);
 
 /**
  * @swagger
- * /api/customer/review/{reviewId}/interaction:
+ * /api/v1/customer/reviews/{reviewId}/interactions:
  *   post:
- *     summary: Manage community interactions on a review
- *     tags: [Review]
+ *     summary: Manage community interactions (upvote, comment)
+ *     tags: [Customer Reviews]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: reviewId
  *         required: true
- *         schema:
- *           type: number
+ *         schema: { type: string }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [action]
  *             properties:
- *               action:
- *                 type: string
- *                 enum: [upvote, comment]
- *               comment:
- *                 type: string
- *                 description: Required if action is comment
+ *               action: { type: string, enum: [UPVOTE, COMMENT] }
+ *               comment: { type: string, maxLength: 500 }
  *     responses:
- *       200:
- *         description: Interaction processed
+ *       201:
+ *         description: Interaction recorded successfully
  *         content:
  *           application/json:
- *             schema Take *7*::
+ *             schema:
  *               type: object
  *               properties:
- *                 status:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     interactionId:
- *                       type: string
- *                     reviewId:
- *                       type: number
- *                     action:
- *                       type: string
- *                     comment:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
+ *                 status: { type: string, example: success }
+ *                 message: { type: string }
+ *                 data: { type: object }
  *       400:
- *         description: Invalid input
- *       404:
- *         description: Review not found
+ *         description: Invalid interaction type
+ *       500:
+ *         description: Server error
  */
-router.post('/:reviewId/interaction', manageInteractionMW, validate(manageInteractionSchema), manageInteraction);
+router.post(
+  '/:reviewId/interactions',
+  reviewValidator.validateCommunityInteraction,
+  reviewMiddleware.validateReviewOwnership,
+  reviewController.manageCommunityInteraction
+);
 
 module.exports = router;

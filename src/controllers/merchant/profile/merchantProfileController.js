@@ -1,293 +1,167 @@
 'use strict';
 
-/**
- * Merchant Profile Controller
- * Handles HTTP requests for merchant profile operations, including business details,
- * country settings, localization, gamification, media, and branch management. Integrates
- * with merchant profile services for business logic.
- *
- * Last Updated: May 14, 2025
- */
-
-const merchantProfileService = require('@services/merchant/profile/merchantProfileService');
-const merchantMediaService = require('@services/merchant/profile/merchantMediaService');
-const branchProfileService = require('@services/merchant/profile/branchProfileService');
-const logger = require('@utils/logger');
-const merchantConstants = require('@constants/merchantConstants');
-const { sendResponse } = require('@utils/responseHandler');
-
-/**
- * Updates merchant business details.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const updateBusinessDetails = async (req, res, next) => {
-  try {
-    const { merchantId } = req.params;
-    const details = req.body;
-    const updatedMerchant = await merchantProfileService.updateBusinessDetails(merchantId, details);
-    logger.info('Merchant business details updated successfully', { merchantId });
-    sendResponse(res, 200, {
-      message: merchantConstants.SUCCESS_MESSAGES.MERCHANT_CREATED,
-      data: updatedMerchant,
-    });
-  } catch (error) {
-    logger.error('Error updating merchant business details', { error: error.message, merchantId: req.params.merchantId });
-    next(error);
-  }
-};
-
-/**
- * Sets merchant country settings.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const setCountrySettings = async (req, res, next) => {
-  try {
-    const { merchantId } = req.params;
-    const { country } = req.body;
-    const updatedMerchant = await merchantProfileService.setCountrySettings(merchantId, country);
-    logger.info('Merchant country settings updated successfully', { merchantId });
-    sendResponse(res, 200, {
-      message: 'Country settings updated successfully',
-      data: updatedMerchant,
-    });
-  } catch (error) {
-    logger.error('Error setting merchant country settings', { error: error.message, merchantId: req.params.merchantId });
-    next(error);
-  }
-};
-
-/**
- * Manages merchant localization settings.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const manageLocalization = async (req, res, next) => {
-  try {
-    const { merchantId } = req.params;
-    const settings = req.body;
-    const updatedMerchant = await merchantProfileService.manageLocalization(merchantId, settings);
-    logger.info('Merchant localization settings updated successfully', { merchantId });
-    sendResponse(res, 200, {
-      message: 'Localization settings updated successfully',
-      data: updatedMerchant,
-    });
-  } catch (error) {
-    logger.error('Error managing merchant localization', { error: error.message, merchantId: req.params.merchantId });
-    next(error);
-  }
-};
-
-/**
- * Tracks merchant profile gamification points.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const trackProfileGamification = async (req, res, next) => {
-  try {
-    const { merchantId } = req.params;
-    const pointsRecord = await merchantProfileService.trackProfileGamification(merchantId);
-    logger.info('Merchant profile gamification points awarded successfully', { merchantId });
-    sendResponse(res, 200, {
-      message: merchantConstants.SUCCESS_MESSAGES.GAMIFICATION_POINTS_AWARDED,
-      data: pointsRecord,
-    });
-  } catch (error) {
-    logger.error('Error tracking merchant profile gamification', { error: error.message, merchantId: req.params.merchantId });
-    next(error);
-  }
-};
-
-/**
- * Uploads menu photos for a restaurant.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const uploadMenuPhotos = async (req, res, next) => {
-  try {
-    const { restaurantId } = req.params;
-    const photos = req.files;
-    const photoUrls = await merchantMediaService.uploadMenuPhotos(restaurantId, photos);
-    logger.info('Menu photos uploaded successfully', { restaurantId });
-    sendResponse(res, 200, {
-      message: 'Menu photos uploaded successfully',
-      data: photoUrls,
-    });
-  } catch (error) {
-    logger.error('Error uploading menu photos', { error: error.message, restaurantId: req.params.restaurantId });
-    next(error);
-  }
-};
-
-/**
- * Manages promotional media for a restaurant.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const managePromotionalMedia = async (req, res, next) => {
-  try {
-    const { restaurantId } = req.params;
-    const media = { file: req.file, type: req.body.type };
-    const mediaUrl = await merchantMediaService.managePromotionalMedia(restaurantId, media);
-    logger.info('Promotional media managed successfully', { restaurantId });
-    sendResponse(res, 200, {
-      message: 'Promotional media uploaded successfully',
-      data: mediaUrl,
-    });
-  } catch (error) {
-    logger.error('Error managing promotional media', { error: error.message, restaurantId: req.params.restaurantId });
-    next(error);
-  }
-};
-
-/**
- * Updates media metadata.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const updateMediaMetadata = async (req, res, next) => {
-  try {
-    const { mediaId } = req.params;
-    const metadata = req.body;
-    const updatedMedia = await merchantMediaService.updateMediaMetadata(mediaId, metadata);
-    logger.info('Media metadata updated successfully', { mediaId });
-    sendResponse(res, 200, {
-      message: 'Media metadata updated successfully',
-      data: updatedMedia,
-    });
-  } catch (error) {
-    logger.error('Error updating media metadata', { error: error.message, mediaId: req.params.mediaId });
-    next(error);
-  }
-};
-
-/**
- * Deletes media.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const deleteMedia = async (req, res, next) => {
-  try {
-    const { mediaId } = req.params;
-    await merchantMediaService.deleteMedia(mediaId);
-    logger.info('Media deleted successfully', { mediaId });
-    sendResponse(res, 200, {
-      message: 'Media deleted successfully',
-      data: null,
-    });
-  } catch (error) {
-    logger.error('Error deleting media', { error: error.message, mediaId: req.params.mediaId });
-    next(error);
-  }
-};
-
-/**
- * Updates branch details.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const updateBranchDetails = async (req, res, next) => {
-  try {
-    const { branchId } = req.params;
-    const details = req.body;
-    const updatedBranch = await branchProfileService.updateBranchDetails(branchId, details);
-    logger.info('Branch details updated successfully', { branchId });
-    sendResponse(res, 200, {
-      message: 'Branch details updated successfully',
-      data: updatedBranch,
-    });
-  } catch (error) {
-    logger.error('Error updating branch details', { error: error.message, branchId: req.params.branchId });
-    next(error);
-  }
-};
-
-/**
- * Configures branch settings.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const configureBranchSettings = async (req, res, next) => {
-  try {
-    const { branchId } = req.params;
-    const settings = req.body;
-    const updatedBranch = await branchProfileService.configureBranchSettings(branchId, settings);
-    logger.info('Branch settings configured successfully', { branchId });
-    sendResponse(res, 200, {
-      message: 'Branch settings configured successfully',
-      data: updatedBranch,
-    });
-  } catch (error) {
-    logger.error('Error configuring branch settings', { error: error.message, branchId: req.params.branchId });
-    next(error);
-  }
-};
-
-/**
- * Manages branch media.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const manageBranchMedia = async (req, res, next) => {
-  try {
-    const { branchId } = req.params;
-    const media = { file: req.file, type: req.body.type };
-    const mediaUrl = await branchProfileService.manageBranchMedia(branchId, media);
-    logger.info('Branch media managed successfully', { branchId });
-    sendResponse(res, 200, {
-      message: 'Branch media uploaded successfully',
-      data: mediaUrl,
-    });
-  } catch (error) {
-    logger.error('Error managing branch media', { error: error.message, branchId: req.params.branchId });
-    next(error);
-  }
-};
-
-/**
- * Synchronizes branch profiles.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @param {Function} next - Express next middleware function.
- */
-const syncBranchProfiles = async (req, res, next) => {
-  try {
-    const { merchantId } = req.params;
-    const updatedBranches = await branchProfileService.syncBranchProfiles(merchantId);
-    logger.info('Branch profiles synced successfully', { merchantId });
-    sendResponse(res, 200, {
-      message: 'Branch profiles synced successfully',
-      data: updatedBranches,
-    });
-  } catch (error) {
-    logger.error('Error syncing branch profiles', { error: error.message, merchantId: req.params.merchantId });
-    next(error);
-  }
-};
-
-module.exports = {
+const {
   updateBusinessDetails,
   setCountrySettings,
   manageLocalization,
-  trackProfileGamification,
-  uploadMenuPhotos,
-  managePromotionalMedia,
-  updateMediaMetadata,
-  deleteMedia,
-  updateBranchDetails,
-  configureBranchSettings,
-  manageBranchMedia,
-  syncBranchProfiles,
+} = require('@services/merchant/profile/merchantProfileService');
+const { Merchant } = require('@models').sequelize.models;
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
+const pointService = require('@services/common/pointService');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const { formatMessage } = require('@utils/localization');
+const catchAsync = require('@utils/catchAsync');
+const logger = require('@utils/logger');
+
+const updateBusinessDetailsController = catchAsync(async (req, res) => {
+  const { merchantId } = req.params;
+  const details = req.body;
+  const merchant = await updateBusinessDetails(merchantId, details);
+
+  await auditService.logAction({
+    userId: merchant.user_id,
+    role: 'merchant',
+    action: merchantConstants.MERCHANT_PROFILE_CONSTANTS.AUDIT_TYPES.UPDATE_BUSINESS_DETAILS,
+    details,
+    ipAddress: req.ip || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    notificationType: merchantConstants.MERCHANT_PROFILE_CONSTANTS.NOTIFICATION_TYPES.BUSINESS_UPDATED,
+    messageKey: 'profile.merchant.business_updated',
+    messageParams: { merchantId },
+    role: 'merchant',
+    module: 'profile',
+    languageCode: merchant.preferred_language || 'en',
+  });
+
+  await socketService.emit(null, 'profile:business_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    updatedFields: details,
+  }, `merchant:${merchant.user_id}`);
+
+  // Award points for profile completion
+  const profileComplete = details.businessName && details.phone && details.businessHours && details.businessType;
+  if (profileComplete) {
+    const pointsRecord = await pointService.awardPoints({
+      userId: merchant.user_id,
+      role: 'merchant',
+      action: merchantConstants.GAMIFICATION_CONSTANTS.MERCHANT_ACTIONS.find(a => a.action === 'profile_completion').action,
+      languageCode: merchant.preferred_language || 'en',
+    });
+
+    await notificationService.sendNotification({
+      userId: merchant.user_id,
+      merchant_id: merchant.id,
+      notificationType: merchantConstants.MERCHANT_PROFILE_CONSTANTS.NOTIFICATION_TYPES.PROFILE_POINTS_AWARDED,
+      messageKey: 'profile.merchant.points_awarded',
+      messageParams: { points: pointsRecord.points },
+      role: 'merchant',
+      module: 'profile',
+      languageCode: merchant.preferred_language || 'en',
+    });
+
+    await auditService.logAction({
+      userId: merchant.user_id,
+      role: 'merchant',
+      action: merchantConstants.MERCHANT_PROFILE_CONSTANTS.AUDIT_TYPES.AWARD_PROFILE_POINTS,
+      details: { points: pointsRecord.points, action: 'profile_completion' },
+      ipAddress: req.ip || '0.0.0.0',
+      metadata: { merchantId },
+    });
+  }
+
+  res.status(200).json({
+    status: 'success',
+    message: formatMessage('merchant', 'profile', 'en', 'merchant.business_updated', { merchantId }),
+    data: merchant,
+  });
+});
+
+const setCountrySettingsController = catchAsync(async (req, res) => {
+  const { merchantId } = req.params;
+  const { country } = req.body;
+  const merchant = await setCountrySettings(merchantId, country);
+
+  await auditService.logAction({
+    userId: merchant.user_id,
+    role: 'merchant',
+    action: merchantConstants.MERCHANT_PROFILE_CONSTANTS.AUDIT_TYPES.SET_COUNTRY_SETTINGS,
+    details: { country },
+    ipAddress: req.ip || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    notificationType: merchantConstants.MERCHANT_PROFILE_CONSTANTS.NOTIFICATION_TYPES.COUNTRY_UPDATED,
+    messageKey: 'profile.merchant.country_updated',
+    messageParams: { country, merchantId },
+    role: 'merchant',
+    module: 'profile',
+    languageCode: merchant.preferred_language || 'en',
+  });
+
+  await socketService.emit(null, 'profile:country_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    country,
+  }, `merchant:${merchant.user_id}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: formatMessage('merchant', 'profile', 'en', 'merchant.country_updated', { country, merchantId }),
+    data: merchant,
+  });
+});
+
+const manageLocalizationController = catchAsync(async (req, res) => {
+  const { merchantId } = req.params;
+  const settings = req.body;
+  const merchant = await manageLocalization(merchantId, settings);
+
+  await auditService.logAction({
+    userId: merchant.user_id,
+    role: 'merchant',
+    action: merchantConstants.MERCHANT_PROFILE_CONSTANTS.AUDIT_TYPES.MANAGE_LOCALIZATION,
+    details: settings,
+    ipAddress: req.ip || '0.0.0.0',
+    metadata: { merchantId },
+  });
+
+  await notificationService.sendNotification({
+    userId: merchant.user_id,
+    merchant_id: merchant.id,
+    notificationType: merchantConstants.MERCHANT_PROFILE_CONSTANTS.NOTIFICATION_TYPES.LOCALIZATION_UPDATED,
+    messageKey: 'profile.merchant.localization_updated',
+    messageParams: { language: settings.language, merchantId },
+    role: 'merchant',
+    module: 'profile',
+    languageCode: merchant.preferred_language || settings.language || 'en',
+  });
+
+  await socketService.emit(null, 'profile:localization_updated', {
+    userId: merchant.user_id,
+    merchantId,
+    language: settings.language,
+  }, `merchant:${merchant.user_id}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: formatMessage('merchant', 'profile', 'en', 'merchant.localization_updated', { language: settings.language, merchantId }),
+    data: merchant,
+  });
+});
+
+module.exports = {
+  updateBusinessDetailsController,
+  setCountrySettingsController,
+  manageLocalizationController,
 };

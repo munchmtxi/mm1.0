@@ -1,467 +1,386 @@
 'use strict';
 
-/**
- * Payment Service (Merchant Side)
- * Manages merchant-side payment operations, including processing payments, managing split payments,
- * issuing refunds, and awarding gamification points. Integrates with Booking, Customer, InDiningOrder,
- * Staff, MerchantBranch, Wallet, Payment, and GamificationPoints models, and uses notification, audit,
- * socket, point, and wallet services.
- *
- * Last Updated: May 21, 2025
- */
-
-const { Booking, Customer, InDiningOrder, Staff, MerchantBranch, Wallet, Payment, GamificationPoints } = require('@models');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const walletService = require('@services/common/walletService');
-const mTablesConstants = require('@constants/mTablesConstants');
-const customerConstants = require('@constants/customer/customerConstants');
-const gamificationConstants = require('@constants/gamificationConstants');
-const paymentConstants = require('@constants/paymentConstants');
+const { Booking, Customer, InDiningOrder, Staff, MerchantBranch, Wallet, Payment, WalletTransaction, Table, Merchant, BookingPartyMember } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const merchantWalletConstants = require('@constants/merchant/merchantWalletConstants');
+const customerWalletConstants = require('@constants/customer/customerWalletConstants');
+const mtablesConstants = require('@constants/common/mtablesConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
+const taxConstants = require('@constants/common/taxConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-class PaymentService {
-  /**
-   * Processes a payment for a booking
-   * @param {number} bookingId - Booking ID
-   * @param {number} amount - Payment amount
-   * @param {number} walletId - Wallet ID
-   * @param {Object} options - Additional options { staffId, paymentMethodId, ipAddress }
-   * @returns {Promise<Object>} Payment record
-   */
-  static async processPayment(bookingId, amount, walletId, options = {}) {
-    const { staffId, paymentMethodId, ipAddress } = options;
-    const transaction = await sequelize.transaction();
+async function processPayment(bookingId, amount, walletId, { staffId, paymentMethodId, countryCode } = {}) {
+  const transaction = await sequelize.transaction();
+  try {
+    // Validate booking
+    const booking = await Booking.findByPk(bookingId, {
+      include: [
+        { model: Customer, as: 'customer' },
+        { model: InDiningOrder, as: 'inDiningOrders' },
+        { model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] },
+        { model: Table, as: 'table' },
+        { model: Staff, as: 'staff' },
+        { model: BookingPartyMember, as: 'BookingPartyMembers' },
+      ],
+      transaction,
+    });
+    if (!booking) throw new AppError('Booking not found', 404, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
 
-    try {
-      const booking = await Booking.findByPk(bookingId, {
-        include: [{ model: Customer, as: 'customer' }, { model: InDiningOrder, as: 'inDiningOrders' }],
-        transaction,
-      });
-      if (!booking) {
-        throw new AppError('Booking not found', 404, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
+    // Validate order
+    const order = booking.inDiningOrders?.find(o => o.payment_status === mtablesConstants.ORDER_STATUSES.PENDING);
+    if (!order) throw new AppError('No pending order found', 400, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
 
-      const order = booking.inDiningOrders?.find(o => o.payment_status === 'pending');
-      if (!order) {
-        throw new AppError('No pending order found for booking', 400, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
+    // Validate amount
+    if (amount <= 0 || amount > order.total_amount)
+      throw new AppError('Invalid payment amount', 400, paymentConstants.ERROR_CODES.INVALID_AMOUNT);
 
-      if (amount <= 0 || amount > order.total_amount) {
-        throw new AppError('Invalid payment amount', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
+    // Validate wallet
+    const wallet = await Wallet.findByPk(walletId, {
+      include: [{ model: Customer, as: 'user' }, { model: Staff, as: 'staff' }, { model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!wallet || wallet.user_id !== booking.customer.user_id)
+      throw new AppError('Invalid wallet or user mismatch', 400, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+    if (wallet.balance < amount)
+      throw new AppError('Insufficient wallet balance', 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
+    if (wallet.balance + amount > paymentConstants.WALLET_SETTINGS.MAX_BALANCE)
+      throw new AppError('Wallet balance exceeds maximum', 400, paymentConstants.ERROR_CODES.INVALID_AMOUNT);
 
-      const wallet = await Wallet.findByPk(walletId, { transaction });
-      if (!wallet || wallet.user_id !== booking.customer.user_id) {
-        throw new AppError('Invalid wallet', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
+    // Validate payment method
+    if (paymentMethodId && !customerWalletConstants.WALLET_CONSTANTS.PAYMENT_METHODS.includes(paymentMethodId))
+      throw new AppError('Invalid payment method', 400, paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
 
-      if (wallet.balance < amount) {
-        throw new AppError('Insufficient wallet balance', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
+    // Validate staff
+    const staff = staffId
+      ? await Staff.findOne({
+          where: { id: staffId, availability_status: staffConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
+          include: [{ model: Merchant, as: 'merchant' }, { model: MerchantBranch, as: 'branch' }],
+          transaction,
+        })
+      : null;
+    if (staffId && !staff)
+      throw new AppError('Invalid staff or unavailable', 400, mtablesConstants.ERROR_TYPES.INVALID_BOOKING_DETAILS);
+    if (staff && !staffConstants.STAFF_PERMISSIONS[staff.role]?.includes('process_orders'))
+      throw new AppError('Staff lacks permission', 400, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
 
-      const staff = staffId ? await Staff.findOne({
-        where: { id: staffId, availability_status: mTablesConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
-        transaction,
-      }) : null;
-      if (staffId && !staff) {
-        throw new AppError('Staff unavailable', 400, mTablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS);
-      }
+    // Validate currency
+    const currency = localizationConstants.COUNTRY_CURRENCY_MAP[countryCode] || localizationConstants.DEFAULT_CURRENCY;
+    if (order.currency !== currency)
+      throw new AppError('Currency mismatch', 400, paymentConstants.ERROR_CODES.CURRENCY_MISMATCH);
 
-      const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      const payment = await Payment.create({
+    // Calculate tax
+    const taxRate = taxConstants.TAX_RATES[countryCode]?.[taxConstants.TAX_SETTINGS.DEFAULT_TAX_TYPE] || 0;
+    const taxAmount = taxConstants.TAX_SETTINGS.TAX_CALCULATION_METHODS.INCLUDED === 'INCLUDED'
+      ? amount - (amount / (1 + taxRate))
+      : amount * taxRate;
+    const netAmount = amount - taxAmount;
+
+    // Create transaction ID
+    const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    // Create payment
+    const payment = await Payment.create(
+      {
         in_dining_order_id: order.id,
         customer_id: booking.customer_id,
-        merchant_id: order.branch.merchant_id,
+        merchant_id: booking.branch.merchant_id,
         staff_id: staff?.id,
-        amount,
-        payment_method: paymentMethodId || paymentConstants.DEFAULT_PAYMENT_METHOD,
-        status: 'completed',
+        amount: netAmount,
+        tax_amount: taxAmount,
+        payment_method: paymentMethodId || customerWalletConstants.WALLET_CONSTANTS.PAYMENT_METHODS[0],
+        status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
         transaction_id: transactionId,
-        currency: order.currency,
+        currency,
         created_at: new Date(),
         updated_at: new Date(),
-      }, { transaction });
+      },
+      { transaction }
+    );
 
-      await walletService.processTransaction({
-        walletId: wallet.id,
-        type: paymentConstants.FINANCIAL_SETTINGS.PAYMENT_TRANSACTION_TYPE,
-        amount: -amount,
-        currency: wallet.currency,
-        paymentMethodId,
-      }, { transaction });
-
-      if (amount === order.total_amount) {
-        await order.update({ payment_status: 'completed' }, { transaction });
-      }
-
-      await notificationService.sendNotification({
-        userId: booking.customer.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.PAYMENT_COMPLETED,
-        messageKey: 'payment.completed',
-        messageParams: { orderId: order.id, amount },
-        role: 'customer',
-        module: 'mtables',
-        orderId: order.id,
-      });
-
-      await notificationService.sendNotification({
-        userId: order.branch.merchant.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.PAYMENT_RECEIVED,
-        messageKey: 'payment.received',
-        messageParams: { orderId: order.id, amount },
-        role: 'merchant',
-        module: 'mtables',
-        orderId: order.id,
-      });
-
-      await socketService.emit(null, 'payment:completed', {
-        userId: booking.customer.user_id,
-        role: 'customer',
-        orderId: order.id,
-        paymentId: payment.id,
-      });
-
-      await auditService.logAction({
-        userId: staff?.user_id || booking.customer.user_id,
-        role: staff ? 'merchant' : 'customer',
-        action: mTablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.PAYMENT_PROCESSED,
-        details: { orderId: order.id, paymentId: payment.id, amount },
-        ipAddress: ipAddress || 'unknown',
-      }, { transaction });
-
-      await transaction.commit();
-      logger.info('Payment processed', { orderId: order.id, paymentId: payment.id, amount });
-      return payment;
-    } catch (error) {
-      await transaction.rollback();
-      logger.error('Error processing payment', { error: error.message });
-      throw error;
-    }
-  }
-
-  /**
-   * Manages split payments for a booking
-   * @param {number} bookingId - Booking ID
-   * @param {Array} payments - Array of payment details [{ customerId, amount, walletId, paymentMethodId }]
-   * @param {Object} options - Additional options { staffId, ipAddress }
-   * @returns {Promise<Object>} Payment records and order
-   */
-  static async manageSplitPayments(bookingId, payments, options = {}) {
-    const { staffId, ipAddress } = options;
-    const transaction = await sequelize.transaction();
-
-    try {
-      const booking = await Booking.findByPk(bookingId, {
-        include: [
-          { model: InDiningOrder, as: 'inDiningOrders' },
-          { model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] },
-        ],
-        transaction,
-      });
-      if (!booking) {
-        throw new AppError('Booking not found', 404, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
-
-      const order = booking.inDiningOrders?.find(o => o.payment_status === 'pending');
-      if (!order) {
-        throw new AppError('No pending order found for booking', 400, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
-
-      const totalSplit = payments.reduce((sum, p) => sum + p.amount, 0);
-      if (totalSplit !== order.total_amount) {
-        throw new AppError('Split payments do not match order total', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
-
-      const staff = staffId ? await Staff.findOne({
-        where: { id: staffId, availability_status: mTablesConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
-        transaction,
-      }) : null;
-      if (staffId && !staff) {
-        throw new AppError('Staff unavailable', 400, mTablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS);
-      }
-
-      const paymentRecords = [];
-      for (const payment of payments) {
-        const { customerId, amount, walletId, paymentMethodId } = payment;
-
-        const customer = await Customer.findByPk(customerId, { transaction });
-        if (!customer) {
-          throw new AppError(`Customer ${customerId} not found`, 404, mTablesConstants.ERROR_CODES.INVALID_CUSTOMER_ID);
-        }
-
-        const wallet = await Wallet.findByPk(walletId, { transaction });
-        if (!wallet || wallet.user_id !== customer.user_id) {
-          throw new AppError(`Invalid wallet for customer ${customerId}`, 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-        }
-
-        if (wallet.balance < amount) {
-          throw new AppError(`Insufficient balance for customer ${customerId}`, 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-        }
-
-        const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        const paymentRecord = await Payment.create({
-          in_dining_order_id: order.id,
-          customer_id: customerId,
-          merchant_id: order.branch.merchant_id,
-          staff_id: staff?.id,
-          amount,
-          payment_method: paymentMethodId || paymentConstants.DEFAULT_PAYMENT_METHOD,
-          status: 'completed',
-          transaction_id: transactionId,
-          currency: order.currency,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }, { transaction });
-
-        await walletService.processTransaction({
-          walletId: wallet.id,
-          type: paymentConstants.FINANCIAL_SETTINGS.PAYMENT_TRANSACTION_TYPE,
-          amount: -amount,
-          currency: wallet.currency,
-          paymentMethodId,
-        }, { transaction });
-
-        paymentRecords.push(paymentRecord);
-      }
-
-      await order.update({ payment_status: 'completed' }, { transaction });
-
-      for (const payment of payments) {
-        const customer = await Customer.findByPk(payment.customerId, { transaction });
-        await notificationService.sendNotification({
-          userId: customer.user_id,
-          notificationType: mTablesConstants.NOTIFICATION_TYPES.PAYMENT_COMPLETED,
-          messageKey: 'payment.completed',
-          messageParams: { orderId: order.id, amount: payment.amount },
-          role: 'customer',
-          module: 'mtables',
-          orderId: order.id,
-        });
-      }
-
-      await notificationService.sendNotification({
-        userId: order.branch.merchant.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.PAYMENT_RECEIVED,
-        messageKey: 'payment.received',
-        messageParams: { orderId: order.id, totalAmount: order.total_amount },
-        role: 'merchant',
-        module: 'mtables',
-        orderId: order.id,
-      });
-
-      await socketService.emit(null, 'payment:completed', {
-        userId: order.customer_id,
-        role: 'customer',
-        orderId: order.id,
-        paymentIds: paymentRecords.map(p => p.id),
-      });
-
-      await auditService.logAction({
-        userId: staff?.user_id || order.branch.merchant.user_id,
-        role: 'merchant',
-        action: mTablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.SPLIT_PAYMENT_PROCESSED,
-        details: { orderId: order.id, paymentIds: paymentRecords.map(p => p.id) },
-        ipAddress: ipAddress || 'unknown',
-      }, { transaction });
-
-      await transaction.commit();
-      logger.info('Split payments processed', { orderId: order.id, paymentIds: paymentRecords.map(p => p.id) });
-      return { payments: paymentRecords, order };
-    } catch (error) {
-      await transaction.rollback();
-      logger.error('Error managing split payments', { error: error.message });
-      throw error;
-    }
-  }
-
-  /**
-   * Issues a refund to a wallet for a booking
-   * @param {number} bookingId - Booking ID
-   * @param {number} walletId - Wallet ID
-   * @param {Object} options - Additional options { amount, staffId, ipAddress }
-   * @returns {Promise<Object>} Refund payment record
-   */
-  static async issueRefund(bookingId, walletId, options = {}) {
-    const { amount, staffId, ipAddress } = options;
-    const transaction = await sequelize.transaction();
-
-    try {
-      const booking = await Booking.findByPk(bookingId, {
-        include: [
-          { model: Customer, as: 'customer' },
-          { model: InDiningOrder, as: 'inDiningOrders', include: [{ model: Payment, as: 'payments' }] },
-        ],
-        transaction,
-      });
-      if (!booking) {
-        throw new AppError('Booking not found', 404, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
-
-      const order = booking.inDiningOrders?.find(o => o.payment_status === 'completed');
-      if (!order) {
-        throw new AppError('No completed order found for booking', 400, mTablesConstants.ERROR_CODES.BOOKING_NOT_FOUND);
-      }
-
-      const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
-      if (!amount || amount <= 0 || amount > totalPaid) {
-        throw new AppError('Invalid refund amount', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
-
-      const wallet = await Wallet.findByPk(walletId, { transaction });
-      if (!wallet || wallet.user_id !== booking.customer.user_id) {
-        throw new AppError('Invalid wallet', 400, mTablesConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
-
-      const staff = staffId ? await Staff.findOne({
-        where: { id: staffId, availability_status: mTablesConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
-        transaction,
-      }) : null;
-      if (staffId && !staff) {
-        throw new AppError('Staff unavailable', 400, mTablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS);
-      }
-
-      const transactionId = `RFN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      const refund = await Payment.create({
-        in_dining_order_id: order.id,
-        customer_id: booking.customer_id,
-        merchant_id: order.branch.merchant_id,
-        staff_id: staff?.id,
-        amount: -amount,
-        payment_method: paymentConstants.DEFAULT_PAYMENT_METHOD,
-        status: 'completed',
-        transaction_id: transactionId,
-        currency: order.currency,
+    // Create wallet transaction
+    await WalletTransaction.create(
+      {
+        wallet_id: walletId,
+        type: paymentConstants.TRANSACTION_TYPES.BOOKING_PAYMENT,
+        amount: netAmount,
+        tax_amount: taxAmount,
+        currency,
+        status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+        payment_method_id: paymentMethodId,
+        description: `Payment for order ${order.id}`,
         created_at: new Date(),
         updated_at: new Date(),
-      }, { transaction });
+      },
+      { transaction }
+    );
 
-      await walletService.processTransaction({
-        walletId: wallet.id,
-        type: paymentConstants.FINANCIAL_SETTINGS.REFUND_TRANSACTION_TYPE,
-        amount,
-        currency: wallet.currency,
-      }, { transaction });
+    // Update wallet balance
+    await wallet.update({ balance: wallet.balance - amount }, { transaction });
 
-      await notificationService.sendNotification({
-        userId: booking.customer.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.REFUND_ISSUED,
-        messageKey: 'payment.refunded',
-        messageParams: { orderId: order.id, amount },
-        role: 'customer',
-        module: 'mtables',
-        orderId: order.id,
-      });
+    // Update order status
+    if (amount === order.total_amount)
+      await order.update({ payment_status: mtablesConstants.ORDER_STATUSES.COMPLETED }, { transaction });
 
-      await notificationService.sendNotification({
-        userId: order.branch.merchant.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.REFUND_PROCESSED,
-        messageKey: 'payment.refunded_processed',
-        messageParams: { orderId: order.id, amount },
-        role: 'merchant',
-        module: 'mtables',
-        orderId: order.id,
-      });
-
-      await socketService.emit(null, 'payment:refunded', {
-        userId: booking.customer.user_id,
-        role: 'customer',
-        orderId: order.id,
-        refundId: refund.id,
-      });
-
-      await auditService.logAction({
-        userId: staff?.user_id || order.branch.merchant.user_id,
-        role: 'merchant',
-        action: mTablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.REFUND_ISSUED,
-        details: { orderId: order.id, refundId: refund.id, amount },
-        ipAddress: ipAddress || 'unknown',
-      }, { transaction });
-
-      await transaction.commit();
-      logger.info('Refund issued', { orderId: order.id, refundId: refund.id, amount });
-      return refund;
-    } catch (error) {
-      await transaction.rollback();
-      logger.error('Error issuing refund', { error: error.message });
-      throw error;
-    }
-  }
-
-  /**
-   * Tracks gamification points for payment actions
-   * @param {number} customerId - Customer ID
-   * @returns {Promise<Object>} Points record
-   */
-  static async trackPaymentGamification(customerId) {
-    const transaction = await sequelize.transaction();
-
-    try {
-      if (!customerId) {
-        throw new AppError('Customer ID required', 400, mTablesConstants.ERROR_CODES.INVALID_CUSTOMER_ID);
-      }
-
-      const customer = await Customer.findByPk(customerId, { transaction });
-      if (!customer) {
-        throw new AppError('Customer not found', 404, mTablesConstants.ERROR_CODES.INVALID_CUSTOMER_ID);
-      }
-
-      const gamificationAction = gamificationConstants.CUSTOMER_ACTIONS.PAYMENT_COMPLETED;
-      const pointsRecord = await pointService.awardPoints({
-        userId: customer.user_id,
-        role: 'customer',
-        action: gamificationAction.action,
-        languageCode: customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-      }, { transaction });
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + gamificationConstants.POINTS_EXPIRY_DAYS);
-      const gamification = await GamificationPoints.create({
-        user_id: customer.user_id,
-        role: 'customer',
-        action: gamificationAction.action,
-        points: pointsRecord.points,
-        metadata: { customerId },
-        expires_at: expiresAt,
-        created_at: new Date(),
-        updated_at: new Date(),
-      }, { transaction });
-
-      await notificationService.sendNotification({
-        userId: customer.user_id,
-        notificationType: mTablesConstants.NOTIFICATION_TYPES.POINTS_AWARDED,
-        messageKey: 'points.awarded',
-        messageParams: { points: pointsRecord.points, action: gamificationAction.action },
-        role: 'customer',
-        module: 'mtables',
-      });
-
-      await socketService.emit(null, 'points:awarded', {
-        userId: customer.user_id,
-        role: 'customer',
-        points: pointsRecord.points,
-      });
-
-      await auditService.logAction({
-        userId: customer.user_id,
-        role: 'customer',
-        action: mTablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.POINTS_AWARDED,
-        details: { customerId, points: pointsRecord.points, action: gamificationAction.action },
-        ipAddress: 'unknown',
-      }, { transaction });
-
-      await transaction.commit();
-      logger.info('Payment gamification points awarded', { customerId, points: pointsRecord.points });
-      return gamification;
-    } catch (error) {
-      await transaction.rollback();
-      logger.error('Error tracking payment gamification', { error: error.message });
-      throw error;
-    }
+    await transaction.commit();
+    logger.info('Payment processed', { orderId: order.id, paymentId: payment.id, amount });
+    return payment;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error processing payment', { error: error.message });
+    throw error;
   }
 }
 
-module.exports = PaymentService;
+async function manageSplitPayments(bookingId, payments, { staffId, countryCode } = {}) {
+  const transaction = await sequelize.transaction();
+  try {
+    // Validate booking
+    const booking = await Booking.findByPk(bookingId, {
+      include: [
+        { model: InDiningOrder, as: 'inDiningOrders' },
+        { model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] },
+        { model: Table, as: 'table' },
+        { model: Staff, as: 'staff' },
+        { model: BookingPartyMember, as: 'BookingPartyMembers' },
+      ],
+      transaction,
+    });
+    if (!booking) throw new AppError('Booking not found', 404, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
+
+    // Validate order
+    const order = booking.inDiningOrders?.find(o => o.payment_status === mtablesConstants.ORDER_STATUSES.PENDING);
+    if (!order) throw new AppError('No pending order found', 400, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
+
+    // Validate split payment total
+    const totalSplit = payments.reduce((sum, p) => sum + p.amount, 0);
+    if (totalSplit !== order.total_amount)
+      throw new AppError('Split payment total mismatch', 400, customerWalletConstants.WALLET_CONSTANTS.ERROR_CODES.INVALID_BILL_SPLIT);
+
+    // Validate split participants
+    if (payments.length > mtablesConstants.GROUP_SETTINGS.MAX_SPLIT_PARTICIPANTS)
+      throw new AppError('Max split participants exceeded', 400, customerWalletConstants.WALLET_CONSTANTS.ERROR_CODES.MAX_SPLIT_PARTICIPANTS_EXCEEDED);
+
+    // Validate staff
+    const staff = staffId
+      ? await Staff.findOne({
+          where: { id: staffId, availability_status: staffConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
+          include: [{ model: Merchant, as: 'merchant' }, { model: MerchantBranch, as: 'branch' }],
+          transaction,
+        })
+      : null;
+    if (staffId && !staff)
+      throw new AppError('Invalid staff or unavailable', 400, mtablesConstants.ERROR_TYPES.INVALID_BOOKING_DETAILS);
+    if (staff && !staffConstants.STAFF_PERMISSIONS[staff.role]?.includes('process_orders'))
+      throw new AppError('Staff lacks permission', 400, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
+
+    // Validate currency
+    const currency = localizationConstants.COUNTRY_CURRENCY_MAP[countryCode] || localizationConstants.DEFAULT_CURRENCY;
+    if (order.currency !== currency)
+      throw new AppError('Currency mismatch', 400, paymentConstants.ERROR_CODES.CURRENCY_MISMATCH);
+
+    // Calculate tax
+    const taxRate = taxConstants.TAX_RATES[countryCode]?.[taxConstants.TAX_SETTINGS.DEFAULT_TAX_TYPE] || 0;
+    const paymentRecords = [];
+
+    for (const payment of payments) {
+      const { customerId, amount, walletId, paymentMethodId } = payment;
+
+      // Validate customer
+      const customer = await Customer.findByPk(customerId, {
+        include: [{ model: BookingPartyMember, where: { booking_id: bookingId } }],
+        transaction,
+      });
+      if (!customer) throw new AppError('Invalid customer ID', 404, mtablesConstants.ERROR_TYPES.INVALID_CUSTOMER_ID);
+
+      // Validate wallet
+      const wallet = await Wallet.findByPk(walletId, {
+        include: [{ model: Customer, as: 'user' }],
+        transaction,
+      });
+      if (!wallet || wallet.user_id !== customer.user_id)
+        throw new AppError('Invalid wallet or user mismatch', 400, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+      if (wallet.balance < amount)
+        throw new AppError('Insufficient wallet balance', 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
+
+      // Validate payment method
+      if (paymentMethodId && !customerWalletConstants.WALLET_CONSTANTS.PAYMENT_METHODS.includes(paymentMethodId))
+        throw new AppError('Invalid payment method', 400, paymentConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
+
+      // Calculate tax for split payment
+      const taxAmount = taxConstants.TAX_SETTINGS.TAX_CALCULATION_METHODS.INCLUDED === 'INCLUDED'
+        ? amount - (amount / (1 + taxRate))
+        : amount * taxRate;
+      const netAmount = amount - taxAmount;
+
+      // Create transaction ID
+      const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+      // Create payment
+      const paymentRecord = await Payment.create(
+        {
+          in_dining_order_id: order.id,
+          customer_id: customerId,
+          merchant_id: booking.branch.merchant_id,
+          staff_id: staff?.id,
+          amount: netAmount,
+          tax_amount: taxAmount,
+          payment_method: paymentMethodId || customerWalletConstants.WALLET_CONSTANTS.PAYMENT_METHODS[0],
+          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          transaction_id: transactionId,
+          currency,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+        { transaction }
+      );
+
+      // Create wallet transaction
+      await WalletTransaction.create(
+        {
+          wallet_id: walletId,
+          type: paymentConstants.TRANSACTION_TYPES.SOCIAL_BILL_SPLIT,
+          amount: netAmount,
+          tax_amount: taxAmount,
+          currency,
+          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          payment_method_id: paymentMethodId,
+          description: `Split payment for order ${order.id}`,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+        { transaction }
+      );
+
+      // Update wallet balance
+      await wallet.update({ balance: wallet.balance - amount }, { transaction });
+      paymentRecords.push(paymentRecord);
+    }
+
+    // Update order status
+    await order.update({ payment_status: mtablesConstants.ORDER_STATUSES.COMPLETED }, { transaction });
+    await transaction.commit();
+    logger.info('Split payments processed', { orderId: order.id, paymentIds: paymentRecords.map(p => p.id) });
+    return { payments: paymentRecords, order };
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error managing split payments', { error: error.message });
+    throw error;
+  }
+}
+
+async function issueRefund(bookingId, walletId, { amount, staffId, countryCode } = {}) {
+  const transaction = await sequelize.transaction();
+  try {
+    // Validate booking
+    const booking = await Booking.findByPk(bookingId, {
+      include: [
+        { model: Customer, as: 'customer' },
+        { model: InDiningOrder, as: 'inDiningOrders', include: [{ model: Payment, as: 'inDiningOrder' }] },
+        { model: MerchantBranch, as: 'branch', include: [{ model: Merchant, as: 'merchant' }] },
+        { model: Table, as: 'table' },
+        { model: Staff, as: 'staff' },
+        { model: BookingPartyMember, as: 'BookingPartyMembers' },
+      ],
+      transaction,
+    });
+    if (!booking) throw new AppError('Booking not found', 404, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
+
+    // Validate order
+    const order = booking.inDiningOrders?.find(o => o.payment_status === mtablesConstants.ORDER_STATUSES.COMPLETED);
+    if (!order) throw new AppError('No completed order found', 400, mtablesConstants.ERROR_TYPES.BOOKING_NOT_FOUND);
+
+    // Validate refund amount
+    const totalPaid = order.inDiningOrder.reduce((sum, p) => sum + p.amount, 0);
+    if (!amount || amount <= 0 || amount > totalPaid)
+      throw new AppError('Invalid refund amount', 400, paymentConstants.ERROR_CODES.INVALID_AMOUNT);
+
+    // Validate wallet
+    const wallet = await Wallet.findByPk(walletId, {
+      include: [{ model: Customer, as: 'user' }, { model: Staff, as: 'staff' }, { model: Merchant, as: 'merchant' }],
+      transaction,
+    });
+    if (!wallet || wallet.user_id !== booking.customer.user_id)
+      throw new AppError('Invalid wallet or user mismatch', 400, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+    if (wallet.balance + amount > paymentConstants.WALLET_SETTINGS.MAX_BALANCE)
+      throw new AppError('Wallet balance exceeds maximum', 400, paymentConstants.ERROR_CODES.INVALID_AMOUNT);
+
+    // Validate staff
+    const staff = staffId
+      ? await Staff.findOne({
+          where: { id: staffId, availability_status: staffConstants.STAFF_SETTINGS.AVAILABILITY_STATUSES.AVAILABLE },
+          include: [{ model: Merchant, as: 'merchant' }, { model: MerchantBranch, as: 'branch' }],
+          transaction,
+        })
+      : null;
+    if (staffId && !staff)
+      throw new AppError('Invalid staff or unavailable', 400, mtablesConstants.ERROR_TYPES.INVALID_BOOKING_DETAILS);
+    if (staff && !staffConstants.STAFF_PERMISSIONS[staff.role]?.includes('process_refunds'))
+      throw new AppError('Staff lacks permission', 400, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
+
+    // Validate currency
+    const currency = localizationConstants.COUNTRY_CURRENCY_MAP[countryCode] || localizationConstants.DEFAULT_CURRENCY;
+    if (order.currency !== currency)
+      throw new AppError('Currency mismatch', 400, paymentConstants.ERROR_CODES.CURRENCY_MISMATCH);
+
+    // Calculate tax for refund
+    const taxRate = taxConstants.TAX_RATES[countryCode]?.[taxConstants.TAX_SETTINGS.DEFAULT_TAX_TYPE] || 0;
+    const taxAmount = taxConstants.TAX_SETTINGS.TAX_CALCULATION_METHODS.INCLUDED === 'INCLUDED'
+      ? amount - (amount / (1 + taxRate))
+      : amount * taxRate;
+    const netAmount = amount - taxAmount;
+
+    // Create transaction ID
+    const transactionId = `RFN-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    // Create refund payment
+    const refund = await Payment.create(
+      {
+        in_dining_order_id: order.id,
+        customer_id: booking.customer_id,
+        merchant_id: booking.branch.merchant_id,
+        staff_id: staff?.id,
+        amount: -netAmount,
+        tax_amount: -taxAmount,
+        payment_method: customerWalletConstants.WALLET_CONSTANTS.PAYMENT_METHODS[0],
+        status: paymentConstants.TRANSACTION_STATUSES.REFUNDED,
+        transaction_id: transactionId,
+        currency,
+        refund_status: 'processed',
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+      { transaction }
+    );
+
+    // Create wallet transaction for refund
+    await WalletTransaction.create(
+      {
+        wallet_id: walletId,
+        type: paymentConstants.TRANSACTION_TYPES.REFUND,
+        amount: netAmount,
+        tax_amount: taxAmount,
+        currency,
+        status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+        description: `Refund for order ${order.id}`,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+      { transaction }
+    );
+
+    // Update wallet balance
+    await wallet.update({ balance: wallet.balance + amount }, { transaction });
+
+    await transaction.commit();
+    logger.info('Refund issued', { orderId: order.id, refundId: refund.id, amount });
+    return refund;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error issuing refund', { error: error.message });
+    throw error;
+  }
+}
+
+module.exports = { processPayment, manageSplitPayments, issueRefund };

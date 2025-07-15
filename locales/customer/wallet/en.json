@@ -1,20 +1,16 @@
 {
-  "error": {
-    "customer_not_found": "Customer not found",
-    "wallet_already_exists": "Wallet already exists",
-    "wallet_not_found": "Wallet not found",
-    "invalid_amount": "Invalid amount",
-    "invalid_payment_method": "Invalid payment method",
-    "insufficient_funds": "Insufficient funds",
-    "invalid_balance": "Balance exceeds maximum limit",
-    "currency_mismatch": "Currency mismatch",
-    "transaction_failed": "Transaction failed"
-  },
-  "notification": {
-    "wallet.created": "Wallet {walletId} created successfully",
-    "wallet.deposit_confirmed": "Deposited {amount} {currency} to your wallet",
-    "wallet.withdrawal_confirmed": "Withdrawn {amount} {currency} from your wallet",
-    "wallet.payment_confirmed": "Paid {amount} {currency} for service {serviceId}",
-    "wallet.gamification_reward": "Credited {amount} {currency} for {description}"
+  "wallet": {
+    "created": "Wallet {walletId} created successfully",
+    "created_success": "Your wallet {walletId} has been created",
+    "funded": "Added {amount} {currency} to wallet",
+    "funded_success": "Successfully added {amount} {currency} to your wallet",
+    "withdrawn": "Withdrawn {amount} {currency} from wallet",
+    "withdrawn_success": "Successfully withdrawn {amount} {currency} from your wallet",
+    "payment_processed": "Payment of {amount} {currency} processed",
+    "payment_success": "Payment of {amount} for service {serviceId} completed",
+    "balance_retrieved": "Wallet balance: {balance} {currency}",
+    "transactions_retrieved": "Retrieved {count} wallet transactions",
+    "reward_credited": "Credited {amount} {currency} for reward {rewardId}",
+    "reward_credited_success": "Successfully credited {amount} for reward {rewardId}"
   }
 }

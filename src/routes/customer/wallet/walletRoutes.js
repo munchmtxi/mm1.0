@@ -2,220 +2,256 @@
 
 const express = require('express');
 const router = express.Router();
-const {
-  createWalletAction,
-  addFundsAction,
-  withdrawFundsAction,
-  payWithWalletAction,
-  getWalletBalanceAction,
-  getWalletTransactionsAction,
-  creditWalletAction,
-} = require('@controllers/customer/wallet/walletController');
-const {
-  createWalletSchema,
-  addFundsSchema,
-  withdrawFundsSchema,
-  payWithWalletSchema,
-  creditWalletSchema,
-} = require('@validators/customer/wallet/walletValidator');
-const {
-  createWallet,
-  addFunds,
-  withdrawFunds,
-  payWithWallet,
-  getWalletBalance,
-  getWalletTransactions,
-  creditWallet,
-} = require('@middleware/customer/wallet/walletMiddleware');
-const { validate } = require('@middleware/common');
+const walletController = require('@controllers/customer/wallet/walletController');
+const walletValidator = require('@validators/customer/wallet/walletValidator');
+const validate = require('@middleware/common/validateMiddleware');
+const walletMiddleware = require('@middleware/customer/wallet/walletMiddleware');
 
 /**
  * @swagger
- * /api/v1/customer/wallet:
+ * tags:
+ *   name: Customer Wallet
+ *   description: Customer wallet management endpoints
+ */
+
+/**
+ * @swagger
+ * /customer/wallet:
  *   post:
- *     summary: Create a customer wallet
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     summary: Create a new wallet
+ *     tags: [Customer Wallet]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - customerId
  *             properties:
- *               customerId: { type: integer, example: 1 }
+ *               languageCode:
+ *                 type: string
+ *                 example: en
  *     responses:
  *       201:
- *         description: Wallet created
+ *         description: Wallet created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status: { type: string, example: "success" }
- *                 data: { type: object, properties: { id: { type: integer }, user_id: { type: integer }, type: { type: string }, currency: { type: string }, balance: { type: number } } }
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data: { type: object }
+ *       400:
+ *         description: Bad request
+ *       404:
+ *         description: Customer not found
  */
-router.post('/', createWallet, validate(createWalletSchema), createWalletAction);
+router.post('/', validate(walletValidator.createWallet), walletController.createWallet);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/add-funds:
+ * /customer/wallet/add-funds:
  *   post:
- *     summary: Add funds to a wallet
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     summary: Add funds to wallet
+ *     tags: [Customer Wallet]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - walletId
- *               - amount
- *               - paymentMethod
  *             properties:
- *               walletId: { type: integer, example: 1 }
- *               amount: { type: number, example: 100 }
- *               paymentMethod: { type: object, properties: { type: { type: string, example: "credit_card" }, id: { type: integer, example: 1 } } }
+ *               walletId:
+ *                 type: string
+ *                 format: uuid
+ *                 example: 123e4567-e89b-12d3-a456-426614174000
+ *               amount:
+ *                 type: number
+ *                 example: 50.00
+ *               paymentMethod:
+ *                 type: object
+ *                 properties:
+ *                   type: { type: string, example: CREDIT_CARD }
+ *                   id: { type: string, example: pm_123456 }
+ *               languageCode:
+ *                 type: string
+ *                 example: en
  *     responses:
  *       200:
- *         description: Funds added
+ *         description: Funds added successfully
+ *       400:
+ *         description: Invalid amount or payment method
+ *       404:
+ *         description: Wallet not found
  */
-router.post('/add-funds', addFunds, validate(addFundsSchema), addFundsAction);
+router.post('/add-funds', validate(walletValidator.addFunds), walletMiddleware.verifyPaymentMethod, walletController.addFunds);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/withdraw-funds:
+ * /customer/wallet/withdraw-funds:
  *   post:
- *     summary: Withdraw funds from a wallet
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     summary: Withdraw funds from wallet
+ *     tags: [Customer Wallet]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - walletId
- *               - amount
- *               - destination
  *             properties:
- *               walletId: { type: integer, example: 1 }
- *               amount: { type: number, example: 50 }
- *               destination: { type: object, properties: { accountNumber: { type: string }, bankName: { type: string }, id: { type: integer } } }
+ *               walletId:
+ *                 type: string
+ *                 format: uuid
+ *                 example: 123e4567-e89b-12d3-a456-426614174000
+ *               amount:
+ *                 type: number
+ *                 example: 50.00
+ *               destination:
+ *                 type: object
+ *                 properties:
+ *                   accountNumber: { type: string, example: 1234567890 }
+ *                   bankName: { type: string, example: Bank of America }
+ *                   id: { type: string, example: dest_123456 }
+ *               languageCode:
+ *                 type: string
+ *                 example: en
  *     responses:
  *       200:
- *         description: Funds withdrawn
+ *         description: Funds withdrawn successfully
+ *       400:
+ *         description: Invalid amount or insufficient funds
+ *       404:
+ *         description: Wallet not found
  */
-router.post('/withdraw-funds', withdrawFunds, validate(withdrawFundsSchema), withdrawFundsAction);
+router.post('/withdraw-funds', validate(walletValidator.withdrawFunds), walletMiddleware.verifyDestination, walletController.withdrawFunds);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/pay:
+ * /customer/wallet/pay:
  *   post:
  *     summary: Pay with wallet
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Wallet]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - walletId
- *               - serviceId
- *               - amount
  *             properties:
- *               walletId: { type: integer, example: 1 }
- *               serviceId: { type: integer, example: 1 }
- *               amount: { type: number, example: 20 }
+ *               walletId:
+ *                 type: string
+ *                 format: uuid
+ *                 example: 123e4567-e89b-12d3-a456-426614174000
+ *               serviceId:
+ *                 type: string
+ *                 example: svc_123456
+ *               amount:
+ *                 type: number
+ *                 example: 25.00
+ *               languageCode:
+ *                 type: string
+ *                 example: en
  *     responses:
  *       200:
- *         description: Payment processed
+ *         description: Payment processed successfully
+ *       400:
+ *         description: Invalid amount or insufficient funds
+ *       404:
+ *         description: Wallet not found
  */
-router.post('/pay', payWithWallet, validate(payWithWalletSchema), payWithWalletAction);
+router.post('/pay', validate(walletValidator.payWithWallet), walletMiddleware.verifyService, walletController.payWithWallet);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/{walletId}/balance:
+ * /customer/wallet/balance:
  *   get:
  *     summary: Get wallet balance
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Wallet]
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: walletId
- *         required: true
  *         schema:
- *           type: integer
- *         description: Wallet ID
+ *           type: string
+ *           format: uuid
+ *         required: true
+ *         example: 123e4567-e89b-12d3-a456-426614174000
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *         example: en
  *     responses:
  *       200:
- *         description: Balance retrieved
+ *         description: Balance retrieved successfully
+ *       404:
+ *         description: Wallet not found
  */
-router.get('/:walletId/balance', getWalletBalance, getWalletBalanceAction);
+router.get('/balance', validate(walletValidator.getWalletBalance), walletController.getWalletBalance);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/{walletId}/transactions:
+ * /customer/wallet/transactions:
  *   get:
  *     summary: Get wallet transactions
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Wallet]
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: walletId
- *         required: true
  *         schema:
- *           type: integer
- *         description: Wallet ID
+ *           type: string
+ *           format: uuid
+ *         required: true
+ *         example: 123e4567-e89b-12d3-a456-426614174000
+ *       - in: query
+ *         name: languageCode
+ *         schema:
+ *           type: string
+ *         example: en
  *     responses:
  *       200:
- *         description: Transactions retrieved
+ *         description: Transactions retrieved successfully
+ *       404:
+ *         description: Wallet not found
  */
-router.get('/:walletId/transactions', getWalletTransactions, getWalletTransactionsAction);
+router.get('/transactions', validate(walletValidator.getWalletTransactions), walletController.getWalletTransactions);
 
 /**
  * @swagger
- * /api/v1/customer/wallet/credit:
+ * /customer/wallet/reward:
  *   post:
- *     summary: Credit wallet with gamification reward
- *     tags: [Wallet]
- *     security:
- *       - bearerAuth: []
+ *     summary: Credit wallet for reward
+ *     tags: [Customer Wallet]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - userId
- *               - amount
- *               - currency
- *               - transactionType
- *               - description
  *             properties:
- *               userId: { type: integer, example: 1 }
- *               amount: { type: number, example: 10 }
- *               currency: { type: string, example: "USD" }
- *               transactionType: { type: string, example: "cashback" }
- *               description: { type: string, example: "Loyalty reward" }
+ *               walletId:
+ *                 type: string
+ *                 format: uuid
+ *                 example: 123e4567-e89b-12d3-a456-426614174000
+ *               amount:
+ *                 type: number
+ *                 example: 10.00
+ *               rewardId:
+ *                 type: string
+ *                 example: reward_123456
+ *               description:
+ *                 type: string
+ *                 example: Loyalty reward
+ *               languageCode:
+ *                 type: string
+ *                 example: en
  *     responses:
  *       200:
- *         description: Wallet credited
+ *         description: Reward credited successfully
+ *       400:
+ *         description: Invalid amount or currency mismatch
+ *       404:
+ *         description: Wallet not found
  */
-router.post('/credit', creditWallet, validate(creditWalletSchema), creditWalletAction);
+router.post('/reward', validate(walletValidator.creditWalletForReward), walletMiddleware.verifyReward, walletController.creditWalletForReward);
 
 module.exports = router;

@@ -1,38 +1,37 @@
+// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\services\merchant\staff\schedulingService.js
 'use strict';
 
-/**
- * schedulingService.js
- * Manages staff scheduling, time tracking, and shift notifications for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const { Staff, Merchant, User, Shift, TimeTracking, Notification, AuditLog } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const { Staff, Merchant, User, Shift, TimeTracking, MerchantBranch } = require('@models');
+const { Op } = require('sequelize');
 
-/**
- * Creates a staff schedule.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} schedule - Schedule details { staffId, startTime, endTime, shiftType }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Shift details.
- */
-async function createSchedule(restaurantId, schedule, io) {
+async function createSchedule(restaurantId, schedule, io, auditService, socketService, notificationService, pointService) {
   try {
     const { staffId, startTime, endTime, shiftType } = schedule;
     if (!restaurantId || !staffId || !startTime || !endTime || !shiftType) {
-      throw new Error('Missing required schedule details');
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Missing required schedule details');
     }
 
-    const staff = await Staff.findByPk(staffId, { include: [{ model: Merchant, as: 'merchant' }, { model: User, as: 'user' }] });
-    if (!staff || staff.branch_id !== restaurantId) throw new Error('Staff or branch not found');
+    const staff = await Staff.findByPk(staffId, { 
+      include: [
+        { model: Merchant, as: 'merchant' }, 
+        { model: User, as: 'user' },
+        { model: MerchantBranch, as: 'branch' }
+      ]
+    });
+    if (!staff || staff.branch_id !== restaurantId) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('STAFF_NOT_FOUND') ? 'STAFF_NOT_FOUND' : 'Staff or branch not found');
+    }
 
-    if (!Object.values(staffConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES).includes(shiftType)) {
-      throw new Error('Invalid shift type');
+    if (!staffConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES.includes(shiftType)) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Invalid shift type');
+    }
+
+    const merchant = await Merchant.findByPk(staff.merchant_id);
+    if (!merchantConstants.MERCHANT_TYPES.includes(merchant.business_type)) {
+      throw new Error(merchantConstants.ERROR_CODES.includes('INVALID_MERCHANT_TYPE') ? 'INVALID_MERCHANT_TYPE' : 'Invalid merchant type');
     }
 
     const shift = await Shift.create({
@@ -47,8 +46,8 @@ async function createSchedule(restaurantId, schedule, io) {
     await auditService.logAction({
       userId: staff.user_id,
       role: 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { staffId, shiftId: shift.id, shiftType },
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_profile_update') ? 'staff_profile_update' : 'profile_update',
+      details: { staffId, shiftId: shift.id, shiftType, staffTypes: staff.staff_types },
       ipAddress: '127.0.0.1',
     });
 
@@ -56,13 +55,16 @@ async function createSchedule(restaurantId, schedule, io) {
 
     await notificationService.sendNotification({
       userId: staff.user_id,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
+      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.TYPES.includes('shift_update') ? 'shift_update' : 'general',
       messageKey: 'staff.schedule_created',
       messageParams: { shiftType, date: new Date(startTime) },
       role: 'staff',
       module: 'scheduling',
-      languageCode: staff.merchant?.preferred_language || 'en',
+      languageCode: staff.user?.preferred_language || staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
     });
+
+    const points = staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS.find(a => a.action === 'task_completion')?.points || 10;
+    await pointService.awardPoints(staff.user_id, 'task_completion', points);
 
     return shift;
   } catch (error) {
@@ -71,23 +73,22 @@ async function createSchedule(restaurantId, schedule, io) {
   }
 }
 
-/**
- * Records clock-in/out times.
- * @param {number} staffId - Staff ID.
- * @param {Object} timeData - Time details { clockIn, clockOut, shiftId }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Time tracking record.
- */
-async function trackTime(staffId, timeData, io) {
+async function trackTime(staffId, timeData, io, auditService, socketService, pointService) {
   try {
     const { clockIn, clockOut, shiftId } = timeData;
-    if (!staffId || (!clockIn && !clockOut)) throw new Error('Staff ID and time required');
+    if (!staffId || (!clockIn && !clockOut)) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Staff ID and time required');
+    }
 
     const staff = await Staff.findByPk(staffId, { include: [{ model: User, as: 'user' }] });
-    if (!staff) throw new Error('Staff not found');
+    if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES.includes('STAFF_NOT_FOUND') ? 'STAFF_NOT_FOUND' : 'Staff not found');
 
     let record;
     if (clockIn) {
+      const shift = await Shift.findByPk(shiftId);
+      if (!shift || shift.staff_id !== staffId) {
+        throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Invalid shift');
+      }
       record = await TimeTracking.create({
         staff_id: staffId,
         shift_id: shiftId,
@@ -99,7 +100,7 @@ async function trackTime(staffId, timeData, io) {
         where: { staff_id: staffId, clock_out: null, shift_id: shiftId },
         order: [['created_at', 'DESC']],
       });
-      if (!record) throw new Error('No active clock-in found');
+      if (!record) throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'No active clock-in found');
       await record.update({ clock_out: new Date(clockOut) });
       await Staff.update({ availability_status: 'available' }, { where: { id: staffId } });
     }
@@ -107,12 +108,15 @@ async function trackTime(staffId, timeData, io) {
     await auditService.logAction({
       userId: staff.user_id,
       role: 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { staffId, clockIn, clockOut, shiftId },
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_profile_update') ? 'staff_profile_update' : 'profile_update',
+      details: { staffId, clockIn, clockOut, shiftId, staffTypes: staff.staff_types },
       ipAddress: '127.0.0.1',
     });
 
     socketService.emit(io, 'staff:timeTracked', { staffId, clockIn, clockOut, shiftId }, `staff:${staffId}`);
+
+    const points = staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS.find(a => a.action === 'task_completion')?.points || 10;
+    await pointService.awardPoints(staff.user_id, 'task_completion', points);
 
     return record;
   } catch (error) {
@@ -121,34 +125,48 @@ async function trackTime(staffId, timeData, io) {
   }
 }
 
-/**
- * Sends shift reminders.
- * @param {number} staffId - Staff ID.
- * @param {number} shiftId - Shift ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Notification result.
- */
-async function notifySchedule(staffId, shiftId, io) {
+async function notifySchedule(staffId, shiftId, io, auditService, socketService, notificationService, pointService) {
   try {
-    if (!staffId || !shiftId) throw new Error('Staff ID and shift ID required');
+    if (!staffId || !shiftId) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Staff ID and shift ID required');
+    }
 
-    const staff = await Staff.findByPk(staffId, { include: [{ model: Merchant, as: 'merchant' }, { model: User, as: 'user' }] });
-    if (!staff) throw new Error('Staff not found');
+    const staff = await Staff.findByPk(staffId, { 
+      include: [
+        { model: Merchant, as: 'merchant' }, 
+        { model: User, as: 'user' },
+        { model: MerchantBranch, as: 'branch' }
+      ]
+    });
+    if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES.includes('STAFF_NOT_FOUND') ? 'STAFF_NOT_FOUND' : 'Staff not found');
 
     const shift = await Shift.findByPk(shiftId);
-    if (!shift || shift.staff_id !== staffId) throw new Error('Shift not found');
+    if (!shift || shift.staff_id !== staffId) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Shift not found');
+    }
 
     const result = await notificationService.sendNotification({
       userId: staff.user_id,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
+      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.TYPES.includes('shift_update') ? 'shift_update' : 'general',
       messageKey: 'staff.shift_reminder',
       messageParams: { shiftType: shift.shift_type, date: shift.start_time },
       role: 'staff',
       module: 'scheduling',
-      languageCode: staff.merchant?.preferred_language || 'en',
+      languageCode: staff.user?.preferred_language || staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
+    await auditService.logAction({
+      userId: staff.user_id,
+      role: 'staff',
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_profile_update') ? 'staff_profile_update' : 'profile_update',
+      details: { staffId, shiftId, staffTypes: staff.staff_types },
+      ipAddress: '127.0.0.1',
     });
 
     socketService.emit(io, 'staff:scheduleNotified', { staffId, shiftId }, `staff:${staffId}`);
+
+    const points = staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS.find(a => a.action === 'task_completion')?.points || 10;
+    await pointService.awardPoints(staff.user_id, 'task_completion', points);
 
     return result;
   } catch (error) {
@@ -157,19 +175,24 @@ async function notifySchedule(staffId, shiftId, io) {
   }
 }
 
-/**
- * Modifies an existing schedule.
- * @param {number} scheduleId - Shift ID.
- * @param {Object} updates - Schedule updates { startTime, endTime, shiftType, status }.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated shift details.
- */
-async function adjustSchedule(scheduleId, updates, io) {
+async function adjustSchedule(scheduleId, updates, io, auditService, socketService, notificationService, pointService) {
   try {
-    if (!scheduleId || !updates) throw new Error('Shift ID and updates required');
+    if (!scheduleId || !updates) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Shift ID and updates required');
+    }
 
-    const shift = await Shift.findByPk(scheduleId, { include: [{ model: Staff, as: 'staff', include: [{ model: Merchant, as: 'merchant' }, { model: User, as: 'user' }] }] });
-    if (!shift) throw new Error('Shift not found');
+    const shift = await Shift.findByPk(scheduleId, {
+      include: [{ 
+        model: Staff, 
+        as: 'staff', 
+        include: [
+          { model: Merchant, as: 'merchant' }, 
+          { model: User, as: 'user' },
+          { model: MerchantBranch, as: 'branch' }
+        ]
+      }],
+    });
+    if (!shift) throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Shift not found');
 
     const allowedUpdates = ['start_time', 'end_time', 'shift_type', 'status'];
     const updateData = Object.keys(updates).reduce((acc, key) => {
@@ -179,12 +202,12 @@ async function adjustSchedule(scheduleId, updates, io) {
       return acc;
     }, {});
 
-    if (updateData.shift_type && !Object.values(staffConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES).includes(updateData.shift_type)) {
-      throw new Error('Invalid shift type');
+    if (updateData.shift_type && !staffConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES.includes(updateData.shift_type)) {
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes('INVALID_SHIFT') ? 'INVALID_SHIFT' : 'Invalid shift type');
     }
 
     if (updateData.status && !['scheduled', 'active', 'completed', 'cancelled'].includes(updateData.status)) {
-      throw new Error('Invalid shift status');
+      throw new Error(staffConstants.STAFF_ERROR_CODES.includes TinvaliD_SHIFT') ? 'INVALID_SHIFT' : 'Invalid shift status');
     }
 
     await shift.update(updateData);
@@ -192,8 +215,8 @@ async function adjustSchedule(scheduleId, updates, io) {
     await auditService.logAction({
       userId: shift.staff.user_id,
       role: 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { staffId: shift.staff_id, shiftId: scheduleId, updates },
+      action: staffConstants.STAFF_AUDIT_ACTIONS.includes('staff_profile_update') ? 'staff_profile_update' : 'profile_update',
+      details: { staffId: shift.staff_id, shiftId: scheduleId, updates, staffTypes: shift.staff.staff_types },
       ipAddress: '127.0.0.1',
     });
 
@@ -201,15 +224,18 @@ async function adjustSchedule(scheduleId, updates, io) {
 
     await notificationService.sendNotification({
       userId: shift.staff.user_id,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
+      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.TYPES.includes('shift_update') ? 'shift_update' : 'general',
       messageKey: 'staff.schedule_updated',
       messageParams: { shiftType: shift.shift_type, date: shift.start_time },
       role: 'staff',
       module: 'scheduling',
-      languageCode: shift.staff.merchant?.preferred_language || 'en',
+      languageCode: shift.staff.user?.preferred_language || staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
     });
 
-    return shift;
+    const points = staffConstants.STAFF_GAMIFICATION_CONSTANTS?.STAFF_ACTIONS.find(a => a.action === 'task_completion')?.points || 10;
+    await pointService.awardPoints(shift.staff.user_id, 'task_completion', points);
+
+ Kinreturn shift;
   } catch (error) {
     logger.error('Error adjusting schedule', { error: error.message });
     throw error;
@@ -220,5 +246,5 @@ module.exports = {
   createSchedule,
   trackTime,
   notifySchedule,
-  adjustSchedule,
+  adjustSchedule
 };

@@ -1,10 +1,7 @@
 {
-  "performance": {
-    "report_generated": "Performance report {reportId} generated."
-  },
-  "gamification": {
-    "points_logged": "{points} points awarded for {action}.",
-    "customer_points_synced": "{points} customer points synced.",
-    "report_generated": "Gamification report {reportId} generated."
+  "analytics": {
+    "metrics_tracked": "Tracked {count} performance metrics",
+    "report_generated": "Performance report {reportId} generated successfully",
+    "training_evaluated": "Evaluated impact of {count} completed trainings"
   }
 }

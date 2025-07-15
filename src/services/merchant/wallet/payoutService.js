@@ -1,124 +1,51 @@
+// payoutService.js
+// Manages merchant payouts to staff and external accounts.
+// Last Updated: July 14, 2025
+
 'use strict';
 
-/**
- * payoutService.js
- * Manages payout settings, processing, method verification, and history for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
+const { Op } = require('sequelize');
 const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
-const paymentConstants = require('@constants/common/paymentConstants');
+const merchantWalletConstants = require('@constants/merchant/merchantWalletConstants');
+const staffWalletConstants = require('@constants/staff/staffWalletConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Wallet, WalletTransaction, Merchant, Staff, AuditLog, Notification } = require('@models');
+const mparkConstants = require('@constants/common/mparkConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const { Merchant, Staff, Wallet, WalletTransaction, Tip } = require('@models');
 
-/**
- * Sets payout schedules and methods.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} settings - Payout settings (schedule, method).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated wallet.
- */
-async function configurePayoutSettings(merchantId, settings, io) {
+async function processPayout(merchantId, recipientId, amount, payoutMethod) {
   try {
-    if (!merchantId || !settings?.schedule || !settings?.method) throw new Error('Merchant ID, schedule, and method required');
-
-    const merchant = await Merchant.findByPk(merchantId);
-    if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-
-    const wallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
-    if (!wallet) throw new Error('Merchant wallet not found');
-
-    const validSchedules = ['daily', 'weekly', 'monthly'];
-    const validMethods = ['bank_transfer', 'mobile_money'];
-    if (!validSchedules.includes(settings.schedule)) throw new Error('Invalid payout schedule');
-    if (!validMethods.includes(settings.method)) throw new Error('Invalid payout method');
-
-    await wallet.update({
-      bank_details: {
-        ...wallet.bank_details,
-        payout_schedule: settings.schedule,
-        payout_method: settings.method,
-        account_details: settings.account_details || wallet.bank_details?.account_details,
-      },
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'configure_payout_settings',
-      details: { merchantId, schedule: settings.schedule, method: settings.method },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'payout:settingsConfigured', {
-      merchantId,
-      schedule: settings.schedule,
-      method: settings.method,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: merchant.user_id,
-      notificationType: 'payout_settings_updated',
-      messageKey: 'payout.settings_updated',
-      messageParams: { schedule: settings.schedule, method: settings.method },
-      role: 'merchant',
-      module: 'payout',
-      languageCode: merchant.preferred_language || 'en',
-    });
-
-    return wallet;
-  } catch (error) {
-    logger.error('Error configuring payout settings', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Executes payouts to recipients.
- * @param {number} merchantId - Merchant ID.
- * @param {number} recipientId - Staff ID.
- * @param {number} amount - Payout amount.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Transaction record.
- */
-async function processPayout(merchantId, recipientId, amount, io) {
-  try {
-    if (!merchantId || !recipientId || !amount) throw new Error('Merchant ID, recipient ID, and amount required');
+    if (!merchantId || !recipientId || !amount || !payoutMethod) throw new Error('Merchant ID, recipient ID, amount, and payout method required');
     if (amount <= 0) throw new Error('Amount must be positive');
+    if (!mparkConstants.PAYMENT_CONFIG.PAYOUT_SETTINGS.SUPPORTED_PAYOUT_METHODS.includes(payoutMethod)) {
+      throw new Error('Invalid payout method');
+    }
+    if (amount < mparkConstants.PAYMENT_CONFIG.PAYOUT_SETTINGS.MIN_PAYOUT_AMOUNT) {
+      throw new Error('Amount below minimum payout');
+    }
 
     const merchant = await Merchant.findByPk(merchantId);
     if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
 
     const merchantWallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
     if (!merchantWallet) throw new Error('Merchant wallet not found');
-    if (merchantWallet.balance < amount) throw new Error('Insufficient merchant balance');
+    if (merchantWallet.balance < amount) throw new Error(merchantWalletConstants.WALLET_CONSTANTS.ERROR_CODES.WALLET_INSUFFICIENT_FUNDS);
 
     const recipient = await Staff.findByPk(recipientId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!recipient || !recipient.wallet) throw new Error('Invalid recipient or no wallet');
 
     const transaction = await sequelize.transaction(async (t) => {
-      await merchantWallet.update(
-        { balance: merchantWallet.balance - amount },
-        { transaction: t }
-      );
-
-      await recipient.wallet.update(
-        { balance: recipient.wallet.balance + amount },
-        { transaction: t }
-      );
+      await merchantWallet.update({ balance: merchantWallet.balance - amount }, { transaction: t });
+      await recipient.wallet.update({ balance: recipient.wallet.balance + amount }, { transaction: t });
 
       const tx = await WalletTransaction.create(
         {
           wallet_id: merchantWallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYOUT,
+          type: merchantWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.payout,
           amount: -amount,
           currency: merchantWallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
-          description: `Payout to staff ${recipientId}`,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
+          description: `Payout to staff ${recipientId} via ${payoutMethod}`,
         },
         { transaction: t }
       );
@@ -126,41 +53,16 @@ async function processPayout(merchantId, recipientId, amount, io) {
       await WalletTransaction.create(
         {
           wallet_id: recipient.wallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYOUT,
+          type: staffWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.salary_payment,
           amount,
           currency: recipient.wallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
           description: `Payout from merchant ${merchantId}`,
         },
         { transaction: t }
       );
 
       return tx;
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'process_payout',
-      details: { merchantId, recipientId, amount, transactionId: transaction.id },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'payout:processed', {
-      transactionId: transaction.id,
-      merchantId,
-      recipientId,
-      amount,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: recipient.user_id,
-      notificationType: 'payout_received',
-      messageKey: 'payout.received',
-      messageParams: { amount, currency: merchantWallet.currency },
-      role: 'staff',
-      module: 'payout',
-      languageCode: recipient.user?.preferred_language || 'en',
     });
 
     return transaction;
@@ -170,109 +72,78 @@ async function processPayout(merchantId, recipientId, amount, io) {
   }
 }
 
-/**
- * Validates payout accounts for recipients.
- * @param {number} recipientId - Staff ID.
- * @param {Object} method - Payout method details (type, accountDetails).
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Verification result.
- */
-async function verifyPayoutMethod(recipientId, method, io) {
+async function distributeTips(merchantId, tips) {
   try {
-    if (!recipientId || !method?.type || !method?.accountDetails) throw new Error('Recipient ID, method type, and account details required');
-
-    const recipient = await Staff.findByPk(recipientId, { include: [{ model: Wallet, as: 'wallet' }] });
-    if (!recipient || !recipient.wallet) throw new Error('Invalid recipient or no wallet');
-
-    const validMethods = ['bank_transfer', 'mobile_money'];
-    if (!validMethods.includes(method.type)) throw new Error('Invalid payout method');
-
-    // Simulate account verification (e.g., API call to payment gateway)
-    const isValid = method.accountDetails?.accountNumber && method.accountDetails?.bankCode;
-
-    if (!isValid) throw new Error('Invalid account details');
-
-    await recipient.wallet.update({
-      bank_details: {
-        ...recipient.wallet.bank_details,
-        payout_method: method.type,
-        account_details: method.accountDetails,
-        verified: true,
-      },
-    });
-
-    await auditService.logAction({
-      userId: recipient.user_id,
-      role: 'staff',
-      action: 'verify_payout_method',
-      details: { recipientId, method: method.type },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'payout:methodVerified', {
-      recipientId,
-      method: method.type,
-    }, `staff:${recipientId}`);
-
-    await notificationService.sendNotification({
-      userId: recipient.user_id,
-      notificationType: 'payout_method_verified',
-      messageKey: 'payout.method_verified',
-      messageParams: { method: method.type },
-      role: 'staff',
-      module: 'payout',
-      languageCode: recipient.user?.preferred_language || 'en',
-    });
-
-    return { verified: true, method: method.type };
-  } catch (error) {
-    logger.error('Error verifying payout method', { error: error.message });
-    throw error;
-  }
-}
-
-/**
- * Retrieves payout records.
- * @param {number} merchantId - Merchant ID.
- * @returns {Promise<Array>} Payout history.
- */
-async function getPayoutHistory(merchantId) {
-  try {
-    if (!merchantId) throw new Error('Merchant ID required');
+    if (!merchantId || !Array.isArray(tips) || tips.length === 0) throw new Error('Merchant ID and tips array required');
 
     const merchant = await Merchant.findByPk(merchantId);
     if (!merchant) throw new Error(merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
 
-    const wallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
-    if (!wallet) throw new Error('Merchant wallet not found');
+    const merchantWallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
+    if (!merchantWallet) throw new Error('Merchant wallet not found');
 
-    const transactions = await WalletTransaction.findAll({
-      where: {
-        wallet_id: wallet.id,
-        type: paymentConstants.TRANSACTION_TYPES.PAYOUT,
-      },
-      order: [['created_at', 'DESC']],
-      limit: 100,
-    });
+    const totalTipAmount = tips.reduce((sum, tip) => sum + tip.amount, 0);
+    if (merchantWallet.balance < totalTipAmount) throw new Error(merchantWalletConstants.WALLET_CONSTANTS.ERROR_CODES.WALLET_INSUFFICIENT_FUNDS);
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'get_payout_history',
-      details: { merchantId, transactionCount: transactions.length },
-      ipAddress: '127.0.0.1',
+    const transactions = await sequelize.transaction(async (t) => {
+      const txs = [];
+      for (const tip of tips) {
+        const { staffId, amount } = tip;
+        if (amount <= 0) throw new Error('Tip amount must be positive');
+
+        const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
+        if (!staff || !staff.wallet) throw new Error('Invalid staff or no wallet');
+
+        await merchantWallet.update({ balance: merchantWallet.balance - amount }, { transaction: t });
+        await staff.wallet.update({ balance: staff.wallet.balance + amount }, { transaction: t });
+
+        const tx = await WalletTransaction.create(
+          {
+            wallet_id: merchantWallet.id,
+            type: merchantWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.tip,
+            amount: -amount,
+            currency: merchantWallet.currency,
+            status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
+            description: `Tip to staff ${staffId}`,
+          },
+          { transaction: t }
+        );
+
+        await WalletTransaction.create(
+          {
+            wallet_id: staff.wallet.id,
+            type: staffWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.tip,
+            amount,
+            currency: staff.wallet.currency,
+            status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
+            description: `Tip from merchant ${merchantId}`,
+          },
+          { transaction: t }
+        );
+
+        await Tip.create(
+          {
+            merchant_id: merchantId,
+            staff_id: staffId,
+            amount,
+            currency: merchantWallet.currency,
+          },
+          { transaction: t }
+        );
+
+        txs.push(tx);
+      }
+      return txs;
     });
 
     return transactions;
   } catch (error) {
-    logger.error('Error retrieving payout history', { error: error.message });
+    logger.error('Error distributing tips', { error: error.message });
     throw error;
   }
 }
 
 module.exports = {
-  configurePayoutSettings,
   processPayout,
-  verifyPayoutMethod,
-  getPayoutHistory,
+  distributeTips,
 };

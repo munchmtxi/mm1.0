@@ -1,16 +1,20 @@
 {
   "balance": {
-    "earning_added": "Earned {amount} {currency} added to wallet.",
-    "tip_added": "Tip of {amount} {currency} added to wallet."
-  },
-  "transaction": {
-    "earning_recorded": "Earned {amount} {currency} for task #{taskId}.",
-    "tip_recorded": "Tip of {amount} {currency} received for task #{taskId}.",
-    "payout_recorded": "Payout of {amount} {currency} processed for task #{taskId}.",
-    "refund_recorded": "Refund of {amount} {currency} processed for task #{taskId}.",
-    "reversed": "Transaction #{transactionId} reversed: {amount} {currency}."
+    "earning_added": "Earning of {{amount}} {{currency}} added to your wallet",
+    "tip_added": "Tip of {{amount}} {{currency}} added to your wallet",
+    "locked": "Funds of {{amount}} {{currency}} locked in your wallet",
+    "unlocked": "Funds of {{amount}} {{currency}} unlocked in your wallet"
   },
   "tip": {
-    "received": "Received a tip of {amount} {currency} for task #{taskId}."
+    "received": "Received a tip of {{amount}} for task {{taskId}}",
+    "notified": "Tip notification sent successfully",
+    "points_awarded": "Awarded {{points}} points for receiving a tip"
+  },
+  "transaction": {
+    "earning_recorded": "Earning of {{amount}} {{currency}} recorded for task {{taskId}}",
+    "tip_recorded": "Tip of {{amount}} {{currency}} recorded for task {{taskId}}",
+    "payout_recorded": "Payout of {{amount}} {{currency}} recorded for task {{taskId}}",
+    "refund_recorded": "Refund of {{amount}} {{currency}} recorded for task {{taskId}}",
+    "reversed": "Transaction {{id}} of {{amount}} {{currency}} reversed"
   }
 }

@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * Driver Analytics Service
- * Provides analytics and performance insights for drivers, including metrics, reports, recommendations, and peer comparisons.
- */
-
 const { Op } = require('sequelize');
 const moment = require('moment');
 const math = require('mathjs');
@@ -15,25 +10,16 @@ const {
   DriverRatings,
   DriverEarnings,
   FinancialSummary,
-  Payout,
   DriverAvailability,
   DriverPerformanceMetric,
   sequelize,
 } = require('@models');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
 const driverConstants = require('@constants/driverConstants');
 const { formatMessage } = require('@utils/localization/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-/**
- * Retrieves operational metrics for a driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} - Metrics including completion rates, ratings, earnings, active hours.
- */
-async function getPerformanceMetrics(driverId) {
+async function getPerformanceMetrics(driverId, { pointService, auditService, notificationService, socketService }) {
   const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -42,7 +28,6 @@ async function getPerformanceMetrics(driverId) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Ride and delivery counts
     const rides = await Ride.count({
       where: { driverId, status: 'COMPLETED', created_at: { [Op.between]: [startDate, endDate] } },
       transaction,
@@ -60,7 +45,6 @@ async function getPerformanceMetrics(driverId) {
       transaction,
     });
 
-    // Ratings
     const ratings = await DriverRatings.findAll({
       where: { driver_id: driverId, created_at: { [Op.between]: [startDate, endDate] } },
       attributes: [[sequelize.fn('AVG', sequelize.col('rating')), 'avg_rating']],
@@ -68,13 +52,11 @@ async function getPerformanceMetrics(driverId) {
     });
     const avgRating = ratings[0]?.dataValues.avg_rating || 0;
 
-    // Earnings
     const earnings = await DriverEarnings.sum('total_earned', {
       where: { driver_id: driverId, created_at: { [Op.between]: [startDate, endDate] } },
       transaction,
     });
 
-    // Active hours
     const availability = await DriverAvailability.findAll({
       where: {
         driver_id: driverId,
@@ -97,7 +79,6 @@ async function getPerformanceMetrics(driverId) {
       active_hours: activeHours.toFixed(2),
     };
 
-    // Store metrics in DriverPerformanceMetric
     for (const [metric_type, value] of Object.entries(metrics)) {
       await DriverPerformanceMetric.create(
         { driver_id: driverId, metric_type, value, recorded_at: new Date() },
@@ -116,7 +97,24 @@ async function getPerformanceMetrics(driverId) {
       { transaction }
     );
 
+    await pointService.awardPoints(driverId, 'analytics_access', 10, { action: 'Retrieved performance metrics' }, transaction);
+
     socketService.emitToUser(driver.user_id, 'analytics:metrics_updated', { driverId, metrics });
+
+    await notificationService.sendNotification(
+      {
+        userId: driver.user_id,
+        notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.ANALYTICS_REPORT,
+        message: formatMessage(
+          'driver',
+          'analytics',
+          driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+          'analytics.metrics_retrieved'
+        ),
+        priority: 'LOW',
+      },
+      { transaction }
+    );
 
     await transaction.commit();
     logger.info('Performance metrics retrieved', { driverId, metrics });
@@ -127,13 +125,7 @@ async function getPerformanceMetrics(driverId) {
   }
 }
 
-/**
- * Generates a performance report for a specified period.
- * @param {number} driverId - Driver ID.
- * @param {string} period - Period ('daily', 'weekly', 'monthly', 'yearly').
- * @returns {Promise<Object>} - Report with financial and operational data.
- */
-async function generateAnalyticsReport(driverId, period) {
+async function generateAnalyticsReport(driverId, period, { pointService, auditService, notificationService, socketService }) {
   if (!driverConstants.ANALYTICS_CONSTANTS.REPORT_PERIODS.includes(period)) {
     throw new AppError('Invalid period', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
@@ -149,13 +141,11 @@ async function generateAnalyticsReport(driverId, period) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Financial data
     const financialSummary = await FinancialSummary.findOne({
       where: { driver_id: driverId, period, created_at: { [Op.between]: [startDate, endDate] } },
       transaction,
     }) || { total_earnings: 0, total_payouts: 0, total_taxes: 0, currency: 'USD' };
 
-    // Operational data
     const rides = await Ride.findAll({
       where: { driverId, created_at: { [Op.between]: [startDate, endDate] } },
       attributes: ['status', 'scheduledTime', 'created_at'],
@@ -204,6 +194,8 @@ async function generateAnalyticsReport(driverId, period) {
       { transaction }
     );
 
+    await pointService.awardPoints(driverId, 'report_generation', 20, { action: `Generated ${period} analytics report` }, transaction);
+
     await notificationService.sendNotification(
       {
         userId: driver.user_id,
@@ -231,16 +223,11 @@ async function generateAnalyticsReport(driverId, period) {
   }
 }
 
-/**
- * Provides personalized recommendations based on performance.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Array<string>>} - List of recommendations.
- */
-async function getRecommendations(driverId) {
+async function getRecommendations(driverId, { pointService, auditService, notificationService, socketService }) {
   const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
-  const metrics = await getPerformanceMetrics(driverId);
+  const metrics = await getPerformanceMetrics(driverId, { pointService, auditService, notificationService, socketService });
   const recommendations = [];
 
   const thresholds = driverConstants.ANALYTICS_CONSTANTS.RECOMMENDATION_THRESHOLDS;
@@ -298,6 +285,8 @@ async function getRecommendations(driverId) {
       { transaction }
     );
 
+    await pointService.awardPoints(driverId, 'recommendations_access', 15, { action: 'Retrieved recommendations' }, transaction);
+
     await notificationService.sendNotification(
       {
         userId: driver.user_id,
@@ -325,13 +314,7 @@ async function getRecommendations(driverId) {
   }
 }
 
-/**
- * Compares driver performance with peers.
- * @param {number} driverId - Driver ID.
- * @param {Array<number>} peers - Array of peer driver IDs.
- * @returns {Promise<Object>} - Comparison data.
- */
-async function comparePerformance(driverId, peers) {
+async function comparePerformance(driverId, peers, { pointService, auditService, socketService }) {
   const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -397,6 +380,8 @@ async function comparePerformance(driverId, peers) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints(driverId, 'performance_comparison', 15, { action: 'Compared performance with peers' }, transaction);
 
     socketService.emitToUser(driver.user_id, 'analytics:performance_comparison', { driverId, comparison });
 

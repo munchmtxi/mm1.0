@@ -5,15 +5,44 @@ const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const catchAsync = require('@utils/catchAsync');
 const meventsTrackingConstants = require('@constants/meventsTrackingConstants');
-const { Event } = require('@models');
+const { Event, ParkingBooking, MenuInventory, Table } = require('@models');
 
 const validateEventAccess = catchAsync(async (req, res, next) => {
-  const { eventId } = req.body;
+  const { eventId, interactionType, metadata } = req.body;
 
   if (eventId) {
     logger.info('Validating event access', { eventId });
 
     const event = await Event.findByPk(eventId);
+    if (!event) {
+      throw new AppError('Event not found', 404, meventsTrackingConstants.ERROR_CODES.INVALID_EVENT);
+    }
+  }
+
+  // Validate metadata for specific interaction types
+  if (interactionType === meventsTrackingConstants.INTERACTION_TYPES.PARKING_BOOKING_ADDED && metadata?.parkingBookingId) {
+    const parkingBooking = await ParkingBooking.findByPk(metadata.parkingBookingId);
+    if (!parkingBooking) {
+      throw new AppError('Parking booking not found', 404, meventsTrackingConstants.ERROR_CODES.INVALID_SERVICE);
+    }
+  }
+
+  if (interactionType === meventsTrackingConstants.INTERACTION_TYPES.MENU_ITEM_SELECTED && metadata?.menuItemId) {
+    const menuItem = await MenuInventory.findByPk(metadata.menuItemId);
+    if (!menuItem) {
+      throw new AppError('Menu item not found', 404, meventsTrackingConstants.ERROR_CODES.INVALID_MENU_ITEM);
+    }
+  }
+
+  if (interactionType === meventsTrackingConstants.INTERACTION_TYPES.TABLE_SELECTED && metadata?.tableId) {
+    const table = await Table.findByPk(metadata.tableId);
+    if (!table) {
+      throw new AppError('Table not found', 404, meventsTrackingConstants.ERROR_CODES.INVALID_TABLE);
+    }
+  }
+
+  if (interactionType === meventsTrackingConstants.INTERACTION_TYPES.EVENT_UPDATED && metadata?.eventId) {
+    const event = await Event.findByPk(metadata.eventId);
     if (!event) {
       throw new AppError('Event not found', 404, meventsTrackingConstants.ERROR_CODES.INVALID_EVENT);
     }

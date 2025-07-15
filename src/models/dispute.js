@@ -1,15 +1,17 @@
 // src/models/Dispute.js
 'use strict';
-const { Model } = require('sequelize');
 
-module.exports = (sequelize, DataTypes) => {
+const { Model, DataTypes } = require('sequelize');
+
+module.exports = (sequelize) => {
   class Dispute extends Model {
     static associate(models) {
-      this.belongsTo(models.User, { foreignKey: 'customer_id', as: 'customer' });
-      this.belongsTo(models.Booking, { foreignKey: 'service_id', as: 'booking', constraints: false });
-      this.belongsTo(models.Order, { foreignKey: 'service_id', as: 'order', constraints: false });
-      this.belongsTo(models.Ride, { foreignKey: 'service_id', as: 'ride', constraints: false });
-      this.hasMany(models.Notification, { foreignKey: 'dispute_id', as: 'notifications' });
+      Dispute.belongsTo(models.User, { foreignKey: 'customer_id', as: 'customer' });
+      Dispute.belongsTo(models.Booking, { foreignKey: 'service_id', constraints: false });
+      Dispute.belongsTo(models.Order, { foreignKey: 'service_id', constraints: false });
+      Dispute.belongsTo(models.Ride, { foreignKey: 'service_id', constraints: false });
+      Dispute.belongsTo(models.ParkingBooking, { foreignKey: 'service_id', as: 'parking_booking', constraints: false });
+      Dispute.belongsTo(models.InDiningOrder, { foreignKey: 'service_id', constraints: false });
     }
   }
 
@@ -19,77 +21,58 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
-        allowNull: false,
       },
       customer_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: 'users', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        references: { model: 'Users', key: 'id' },
       },
       service_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
       service_type: {
-        type: DataTypes.ENUM('mtables', 'munch', 'mtxi'),
+        type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'mpark', 'in_dining'),
         allowNull: false,
       },
       issue: {
-        type: DataTypes.TEXT,
+        type: DataTypes.STRING(500),
         allowNull: false,
-        validate: { notEmpty: { msg: 'Issue description is required' } },
       },
       issue_type: {
-        type: DataTypes.ENUM(
-          'service_quality',
-          'payment',
-          'cancellation',
-          'safety',
-          'other'
-        ),
+        type: DataTypes.ENUM('BOOKING', 'PAYMENT', 'SERVICE_QUALITY', 'PARKING', 'DINING', 'OTHER'),
         allowNull: false,
       },
       status: {
-        type: DataTypes.ENUM('pending', 'in_review', 'resolved', 'closed'),
+        type: DataTypes.ENUM('PENDING', 'RESOLVED', 'CLOSED'),
         allowNull: false,
-        defaultValue: 'pending',
+        defaultValue: 'PENDING',
       },
       resolution: {
-        type: DataTypes.TEXT,
+        type: DataTypes.STRING(500),
         allowNull: true,
       },
       resolution_type: {
-        type: DataTypes.ENUM('refund', 'compensation', 'apology', 'no_action'),
+        type: DataTypes.ENUM('REFUND', 'COMPENSATION', 'APOLOGY', 'NO_ACTION', 'ACCOUNT_CREDIT', 'REPLACEMENT'),
         allowNull: true,
       },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
+        defaultValue: DataTypes.NOW,
       },
       updated_at: {
         type: DataTypes.DATE,
         allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      },
-      deleted_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
+        defaultValue: DataTypes.NOW,
       },
     },
     {
       sequelize,
       modelName: 'Dispute',
       tableName: 'disputes',
+      timestamps: true,
       underscored: true,
-      paranoid: true,
-      indexes: [
-        { fields: ['customer_id'] },
-        { fields: ['service_id', 'service_type'] },
-        { fields: ['status'] },
-      ],
     }
   );
 

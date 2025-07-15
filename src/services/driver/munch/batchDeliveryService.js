@@ -1,31 +1,14 @@
 'use strict';
 
-/**
- * Driver Batch Delivery Service
- * Manages driver-side batch food delivery operations, including creating batches, retrieving details,
- * updating status, optimizing routes, and awarding gamification points. Integrates with common services.
- */
-
 const { Order, Customer, Driver, Route, RouteOptimization, sequelize } = require('@models');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const locationService = require('@services/common/locationService');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const munchConstants = require('@constants/munchConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const driverConstants = require('@constants/driverConstants');
+const munchConstants = require('@constants/common/munchConstants');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const axios = require('axios');
-const { Op } = require('sequelize');
 
-/**
- * Groups deliveries into a batch.
- * @param {Array<number>} deliveryIds - Array of Order IDs to batch.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Created RouteOptimization object.
- */
-async function createBatchDelivery(deliveryIds, driverId) {
+async function createBatchDelivery(deliveryIds, driverId, auditService, notificationService, socketService, pointService) {
   if (deliveryIds.length > munchConstants.DELIVERY_CONSTANTS.DELIVERY_SETTINGS.BATCH_DELIVERY_LIMIT) {
     throw new AppError('Batch limit exceeded', 400, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
   }
@@ -71,7 +54,7 @@ async function createBatchDelivery(deliveryIds, driverId) {
     for (const order of orders) {
       await notificationService.sendNotification({
         userId: order.customer_id,
-        notificationType: munchConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DELIVERY_ASSIGNED,
+        notificationType: munchConstants.NOTIFICATION_TYPES.DELIVERY_ASSIGNED,
         message: formatMessage(
           'customer',
           'delivery',
@@ -82,6 +65,13 @@ async function createBatchDelivery(deliveryIds, driverId) {
         priority: 'HIGH',
       });
     }
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'batch_delivery').action,
+      languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emit(null, 'batch_delivery:created', { batchId: routeOptimization.id, deliveryIds, driverId });
 
@@ -94,12 +84,7 @@ async function createBatchDelivery(deliveryIds, driverId) {
   }
 }
 
-/**
- * Retrieves batch delivery details.
- * @param {number} batchId - RouteOptimization ID representing the batch.
- * @returns {Promise<Object>} Batch delivery details.
- */
-async function getBatchDeliveryDetails(batchId) {
+async function getBatchDeliveryDetails(batchId, auditService, pointService) {
   const routeOptimization = await RouteOptimization.findByPk(batchId, {
     include: [
       {
@@ -111,6 +96,21 @@ async function getBatchDeliveryDetails(batchId) {
     ],
   });
   if (!routeOptimization) throw new AppError('Batch delivery not found', 404, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
+
+  await auditService.logAction({
+    userId: 'system',
+    role: 'driver',
+    action: 'GET_BATCH_DELIVERY_DETAILS',
+    details: { batchId },
+    ipAddress: 'unknown',
+  });
+
+  await pointService.awardPoints({
+    userId: 'system',
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'batch_details_access').action,
+    languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Batch delivery details retrieved', { batchId });
   return {
@@ -128,14 +128,7 @@ async function getBatchDeliveryDetails(batchId) {
   };
 }
 
-/**
- * Updates batch delivery progress.
- * @param {number} batchId - RouteOptimization ID representing the batch.
- * @param {string} status - New status for all deliveries in the batch.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function updateBatchDeliveryStatus(batchId, status, driverId) {
+async function updateBatchDeliveryStatus(batchId, status, driverId, auditService, notificationService, socketService, pointService) {
   const validStatuses = Object.values(munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES);
   if (!validStatuses.includes(status)) {
     throw new AppError('Invalid status', 400, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
@@ -156,6 +149,12 @@ async function updateBatchDeliveryStatus(batchId, status, driverId) {
     const updates = { status, updated_at: new Date() };
     if (status === munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES.DELIVERED) {
       updates.actual_delivery_time = new Date();
+      await pointService.awardPoints({
+        userId: driver.user_id,
+        role: 'driver',
+        action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'batch_delivery').action,
+        languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+      });
     }
     await Order.update(updates, { where: { id: routeOptimization.deliveryIds }, transaction });
 
@@ -170,7 +169,7 @@ async function updateBatchDeliveryStatus(batchId, status, driverId) {
     for (const order of orders) {
       await notificationService.sendNotification({
         userId: order.customer_id,
-        notificationType: munchConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DELIVERY_UPDATE,
+        notificationType: munchConstants.NOTIFICATION_TYPES.DELIVERY_UPDATE,
         message: formatMessage(
           'customer',
           'delivery',
@@ -192,13 +191,7 @@ async function updateBatchDeliveryStatus(batchId, status, driverId) {
   }
 }
 
-/**
- * Calculates optimal route for batch delivery.
- * @param {number} batchId - RouteOptimization ID representing the batch.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Optimized route.
- */
-async function optimizeBatchDeliveryRoute(batchId, driverId) {
+async function optimizeBatchDeliveryRoute(batchId, driverId, auditService, socketService, pointService) {
   const routeOptimization = await RouteOptimization.findByPk(batchId, {
     include: [{ model: Order, as: 'orders' }],
   });
@@ -227,8 +220,8 @@ async function optimizeBatchDeliveryRoute(batchId, driverId) {
 
   const routeData = response.data.routes[0];
   const optimizedRoute = {
-    distance: routeData.legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000, // in km
-    duration: routeData.legs.reduce((sum, leg) => sum + leg.duration.value, 0) / 60, // in minutes
+    distance: routeData.legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000,
+    duration: routeData.legs.reduce((sum, leg) => sum + leg.duration.value, 0) / 60,
     polyline: routeData.overview_polyline.points,
   };
 
@@ -262,6 +255,13 @@ async function optimizeBatchDeliveryRoute(batchId, driverId) {
       ipAddress: 'unknown',
     });
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_calculate').action,
+      languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emit(null, 'batch_delivery:route_updated', { batchId, route: optimizedRoute });
 
     await transaction.commit();
@@ -273,47 +273,9 @@ async function optimizeBatchDeliveryRoute(batchId, driverId) {
   }
 }
 
-/**
- * Awards gamification points for batch delivery completion.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Points awarded record.
- */
-async function awardBatchDeliveryPoints(driverId) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, munchConstants.ERROR_CODES.NO_DRIVER_ASSIGNED);
-
-  const completedBatchDeliveries = await RouteOptimization.count({
-    include: [
-      {
-        model: Order,
-        as: 'orders',
-        where: {
-          driver_id: driverId,
-          status: munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES.DELIVERED,
-          updated_at: { [Op.gte]: sequelize.literal('CURRENT_DATE') },
-        },
-      },
-    ],
-  });
-  if (completedBatchDeliveries === 0) {
-    throw new AppError('No completed batch deliveries today', 400, munchConstants.ERROR_CODES.ORDER_NOT_FOUND);
-  }
-
-  const pointsRecord = await pointService.awardPoints({
-    userId: driver.user_id,
-    role: 'driver',
-    action: munchConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.BATCH_DELIVERY.action,
-    languageCode: munchConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-  });
-
-  logger.info('Batch delivery points awarded', { driverId, points: pointsRecord.points });
-  return pointsRecord;
-}
-
 module.exports = {
   createBatchDelivery,
   getBatchDeliveryDetails,
   updateBatchDeliveryStatus,
   optimizeBatchDeliveryRoute,
-  awardBatchDeliveryPoints,
 };

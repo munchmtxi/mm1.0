@@ -1,0 +1,8 @@
+{
+  "backup": {
+    "success": "Backup created successfully",
+    "invalid_input": "Invalid admin ID or data",
+    "size_exceeded": "Backup size exceeds maximum limit",
+    "failed": "Failed to create backup"
+  }
+}

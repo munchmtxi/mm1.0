@@ -1,0 +1,29 @@
+{
+  "gamification": {
+    "points_earned": "You earned {points} points for {actionName}{walletCredit, select, null {} other { and {walletCredit} {currency} credited}}.",
+    "badge_earned": "Congratulations! You earned the {badgeName} badge.",
+    "reward_redeemed": "Reward {rewardName} redeemed for {amount} {currency}.",
+    "leaderboard_rank_update": "Your rank is now #{rank} on the {leaderboardType} leaderboard!",
+    "gamification_milestone": "Milestone achieved! You've completed {milestoneName}."
+  },
+  "success": {
+    "points_earned": "Points successfully earned!",
+    "reward_redeemed": "Reward successfully redeemed!",
+    "achievement_unlocked": "Achievement {achievementName} unlocked!",
+    "leaderboard_updated": "Leaderboard updated successfully!",
+    "social_share_success": "Gamification event shared on social media!",
+    "task_completed": "Task completed successfully!",
+    "ACTION_RECORDED": "Action recorded successfully!",
+    "POINTS_AWARDED": "Points awarded successfully!",
+    "REWARD_REDEEMED": "Reward redeemed successfully!"
+  },
+  "error": {
+    "INVALID_ACTION": "Invalid gamification action.",
+    "POINTS_EXPIRED": "Points have expired and cannot be used.",
+    "REDEMPTION_LIMIT_EXCEEDED": "Redemption limit exceeded for today.",
+    "INVALID_REWARD_TYPE": "Invalid reward type selected.",
+    "GAMIFICATION_DISABLED": "Gamification is currently disabled.",
+    "MAX_ACTIONS_EXCEEDED": "Maximum daily actions exceeded.",
+    "INVALID_REWARD": "Invalid reward selected."
+  }
+}

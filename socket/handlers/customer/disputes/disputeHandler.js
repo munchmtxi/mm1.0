@@ -1,4 +1,9 @@
+// src/socket/handlers/customer/disputes/disputeHandler.js
 'use strict';
+
+/**
+ * Socket handler for dispute-related events.
+ */
 
 const logger = require('@utils/logger');
 

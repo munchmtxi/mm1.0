@@ -1,414 +1,236 @@
 'use strict';
 
 const { sequelize } = require('@models');
-const {
-  manageFriendList,
-  setFriendPermissions,
-  facilitateGroupChat,
-} = require('@services/customer/social/socialCoreService');
-const {
-  createPost,
-  managePostReactions,
-  shareStory,
-  inviteFriendToService,
-  splitBill,
-} = require('@services/customer/social/socialContentService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
+const socialService = require('@services/customer/social/socialService');
 const pointService = require('@services/common/pointService');
-const customerConstants = require('@constants/customerConstants');
-const socialEvents = require('@socket/events/customer/social/socialEvents');
-const catchAsync = require('@utils/catchAsync');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
+const locationService = require('@services/common/locationService');
+const { formatMessage } = require('@utils/localization');
 const logger = require('@utils/logger');
-
-const manageFriendListAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { friendId, action } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await manageFriendList(customerId, friendId, action, transaction);
-    if (['add', 'accept'].includes(action)) {
-      await pointService.awardPoints(customerId, action === 'add' ? 'friend_request' : 'friend_accept', {
-        io,
-        role: 'customer',
-        languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-      }, transaction);
-      await notificationService.sendNotification({
-        {
-          userId: friendId,
-          notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.friend_request,
-          messageKey: action === 'add' ? 'friend_request' : 'friend_accepted',
-          messageParams: { userName: req.user.getFullName() },
-          deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-          priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-          role: 'customer',
-          module: 'social',
-        }, transaction);
-    }
-    if (action === 'accept') {
-      await socketService.emit(io, socialEvents.FRIEND_ACCEPTED', { customerId, status: 'accepted' }, `customer:${friendId}`);
-    } else if (['remove', 'block'].includes(action)) {
-      await socketService.emit(io, socialEvents[`FRIEND_${action.toUpperCase()}`], { customerId }, `customer:${friendId}`);
-    }
-    await auditService.logAction({
-      action: `FRIEND_${action.toUpperCase()}`,
-      userId: customerId,
-      role: 'customer',
-      details: `Friend ${action} for ${friendId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const setFriendPermissionsAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { friendId, permissions } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await setFriendPermissions(customerId, friendId, permissions, transaction);
-    await notificationService.sendNotification({
-      userId: friendId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.friend_request,
-      messageKey: 'permissions_updated',
-      messageParams: { userName: req.user.getFullName() },
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-      role: 'customer',
-      module: 'social',
-    }, transaction);
-    await socketService.emit(io, socialEvents.FRIEND_PERMISSIONS, { customerId, permissions }, `friend:${friendId}`);
-    await auditService.logAction({
-      action: 'SET_FRIEND_PERMISSIONS',
-      userId: customerId,
-      role: 'customer',
-      details: `Permissions set for friend ${friendId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const facilitateGroupChatAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { chatId } = req.params;
-  const { message, media, pinned, serviceType, serviceId } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await facilitateGroupChat(customerId, chatId, { message, media, pinned, serviceType, serviceId }, transaction);
-    if (result.status === 'joined') {
-      await pointService.awardPoints(customerId, 'join_group_chat', {
-        io,
-        role: 'customer',
-        languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-      }, transaction);
-      await notificationService.sendNotification({
-        userId: (await GroupChat.findByPk(chatId, { transaction })).creator_id,
-        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.GROUP_CHAT_INVITE,
-        messageKey: 'chat_joined',
-        messageParams: { userName: req.user.getFullName(), chatName: (await GroupChat.findByPk(chatId, { transaction })).name },
-        deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-        priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-        role: 'customer',
-        module: 'social',
-      }, transaction);
-      await socketService.emit(io, socialEvents.CHAT_JOYED, { customerId, chatName: (await GroupChat.findByPk(chatId, { transaction })).name }, `chat:${chatId}`);
-    } else {
-      await pointService.awardPoints(customerId, 'send_chat_message', {
-        io,
-        role: 'customer',
-        languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-      }, transaction);
-      await notificationService.sendNotification({
-        userId: null,
-        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.GROUP_CHAT_MESSAGE,
-        messageKey: 'chat_message',
-        messageParams: { userName: req.user.getFullName(), chatName: (await GroupChat.findByPk(chatId, { transaction })).name },
-        deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-        priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-        role: 'customer',
-        module: 'social',
-        broadcast: (await GroupChat.findByPk(chatId, { include: ['members'], transaction })).members
-          .map(m => m.id)
-          .filter(id => id !== customerId),
-      }, transaction);
-      await socketService.emit(io, socialEvents.CHAT_MESSAGE, {
-        messageId: result.messageId,
-        senderId: customerId,
-        content: message,
-        media,
-        pinned,
-        serviceType,
-        serviceId,
-      }, `chat:${chatId}`);
-    }
-    await auditService.logAction({
-      action: message || media ? 'SEND_CHAT_MESSAGE' : 'JOIN_GROUP_CHAT',
-      userId: customerId,
-      role: 'customer',
-      details: `Chat action for ${chatId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const createPostAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { content, media, privacy, serviceType, serviceId } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await createPost(customerId, { content, media, privacy, serviceType, serviceId }, transaction);
-    await pointService.awardPoints(customerId, 'create_post', {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId: null,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SOCIAL,
-      messageKey: 'post_created',
-      messageParams: { userName: req.user.getFullName(), serviceType: serviceType || 'general' },
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-      role: 'customer',
-      module: 'social',
-      broadcast: privacy === 'friends' ? (await sequelize.models.UserConnections.findAll({
-        where: { user_id: customerId, status: 'accepted' },
-        transaction,
-      })).map(c => c.friend_id) : [],
-    }, transaction);
-    await socketService.emit(io, socialEvents.POST_CREATED, {
-      postId: result.postId,
-      content,
-      media,
-      privacy,
-      serviceType,
-      serviceId,
-      createdAt: result.createdAt,
-    }, `customer:${customerId}`);
-    await auditService.logAction({
-      action: 'CREATE_POST',
-      userId: customerId,
-      role: 'customer',
-      details: `Post created for ${serviceType || 'general'}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(201).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const managePostReactionsAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { postId } = req.params;
-  const { reaction } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await managePostReactions(customerId, postId, reaction, transaction);
-    await pointService.awardPoints(customerId, 'react_post', {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId: (await Post.findByPk(postId, { transaction })).user_id,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SOCIAL,
-      messageKey: 'post_reacted',
-      messageParams: { userName: req.user.getFullName(), reaction },
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-      role: 'customer',
-      module: 'social',
-    }, transaction);
-    await socketService.emit(io, socialEvents.POST_REACTION, {
-      reactionId: result.reactionId,
-      postId,
-      reaction,
-      senderId: customerId,
-    }, `customer:${(await Post.findByPk(postId, { transaction })).user_id}`);
-    await auditService.logAction({
-      action: 'REACT_POST',
-      userId: customerId,
-      role: 'customer',
-      details: `Reacted to post ${postId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const shareStoryAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { media, serviceType, serviceId } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await shareStory(customerId, { media, serviceType, serviceId }, transaction);
-    await pointService.awardPoints(customerId, 'share_story', {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId: null,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SOCIAL,
-      messageKey: 'story_shared',
-      messageParams: { userName: req.user.getFullName(), serviceType: serviceType || 'general' },
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-      role: 'customer',
-      module: 'social',
-      broadcast: (await sequelize.models.UserConnections.findAll({
-        where: { user_id: customerId, status: 'accepted' },
-        transaction,
-      })).map(c => c.friend_id),
-    }, transaction);
-    await socketService.emit(io, socialEvents.STORY_SHARED, {
-      storyId: result.storyId,
-      media,
-      serviceType,
-      serviceId,
-      expiresAt: result.expiresAt,
-    }, `customer:${customerId}`);
-    await auditService.logAction({
-      action: 'SHARE_STORY',
-      userId: customerId,
-      role: 'customer',
-      details: `Story shared for ${serviceType || 'general'}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(201).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const inviteFriendToServiceAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { friendId, serviceType, serviceId, method } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await inviteFriendToService(customerId, { friendId, serviceType, serviceId, method }, transaction);
-    await pointService.awardPoints(customerId, 'invite_friend', {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId: friendId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SERVICE_INVITE,
-      messageKey: `${serviceType}_invite`,
-      messageParams: { userName: req.user.getFullName(), serviceId },
-      deliveryMethod: method === 'app' ? customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH : method,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-      role: 'customer',
-      module: 'social',
-    }, transaction);
-    await socketService.emit(io, socialEvents.SERVICE_INVITED, {
-      inviteId: result.inviteId,
-      friendId,
-      serviceType,
-      serviceId,
-      method,
-      status: result.status,
-    }, `customer:${friendId}`);
-    await auditService.logAction({
-      action: 'INVITE_FRIEND',
-      userId: customerId,
-      role: 'customer',
-      details: `Invited friend ${friendId} to ${serviceType} ${serviceId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const splitBillAction = catchAsync(async (req, res) => {
-  const { id: customerId } = req.user;
-  const { serviceType, serviceId, splitType, participants, amounts } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await splitBill(customerId, { serviceType, serviceId, splitType, participants, amounts }, transaction);
-    await pointService.awardPoints(customerId, 'split_payment', {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.MUNCH_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId: null,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SOCIAL,
-      messageKey: 'bill_split_initiated',
-      messageParams: { userName: req.user.getFullName(), serviceType, serviceId },
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS.PUSH,
-      priority: customerConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-      role: 'customer',
-      module: 'social',
-      broadcast: participants,
-    }, transaction);
-    await socketService.emit(io, socialEvents.BILL_SPLIT, {
-      billSplitId: result.billSplitId,
-      serviceType,
-      serviceId,
-      splitType,
-      splits: result.splits,
-      status: result.status,
-    }, participants.map(p => `customer:${p}`));
-    await auditService.logAction({
-      action: 'SPLIT_BILL',
-      userId: customerId,
-      role: 'customer',
-      details: `Bill split initiated for ${serviceType} ${serviceId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    res.status(201).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
+const AppError = require('@utils/AppError');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
+const socketConstants = require('@constants/common/socketConstants');
 
 module.exports = {
-  manageFriendListAction,
-  setFriendPermissionsAction,
-  facilitateGroupChatAction,
-  createPostAction,
-  managePostReactionsAction,
-  shareStoryAction,
-  inviteFriendToServiceAction,
-  splitBillAction,
+  async manageFriendList(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { customerId } = req.user;
+      const { friendId, action } = req.body;
+      const result = await socialService.manageFriendList(customerId, friendId, action, transaction);
+
+      const gamificationAction = action === 'add' ? 'friend_request_sent' : action === 'accept' ? 'friend_request_accepted' : null;
+      if (gamificationAction) {
+        await pointService.awardPoints(customerId, gamificationAction, customerGamificationConstants.GAMIFICATION_ACTIONS.social.find(a => a.action === gamificationAction).points, {
+          io: req.io,
+          role: 'customer',
+          languageCode: req.user.preferred_language,
+          walletId: req.user.walletId,
+        });
+      }
+
+      if (action === 'add' || action === 'accept') {
+        await notificationService.sendNotification({
+          userId: friendId,
+          notificationType: `friend_${action}`,
+          messageKey: `social.friend_${action}`,
+          messageParams: { inviterId: customerId },
+          role: 'customer',
+          module: 'social',
+        });
+
+        await socketService.emit(req.io, socketConstants.SOCKET_EVENT_TYPES[`SOCIAL_FRIEND_${action.toUpperCase()}`], {
+          userId: customerId,
+          role: 'customer',
+          friendId,
+          auditAction: `SOCIAL_FRIEND_${action.toUpperCase()}`,
+        }, `customer:${friendId}`);
+      }
+
+      await auditService.logAction({
+        userId: customerId,
+        role: 'customer',
+        action: `friend_${action}`,
+        details: { friendId, action },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        message: formatMessage('customer', 'social', req.user.preferred_language, `friend.${action}`),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Friend list management failed', { error: error.message, customerId: req.user.customerId });
+      next(error instanceof AppError ? error : new AppError('Friend list management failed', 500, 'FRIEND_LIST_FAILED'));
+    }
+  },
+
+  async setFriendPermissions(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { customerId } = req.user;
+      const { friendId, permissions } = req.body;
+      const result = await socialService.setFriendPermissions(customerId, friendId, permissions, transaction);
+
+      await auditService.logAction({
+        userId: customerId,
+        role: 'customer',
+        action: 'privacy_settings_updated',
+        details: { friendId, permissions },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        message: formatMessage('customer', 'social', req.user.preferred_language, 'permissions.updated'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Friend permissions update failed', { error: error.message, customerId: req.user.customerId });
+      next(error instanceof AppError ? error : new AppError('Permissions update failed', 500, 'PERMISSIONS_UPDATE_FAILED'));
+    }
+  },
+
+  async facilitateGroupChat(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { customerId } = req.user;
+      const { chatId, ...options } = req.body;
+      const result = await socialService.facilitateGroupChat(customerId, chatId, options, transaction);
+
+      if (options.message || options.media) {
+        await pointService.awardPoints(customerId, 'group_chat_message', customerGamificationConstants.GAMIFICATION_ACTIONS.social.find(a => a.action === 'group_chat_message').points, {
+          io: req.io,
+          role: 'customer',
+          languageCode: req.user.preferred_language,
+          walletId: req.user.walletId,
+        });
+
+        await notificationService.sendNotification({
+          userId: customerId,
+          notificationType: 'group_chat_message',
+          messageKey: 'social.group_chat_message',
+          messageParams: { chatId },
+          role: 'customer',
+          module: 'social',
+        });
+
+        await socketService.emit(req.io, socketConstants.SOCKET_EVENT_TYPES.SOCIAL_GROUP_CHAT_MESSAGE, {
+          userId: customerId,
+          role: 'customer',
+          chatId,
+          messageId: result.messageId,
+          auditAction: 'SOCIAL_GROUP_CHAT_MESSAGE',
+        }, `chat:${chatId}`);
+      }
+
+      await auditService.logAction({
+        userId: customerId,
+        role: 'customer',
+        action: options.message || options.media ? 'group_chat_message' : 'group_chat_joined',
+        details: { chatId, action: options.message || options.media ? 'message' : 'join' },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        message: formatMessage('customer', 'social', req.user.preferred_language, options.message || options.media ? 'group_chat.message_sent' : 'group_chat.joined'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Group chat action failed', { error: error.message, customerId: req.user.customerId });
+      next(error instanceof AppError ? error : new AppError('Group chat action failed', 500, 'GROUP_CHAT_FAILED'));
+    }
+  },
+
+  async createLiveEventStream(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { customerId } = req.user;
+      const { eventId, ...streamData } = req.body;
+      const stream = await socialService.createLiveEventStream(customerId, eventId, streamData, transaction);
+
+      await pointService.awardPoints(customerId, 'event_live_update_shared', customerGamificationConstants.GAMIFICATION_ACTIONS.mevents.find(a => a.action === 'event_live_update_shared').points, {
+        io: req.io,
+        role: 'customer',
+        languageCode: req.user.preferred_language,
+        walletId: req.user.walletId,
+      });
+
+      await notificationService.sendNotification({
+        userId: customerId,
+        notificationType: 'live_stream_created',
+        messageKey: 'social.live_stream_created',
+        messageParams: { title: stream.title },
+        role: 'customer',
+        module: 'social',
+      });
+
+      await socketService.emit(req.io, socketConstants.SOCKET_EVENT_TYPES.SOCIAL_LIVE_STREAM_CREATED, {
+        userId: customerId,
+        role: 'customer',
+        streamId: stream.streamId,
+        eventId,
+        auditAction: 'SOCIAL_LIVE_STREAM_CREATED',
+      }, `customer:${customerId}`);
+
+      await auditService.logAction({
+        userId: customerId,
+        role: 'customer',
+        action: 'event_live_update_shared',
+        details: { streamId: stream.streamId, eventId },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(201).json({
+        message: formatMessage('customer', 'social', req.user.preferred_language, 'live_stream.created'),
+        data: stream,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Live stream creation failed', { error: error.message, customerId: req.user.customerId });
+      next(error instanceof AppError ? error : new AppError('Live stream creation failed', 500, 'LIVE_STREAM_FAILED'));
+    }
+  },
+
+  async manageSocialRecommendations(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { customerId } = req.user;
+      const preferences = req.body;
+      const recommendations = await socialService.manageSocialRecommendations(customerId, preferences, transaction);
+
+      await pointService.awardPoints(customerId, 'recommendations_received', customerGamificationConstants.GAMIFICATION_ACTIONS.analytics.find(a => a.action === 'recommendations_received').points, {
+        io: req.io,
+        role: 'customer',
+        languageCode: req.user.preferred_language,
+        walletId: req.user.walletId,
+      });
+
+      await auditService.logAction({
+        userId: customerId,
+        role: 'customer',
+        action: 'recommendations_received',
+        details: { preferences },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        message: formatMessage('customer', 'social', req.user.preferred_language, 'recommendations.received'),
+        data: recommendations,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Social recommendations failed', { error: error.message, customerId: req.user.customerId });
+      next(error instanceof AppError ? error : new AppError('Social recommendations failed', 500, 'RECOMMENDATIONS_FAILED'));
+    }
+  },
 };

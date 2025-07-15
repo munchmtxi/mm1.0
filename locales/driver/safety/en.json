@@ -1,6 +1,8 @@
 {
   "safety": {
-    "incident_reported": "Safety incident {incident_number} reported successfully.",
-    "sos_triggered": "SOS {incident_number} triggered. Help is on the way."
+    "incident_reported": "Safety incident {{incident_number}} reported successfully",
+    "sos_triggered": "SOS emergency {{incident_number}} triggered successfully",
+    "status_updated": "Safety status retrieved successfully",
+    "discreet_alert_sent": "Discreet alert sent successfully"
   }
 }

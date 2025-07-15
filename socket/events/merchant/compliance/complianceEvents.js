@@ -1,8 +1,11 @@
+'use strict';
+
 module.exports = {
-  // Regulatory compliance event types for socket emissions
-  EVENT_TYPES: {
-    CERTIFICATIONS_MANAGED: 'compliance:certificationsManaged',
-    STAFF_VERIFIED: 'compliance:staffVerified',
-    DRIVER_VERIFIED: 'compliance:driverVerified',
-    COMPLIANCE_AUDITED: 'compliance:audited',
-  },
+  DATA_ENCRYPTED: 'merchant:compliance:dataEncrypted',
+  GDPR_ENFORCED: 'merchant:compliance:gdprEnforced',
+  DATA_ACCESS_MANAGED: 'merchant:compliance:dataAccessManaged',
+  CERTIFICATIONS_MANAGED: 'merchant:compliance:certificationsManaged',
+  STAFF_COMPLIANCE_VERIFIED: 'merchant:compliance:staffComplianceVerification',
+  DRIVER_COMPLIANCE_VERIFIED: 'merchant:compliance:driverComplianceVerification',
+  COMPLIANCE_AUDITED: 'merchant:compliance:complianceAudited',
+};

@@ -1,20 +1,21 @@
 'use strict';
 
+/**
+ * Customer accessibility routes.
+ */
+
 const express = require('express');
 const router = express.Router();
-const { updateScreenReader, updateFontSize, updateLanguage } = require('@controllers/customer/profile/accessibility/accessibilityController');
-const { enableScreenReaderSchema, adjustFontSizeSchema, supportMultiLanguageSchema } = require('@validators/customer/profile/accessibility/accessibilityValidator');
-const { updateScreenReader: updateScreenReaderMW, updateFontSize: updateFontSizeMW, updateLanguage: updateLanguageMW } = require('@middleware/customer/profile/accessibility/accessibilityMiddleware');
-const { validate } = require('@middleware/validate');
+const accessibilityController = require('@controllers/customer/profile/accessibilityController');
+const accessibilityValidator = require('@validators/customer/profile/accessibilityValidator');
+const accessibilityMiddleware = require('@middleware/customer/profile/accessibilityMiddleware');
 
 /**
  * @swagger
- * /api/customer/profile/accessibility/screen-reader:
- *   patch:
- *     summary: Enable or disable screen reader
- *     tags: [Accessibility]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/accessibility/screen-readers:
+ *   post:
+ *     summary: Enable or disable screen readers
+ *     tags: [Customer Accessibility]
  *     requestBody:
  *       required: true
  *       content:
@@ -24,42 +25,35 @@ const { validate } = require('@middleware/validate');
  *             properties:
  *               enabled:
  *                 type: boolean
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Screen reader settings updated
+ *         description: Screen reader settings updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                     screenReaderEnabled:
- *                       type: boolean
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
- *         description: Invalid setting
- *       404:
- *         description: Customer not found
+ *         description: Invalid input
+ *       500:
+ *         description: Server error
  */
-router.patch('/screen-reader', updateScreenReaderMW, validate(enableScreenReaderSchema), updateScreenReader);
+router.post('/screen-readers', accessibilityMiddleware.validateUserId, accessibilityMiddleware.validateLanguageCode, accessibilityValidator.validateEnableScreenReaders, accessibilityController.enableScreenReaders);
 
 /**
  * @swagger
- * /api/customer/profile/accessibility/font-size:
- *   patch:
+ * /api/v1/customer/profile/accessibility/font-size:
+ *   post:
  *     summary: Adjust font size
- *     tags: [Accessibility]
- *     security:
- *       - bearerAuth: []
+ *     tags: [Customer Accessibility]
  *     requestBody:
  *       required: true
  *       content:
@@ -68,43 +62,37 @@ router.patch('/screen-reader', updateScreenReaderMW, validate(enableScreenReader
  *             type: object
  *             properties:
  *               fontSize:
- *                 type: number
+ *                 type: string
+ *                 enum: [small, medium, large]
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Font size updated
+ *         description: Font size settings updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                     fontSize:
- *                       type: number
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
  *         description: Invalid font size
- *       404:
- *         description: Customer not found
+ *       500:
+ *         description: Server error
  */
-router.patch('/font-size', updateFontSizeMW, validate(adjustFontSizeSchema), updateFontSize);
+router.post('/font-size', accessibilityMiddleware.validateUserId, accessibilityMiddleware.validateLanguageCode, accessibilityValidator.validateAdjustFonts, accessibilityController.adjustFonts);
 
 /**
  * @swagger
- * /api/customer/profile/accessibility/language:
- *   patch:
- *     summary: Set UI language
- *     tags: [Accessibility]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/accessibility/language:
+ *   post:
+ *     summary: Set accessibility language
+ *     tags: [Customer Accessibility]
  *     requestBody:
  *       required: true
  *       content:
@@ -114,32 +102,27 @@ router.patch('/font-size', updateFontSizeMW, validate(adjustFontSizeSchema), upd
  *             properties:
  *               language:
  *                 type: string
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Language updated
+ *         description: Accessibility language updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                     language:
- *                       type: string
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
  *         description: Invalid language
- *       404:
- *         description: Customer not found
+ *       500:
+ *         description: Server error
  */
-router.patch('/language', updateLanguageMW, validate(supportMultiLanguageSchema), updateLanguage);
+router.post('/language', accessibilityMiddleware.validateUserId, accessibilityMiddleware.validateLanguageCode, accessibilityValidator.validateSupportMultiLanguage, accessibilityController.supportMultiLanguage);
 
 module.exports = router;

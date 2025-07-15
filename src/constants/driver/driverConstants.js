@@ -1,194 +1,198 @@
 'use strict';
 
 module.exports = {
-  DRIVER_STATUSES: ['available', 'on_ride', 'on_delivery', 'offline', 'pending_verification', 'suspended'],
+  // Driver Statuses
+  DRIVER_STATUSES: ['available', 'on_ride', 'on_delivery', 'offline', 'pending_verification', 'suspended', 'banned'],
+
+  // Driver Settings
   DRIVER_SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'NGN', 'ZAR', 'INR', 'BRL'],
-    DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: ['en', 'es', 'fr', 'de', 'it', 'sw', 'ny', 'pt', 'hi', 'yo', 'zu'],
-    SUPPORTED_CITIES: {
-      US: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami'],
-      UK: ['London', 'Manchester', 'Birmingham', 'Glasgow'],
-      CA: ['Toronto', 'Vancouver', 'Montreal'],
-      AU: ['Sydney', 'Melbourne', 'Brisbane'],
-      MW: ['Lilongwe', 'Blantyre', 'Mzuzu'],
-      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha'],
-      KE: ['Nairobi', 'Mombasa', 'Kisumu'],
-      MZ: ['Maputo', 'Beira', 'Nampula'],
-      NG: ['Lagos', 'Abuja', 'Kano'],
-      ZA: ['Johannesburg', 'Cape Town', 'Durban'],
-      IN: ['Mumbai', 'Delhi', 'Bangalore'],
-      BR: ['São Paulo', 'Rio de Janeiro', 'Brasília']
-    },
-    DEFAULT_TIMEZONE: 'UTC',
-    SUPPORTED_MAP_PROVIDERS: {
-      US: 'google_maps', EU: 'openstreetmap', MW: 'google_maps', TZ: 'google_maps',
-      KE: 'google_maps', MZ: 'google_maps', NG: 'google_maps', ZA: 'google_maps',
-      IN: 'google_maps', BR: 'google_maps'
-    },
-    MAX_VEHICLES_PER_DRIVER: 2,
-    MAX_ACTIVE_TASKS: 5
+    MAX_VEHICLES_PER_DRIVER: 3,
+    MAX_ACTIVE_TASKS: 7,
+    KYC_REQUIRED: true,
+    ONBOARDING_STATUSES: ['pending', 'verified', 'rejected']
   },
+
+  // Ride Constants (mtxi)
   MTXI_CONSTANTS: {
-    RIDE_STATUSES: ['requested', 'accepted', 'in_progress', 'completed', 'cancelled'],
-    RIDE_TYPES: ['standard', 'shared'],
+    RIDE_STATUSES: ['requested', 'accepted', 'in_progress', 'completed', 'cancelled', 'delayed'],
+    RIDE_TYPES: ['standard', 'shared', 'premium', 'scheduled'],
     RIDE_SETTINGS: {
       MAX_PASSENGERS: 4,
-      MIN_RIDE_DISTANCE_KM: 1,
-      MAX_RIDE_DISTANCE_KM: 50,
+      MIN_RIDE_DISTANCE_KM: 0.5,
+      MAX_RIDE_DISTANCE_KM: 150,
       CANCELLATION_WINDOW_MINUTES: 5,
-      TIMELY_PICKUP_WINDOW_MINUTES: 5
+      TIMELY_PICKUP_WINDOW_MINUTES: 3,
+      AI_DISPATCH: true
     },
     SHARED_RIDE_SETTINGS: {
       MAX_PASSENGERS_PER_SHARED_RIDE: 4,
-      MAX_STOPS_PER_SHARED_RIDE: 3
+      MAX_STOPS_PER_SHARED_RIDE: 5,
+      AI_ROUTE_OPTIMIZATION: true
     }
   },
+
+  // Delivery Constants (munch and mevents)
   MUNUCH_DELIVERY_CONSTANTS: {
-    SUPPORTED_MERCHANT_TYPES: ['restaurant', 'dark_kitchen', 'butcher', 'grocery', 'caterer', 'cafe', 'bakery'],
-    DELIVERY_STATUSES: ['requested', 'accepted', 'picked_up', 'in_delivery', 'delivered', 'cancelled'],
-    DELIVERY_TYPES: ['standard', 'batch'],
+    SUPPORTED_MERCHANT_TYPES: ['restaurant', 'dark_kitchen', 'butcher', 'grocery', 'caterer', 'cafe', 'bakery', 'venue'],
+    DELIVERY_STATUSES: ['requested', 'accepted', 'picked_up', 'in_delivery', 'delivered', 'cancelled', 'refunded'],
+    DELIVERY_TYPES: ['standard', 'batch', 'event'],
     DELIVERY_SETTINGS: {
-      MAX_DELIVERY_RADIUS_KM: 20,
-      MIN_DELIVERY_TIME_MINUTES: 15,
-      MAX_DELIVERY_TIME_MINUTES: 90,
-      BATCH_DELIVERY_LIMIT: 5,
-      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal']
+      MAX_DELIVERY_RADIUS_KM: 25,
+      MIN_DELIVERY_TIME_MINUTES: 10,
+      MAX_DELIVERY_TIME_MINUTES: 120,
+      BATCH_DELIVERY_LIMIT: 7,
+      EVENT_DELIVERY_WINDOW_MINUTES: 20,
+      CANCELLATION_WINDOW_MINUTES: 3,
+      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic'],
+      AI_ROUTE_OPTIMIZATION: true,
+      REAL_TIME_TRACKING: true
     }
   },
+
+  // Availability Constants
   AVAILABILITY_CONSTANTS: {
     AVAILABILITY_STATUSES: ['available', 'unavailable'],
     SHIFT_SETTINGS: {
-      MIN_SHIFT_HOURS: 4,
-      MAX_SHIFT_HOURS: 12,
-      MAX_SHIFTS_PER_WEEK: 6,
-      MIN_BREAK_BETWEEN_SHIFTS_MINUTES: 60
+      MIN_SHIFT_HOURS: 2,
+      MAX_SHIFT_HOURS: 14,
+      MAX_SHIFTS_PER_WEEK: 7,
+      MIN_BREAK_BETWEEN_SHIFTS_MINUTES: 30,
+      AI_SHIFT_SCHEDULING: true
     },
-    HIGH_DEMAND_PERIODS: ['morning_rush', 'lunch_rush', 'evening_rush']
+    HIGH_DEMAND_PERIODS: ['morning_rush', 'lunch_rush', 'evening_rush', 'event_peak']
   },
-  LOCATION_CONSTANTS: {
-    LOCATION_UPDATE_FREQUENCY_SECONDS: 10,
-    ROUTE_OPTIMIZATION: {
-      MAX_DEVIATION_PERCENTAGE: 15,
-      FUEL_EFFICIENCY_WEIGHT: 0.4,
-      TIME_EFFICIENCY_WEIGHT: 0.6
-    },
-    MAP_SETTINGS: {
-      DEFAULT_ZOOM_LEVEL: 15,
-      MAX_WAYPOINTS_PER_ROUTE: 10
-    }
-  },
+
+  // Wallet Constants
   WALLET_CONSTANTS: {
-    WALLET_TYPE: ['driver'],
+    WALLET_TYPE: 'driver',
     PAYMENT_STATUSES: ['pending', 'completed', 'failed', 'refunded'],
-    TRANSACTION_TYPES: ['earning', 'tip', 'payout'],
+    TRANSACTION_TYPES: ['ride_earning', 'delivery_earning', 'tip', 'payout', 'bonus'],
     WALLET_SETTINGS: {
-      MIN_PAYOUT: 10,
-      MAX_PAYOUT: 5000,
-      TRANSACTION_LIMIT_PER_DAY: 100
+      MIN_PAYOUT: 5,
+      MAX_PAYOUT: 10000,
+      TRANSACTION_LIMIT_PER_DAY: 100,
+      PAYOUT_PROCESSING_TIME_HOURS: 24,
+      AUTO_PAYOUT_THRESHOLD: 100,
+      CRYPTO_WALLETS: ['BTC', 'ETH', 'USDT']
     },
-    PAYMENT_METHODS: ['bank_transfer', 'mobile_money', 'wallet_transfer'],
-    PAYOUT_PROCESSING_TIME_HOURS: 24,
-    TAXES: ['US', 'EU', 'CA', 'AU', 'UK', 'MW', 'TZ', 'KE', 'MZ', 'NG', 'ZA', 'IN', 'BR']
+    PAYMENT_METHODS: ['bank_transfer', 'mobile_money', 'wallet_transfer', 'crypto']
   },
+
+  // Profile Constants
   PROFILE_CONSTANTS: {
-    VEHICLE_TYPES: ['car', 'motorbike', 'bicycle', 'van'],
-    REQUIRED_CERTIFICATIONS: ['drivers_license', 'vehicle_insurance', 'food_safety_driver'],
-    REQUIRED_FIELDS: ['full_name', 'name', 'email', 'phone_number', 'vehicle_type', 'drivers_license', 'vehicle_insurance'],
-    OPTIONAL_FIELDS: ['profile_picture', 'emergency_contact', 'preferred_language']
+    VEHICLE_TYPES: ['car', 'motorbike', 'bicycle', 'van', 'electric_scooter'],
+    REQUIRED_CERTIFICATIONS: ['drivers_license', 'vehicle_insurance', 'food_safety_driver', 'background_check'],
+    REQUIRED_FIELDS: ['full_name', 'email', 'phone_number', 'vehicle_type', 'drivers_license', 'vehicle_insurance', 'background_check'],
+    OPTIONAL_FIELDS: ['profile_picture', 'emergency_contact', 'preferred_language', 'accessibility_features']
   },
+
+  // Analytics Constants
   ANALYTICS_CONSTANTS: {
-    METRICS: ['ride_completion_rate', 'delivery_completion_rate', 'average_delivery_time', 'customer_ratings', 'earnings_trends'],
-    REPORT_FORMATS: ['pdf', 'csv', 'json'],
-    DATA_RETENTION_DAYS: 365
+    METRICS: [
+      'ride_completion_rate', 'delivery_completion_rate', 'average_ride_time', 'average_delivery_time',
+      'customer_ratings', 'earnings_trends', 'fuel_efficiency', 'eco_route_adoption'
+    ],
+    REPORT_FORMATS: ['pdf', 'csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
   },
+
+  // Onboarding Constants
   ONBOARDING_CONSTANTS: {
-    TRAINING_MODULES: ['platform_usage', 'safety_protocols', 'customer_interaction', 'delivery_handling'],
-    CERTIFICATION_STATUSES: ['pending', 'completed', 'expired'],
+    TRAINING_MODULES: [
+      'platform_usage', 'safety_protocols', 'customer_interaction', 'ride_handling', 'delivery_handling',
+      'dietary_compliance', 'event_delivery_training', 'eco_driving'
+    ],
+    CERTIFICATION_STATUSES: ['pending', 'completed', 'expired', 'rejected'],
     CERTIFICATION_EXPIRY_DAYS: 365
   },
+
+  // Support Constants
   SUPPORT_CONSTANTS: {
-    ISSUE_TYPES: ['ride', 'delivery', 'payment', 'wallet', 'safety'],
-    DISPUTE_STATUSES: ['open', 'in_progress', 'resolved', 'escalated'],
-    SUPPORT_RESPONSE_TIME_HOURS: 24
+    ISSUE_TYPES: ['ride', 'delivery', 'payment', 'wallet', 'safety', 'vehicle', 'customer_interaction'],
+    DISPUTE_STATUSES: ['open', 'in_progress', 'resolved', 'escalated', 'closed'],
+    RESOLUTION_TYPES: ['compensation', 'apology', 'account_credit', 'no_action'],
+    SUPPORT_RESPONSE_TIME_HOURS: 12,
+    SUPPORT_CHANNELS: ['in_app_chat', 'email', 'phone', 'whatsapp', 'telegram'],
+    AI_CHATBOT: true
   },
+
+  // Safety Constants
   SAFETY_CONSTANTS: {
-    INCIDENT_TYPES: ['accident', 'unsafe_customer', 'vehicle_issue'],
-    SOS_METHODS: ['emergency_call', 'discreet_alert'],
-    SAFETY_ALERT_FREQUENCY_MINUTES: 5
+    INCIDENT_TYPES: ['accident', 'unsafe_customer', 'vehicle_issue', 'road_hazard', 'health_emergency'],
+    SOS_METHODS: ['emergency_call', 'discreet_alert', 'in_app_sos'],
+    SAFETY_ALERT_FREQUENCY_MINUTES: 3,
+    SAFETY_FEATURES: ['panic_button', 'real_time_location_sharing', 'route_deviation_alert']
   },
-  PROMOTION_CONSTANTS: {
-    PROMOTION_TYPES: ['bonus', 'loyalty', 'referral'],
-    LOYALTY_TIERS: [
-      { name: 'Bronze', minPoints: 0, bonus: 5 },
-      { name: 'Silver', minPoints: 500, bonus: 10 },
-      { name: 'Gold', minPoints: 1000, bonus: 15 }
-    ],
-    REFERRAL_BONUS_POINTS: 100
-  },
-  GAMIFICATION_CONSTANTS: {
-    DRIVER_ACTIONS: [
-      { action: 'ride_completion', points: 20, walletCredit: 0.50 },
-      { action: 'shared_ride_completion', points: 10, walletCredit: 0.30 },
-      { action: 'timely_pickup', points: 15, walletCredit: 0.40 },
-      { action: 'delivery_completion', points: 25, walletCredit: 0.60 },
-      { action: 'batch_delivery', points: 15, walletCredit: 0.40 },
-      { action: 'quick_delivery', points: 10, walletCredit: 0.30 },
-      { action: 'shift_commitment', points: 50, walletCredit: 1.00 },
-      { action: 'training_completion', points: 100, walletCredit: 2.00 },
-      { action: 'certification_upload', points: 50, walletCredit: 1.00 }
-    ],
-    POINT_EXPIRY_DAYS: 365,
-    MAX_POINTS_PER_DAY: 1000
-  },
+
+  // Notification Constants
   NOTIFICATION_CONSTANTS: {
-    NOTIFICATION_TYPES: ['ride_request', 'delivery_request', 'payment_confirmation', 'tip_received', 'support_response', 'safety_alert', 'high_demand', 'schedule_update'],
-    DELIVERY_METHODS: ['push', 'email', 'sms'],
-    MAX_NOTIFICATIONS_PER_HOUR: 10,
-    RETRY_ATTEMPTS: 3,
-    RETRY_INTERVAL_SECONDS: 60
+    NOTIFICATION_TYPES: [
+      'ride_task_assigned', 'delivery_task_assigned', 'payment_confirmation', 'tip_received', 'support_response',
+      'safety_alert', 'high_demand', 'schedule_update', 'eco_route_suggested', 'payout_completed'
+    ],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    PRIORITY_LEVELS: ['low', 'medium', 'high', 'urgent'],
+    MAX_NOTIFICATIONS_PER_HOUR: 20,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
   },
+
+  // Accessibility Constants
   ACCESSIBILITY_CONSTANTS: {
-    SUPPORTED_ACCESSIBILITY_FEATURES: ['screen_reader', 'adjustable_fonts', 'high_contrast', 'voice_commands'],
-    FONT_SIZE_RANGE: { min: 12, max: 24 },
-    ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal']
+    SUPPORTED_ACCESSIBILITY_FEATURES: ['screen_reader', 'adjustable_fonts', 'high_contrast', 'voice_commands', 'braille_support'],
+    FONT_SIZE_RANGE: { min: 10, max: 28 },
+    ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic']
   },
+
+  // Cross-Vertical Integration
   CROSS_VERTICAL_CONSTANTS: {
     SERVICES: ['mtxi', 'munch', 'mevents'],
-    LOYALTY_UNIFICATION: { POINT_CONVERSION_RATE: 1 },
-    UI_CONSISTENCY: { THEME: 'default', COLOR_SCHEME: 'neutral', FONT_FAMILY: 'Roboto' }
+    UI_CONSISTENCY: { THEME: 'modern', COLOR_SCHEME: 'dynamic', FONT_FAMILY: 'Inter' },
+    SERVICE_INTEGRATIONS: ['munch', 'mtxi', 'mevents', 'external_vendors']
   },
+
+  // Operational Resilience
   OPERATIONAL_CONSTANTS: {
-    OFFLINE_CACHE_LIMIT_MB: 50,
-    SYNC_INTERVAL_MINUTES: 5,
-    WEBSOCKET_HEARTBEAT_SECONDS: 30,
-    MAX_OFFLINE_TRANSACTIONS: 50
+    OFFLINE_CACHE_LIMIT_MB: 100,
+    SYNC_INTERVAL_MINUTES: 3,
+    WEBSOCKET_HEARTBEAT_SECONDS: 20,
+    MAX_OFFLINE_TRANSACTIONS: 100
   },
+
+  // Security Constants
   SECURITY_CONSTANTS: {
     ENCRYPTION_ALGORITHM: 'AES-256-GCM',
     TOKEN_EXPIRY_MINUTES: 60,
-    PERMISSION_LEVELS: ['read', 'write', 'restricted'],
-    MFA_METHODS: ['sms', 'email', 'auth_app'],
+    PERMISSION_LEVELS: ['read', 'write', 'cancel', 'restricted'],
+    MFA_METHODS: ['sms', 'email', 'auth_app', 'biometric'],
     TOKENIZATION_PROVIDER: 'stripe',
     MAX_LOGIN_ATTEMPTS: 5,
-    LOCKOUT_DURATION_MINUTES: 30,
-    AUDIT_LOG_RETENTION_DAYS: 180
+    LOCKOUT_DURATION_MINUTES: 15,
+    AUDIT_LOG_RETENTION_DAYS: 365
   },
+
+  // Compliance Constants
   COMPLIANCE_CONSTANTS: {
-    REGULATORY_REQUIREMENTS: ['drivers_license', 'vehicle_insurance', 'food_safety_driver'],
+    REGULATORY_REQUIREMENTS: ['drivers_license', 'vehicle_insurance', 'food_safety_driver', 'background_check'],
     DATA_PROTECTION_STANDARDS: ['GDPR', 'CCPA', 'LGPD', 'PIPA'],
-    AUDIT_FREQUENCY_DAYS: 180
+    AUDIT_FREQUENCY_DAYS: 90,
+    AUDIT_TYPES: [
+      'ride_completed', 'delivery_completed', 'payout_processed', 'certification_uploaded', 'profile_updated',
+      'safety_report_submitted', 'route_calculated', 'route_updated', 'eco_route_selected'
+    ]
   },
+
+  // Error Codes
   ERROR_CODES: [
-    'INVALID_DRIVER', 'DRIVER_NOT_FOUND', 'PERMISSION_DENIED', 'WALLET_INSUFFICIENT_FUNDS',
-    'PAYMENT_FAILED', 'RIDE_FAILED', 'DELIVERY_FAILED', 'OFFLINE_MODE_UNAVAILABLE',
-    'INVALID_VEHICLE_TYPE', 'CERTIFICATION_EXPIRED', 'INVALID_EMAIL', 'INVALID_PHONE'
+    'INVALID_DRIVER', 'DRIVER_NOT_FOUND', 'PERMISSION_DENIED', 'WALLET_INSUFFICIENT_FUNDS', 'PAYMENT_FAILED',
+    'RIDE_FAILED', 'DELIVERY_FAILED', 'OFFLINE_MODE_UNAVAILABLE', 'INVALID_VEHICLE_TYPE', 'CERTIFICATION_EXPIRED',
+    'INVALID_EMAIL', 'INVALID_PHONE', 'INVALID_RIDE_ASSIGNMENT', 'INVALID_DELIVERY_ASSIGNMENT', 'KYC_NOT_COMPLETED'
   ],
+
+  // Success Messages
   SUCCESS_MESSAGES: [
-    'Driver registered', 'Ride completed', 'Delivery completed', 'Payment received',
-    'Payout processed', 'Gamification points awarded', 'Support ticket resolved',
-    'Training completed', 'Profile updated', 'Certification uploaded', 'Profile retrieved',
-    'Profile verified'
+    'driver_registered', 'ride_completed', 'delivery_completed', 'payment_received', 'payout_processed',
+    'support_ticket_resolved', 'training_completed', 'profile_updated', 'certification_uploaded',
+    'profile_retrieved', 'profile_verified', 'eco_route_selected'
   ]
 };

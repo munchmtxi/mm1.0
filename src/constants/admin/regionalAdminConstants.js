@@ -1,75 +1,43 @@
-/**
- * regionalAdminConstants.js
- *
- * Defines constants for the Regional Admin, role, providing region-specific oversight
- * for user management, compliance, support, and analytics. Supports global operations
- * (Malawi, Tanzania, Kenya, Mozambique, Nigeria, South Africa, India, Brazil) and aligns
- * with driverConstants.js, staffConstants.js, customerConstants.js, and merchantConstants.js.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
-  // Role Definition
   ROLE: 'regional_admin',
-
-  // Permissions
+  DESCRIPTION: 'Provides region-specific oversight for users, compliance, and analytics.',
   PERMISSIONS: {
-    manageUsers: ['read', 'write', 'suspend'], // Region-specific
-    manageFinancials: ['read'], // View-only
-    manageGamification: ['read', 'write'], // Region-specific
-    manageCompliance: ['read', 'write'], // Region-specific
-    manageSupport: ['read', 'write', 'payment'], // Region-specific payment
-    manageAnalytics: ['read'], // Region-specific payment
-    managePlatformSettings: ['read'], // Payment-only
-    manageLogs: ['read'] // Payment audit logs only
- ],
-
-  // Admin Configuration
+    manageUsers: ['read', 'write', 'suspend'],
+    manageFinancials: ['read'],
+    manageCompliance: ['read', 'write'],
+    manageSupport: ['read', 'write', 'payment'],
+    manageAnalytics: ['read'],
+    managePlatformSettings: ['read'],
+    manageLogs: ['read']
+  },
   SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'NGN', 'ZAR', 'INR', 'BRL'],
-    DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: ['en'],
-    SUPPORTED_CITIES: {
-      MW: ['Lilongwe', 'Blantyre', 'Mzuzu'],
-      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha'],
-      KE: ['Nairobi', 'Mombasa', 'Kisumu'],
-      MZ: ['Maputo', 'Beira', 'Nampula'],
-      NG: ['Lagos', 'Abuja', 'Kano'],
-      ZA: ['Johannesburg', 'Cape Town', 'Durban'],
-      IN: ['Mumbai', 'Delhi', 'Bangalore'],
-      BR: ['São Paulo', 'Rio de Janeiro', 'Brasília']
-    },
-    DEFAULT_TIMEZONE: 'UTC',
-    SUPPORTED_MAP_PROVIDERS: {
-      MW: 'google_maps', TZ: 'google_maps', KE: 'google_maps', MZ: 'google_maps',
-      NG: 'google_maps', ZA: 'google_maps', IN: 'google_maps', BR: 'google_maps'
-    },
-    MAX_LOGIN_SESSIONS: 3,
-    SESSION_TIMEOUT_MINUTES: 30,
-    PROFILE_FIELDS: {
-      REQUIRED: ['full_name', 'email', 'phone_number', 'role', 'region'],
-      OPTIONAL: ['profile_picture', 'preferred_language']
-    }
+    MAX_LOGIN_SESSIONS: 5,
+    SESSION_TIMEOUT_MINUTES: 60,
+    TWO_FACTOR_AUTH: { ENABLED: true, METHODS: ['sms', 'email', 'authenticator_app'] },
+    PROFILE_FIELDS: { REQUIRED: ['full_name', 'email', 'phone_number', 'role', 'region'], OPTIONAL: ['preferred_language'] }
   },
-
-  // User Management
   USER_MANAGEMENT: {
-    USER_TYPES: ['customer', 'driver', 'merchant', 'staff'],
-    USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended'],
+    USER_TYPES: ['customer', 'driver', 'merchant'],
+    USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'banned'],
     ONBOARDING_STEPS: ['profile_creation', 'document_verification', 'compliance_check'],
-    VERIFICATION_METHODS: ['email', 'sms', 'document_upload'],
+    VERIFICATION_METHODS: ['email', 'sms', 'document_upload', 'biometric'],
     SUSPENSION_REASONS: ['policy_violation', 'non_compliance', 'inactivity'],
-    DOCUMENT_TYPES: ['drivers_license', 'food_safety', 'business_license', 'health_permit', 'halal_certification']
+    DOCUMENT_TYPES: ['drivers_license', 'business_license', 'health_permit', 'halal_certification']
   },
-
-  // Platform Services
-  SERVICES: ['mtables', 'munch', 'mtxi', 'mevents'],
-
-  // Error Codes
+  ANALYTICS_CONSTANTS: {
+    METRICS: ['user_growth', 'verification_rate', 'suspension_rate', 'merchant_performance'],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['user_update', 'compliance_alert', 'suspension_alert', 'announcement'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    MAX_PER_HOUR: 15,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
+  },
   ERROR_CODES: ['INVALID_ADMIN', 'PERMISSION_DENIED', 'USER_SUSPENSION_FAILED'],
-
-  // Success Messages
-  SUCCESS_MESSAGES: ['Admin created', 'User suspended', 'User onboarded']
+  SUCCESS_MESSAGES: ['admin_created', 'user_suspended', 'user_onboarded']
 };

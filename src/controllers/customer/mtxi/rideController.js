@@ -1,388 +1,280 @@
 'use strict';
 
-const rideService = require('@services/customer/mtxi/rideService');
-const walletService = require('@services/common/walletService');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
+const rideService = require('@services/rideService');
 const pointService = require('@services/common/pointService');
+const notificationService = require('@services/common/notificationService');
+const locationService = require('@services/common/locationService');
 const auditService = require('@services/common/auditService');
+const socketService = require('@services/common/socketService');
 const customerConstants = require('@constants/customer/customerConstants');
-const rideConstants = require('@constants/common/rideConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
+const logger = require('@utils/logger');
 const { sequelize } = require('@models');
 
-async function bookRide(req, res) {
-  const { pickupLocation, dropoffLocation, rideType, scheduledTime, friends, billSplit, paymentMethodId } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
+module.exports = {
+  async createRide(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role, io } = req;
+      const { pickupLocation, dropoffLocation, rideType, scheduledTime, friends } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
 
-  try {
-    const driver = await rideService.findAvailableDriver(pickupLocation);
-    const ride = await rideService.createRide(
-      {
-        customerId,
-        driverId: driver.id,
-        pickupLocation,
-        dropoffLocation,
-        rideType,
-        scheduledTime,
-        friends,
-        billSplit,
-      },
-      transaction
-    );
-
-    if (friends?.length) {
-      await rideService.addFriendsToRide(ride.id, friends, transaction);
-      await notificationService.sendNotification({
-        userId: friends,
-        type: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.friend_request,
-        message: formatMessage('friend_invite', { rideId: ride.id }),
-      });
-    }
-
-    if (billSplit) {
-      await rideService.processBillSplit(ride.id, billSplit, transaction);
-      try {
-        await pointService.awardPoints(customerId, 'split_payment', transaction);
-      } catch (error) {
-        gamificationError = error.message;
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'ride', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
       }
-    }
 
-    if (paymentMethodId) {
-      await walletService.processTransaction(
-        null,
+      const resolvedPickup = await locationService.resolveLocation(pickupLocation, userId, req.sessionToken, 'customer', languageCode);
+      const resolvedDropoff = await locationService.resolveLocation(dropoffLocation, userId, req.sessionToken, 'customer', languageCode);
+
+      const ride = await rideService.createRide(
         {
-          type: customerConstants.WALLET_CONSTANTS.TRANSACTION_TYPES[1],
-          amount: ride.payment?.amount || 100,
-          currency: customerConstants.CUSTOMER_SETTINGS.DEFAULT_CURRENCY,
-          paymentMethodId,
+          customerId: userId,
+          pickupLocation: resolvedPickup,
+          dropoffLocation: resolvedDropoff,
+          rideType,
+          scheduledTime,
+          friends,
         },
         transaction
       );
-    }
 
-    try {
-      await pointService.awardPoints(customerId, 'booking_created', transaction);
+      const action = rideType === 'shared' ? 'shared_ride_requested' : 'ride_requested';
+      const actionConfig = customerGamificationConstants.GAMIFICATION_ACTIONS.mtxi.find(a => a.action === action);
+      await pointService.awardPoints(userId, action, actionConfig.points, {
+        io,
+        role: 'customer',
+        languageCode,
+        walletId: req.body.walletId,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'ride.requested',
+        messageParams: { reference: ride.reference },
+        role: 'customer',
+        module: 'ride',
+        languageCode,
+      });
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES[0],
+        details: { rideId: ride.id, reference: ride.reference },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, 'RIDE_REQUESTED', {
+        userId,
+        role: 'customer',
+        auditAction: 'RIDE_REQUESTED',
+        details: { rideId: ride.id, reference: ride.reference },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(201).json({
+        success: true,
+        message: formatMessage('customer', 'ride', languageCode, 'success.ride_requested', { reference: ride.reference }),
+        data: { rideId: ride.id, reference: ride.reference },
+      });
     } catch (error) {
-      gamificationError = gamificationError || error.message;
+      await transaction.rollback();
+      logger.logErrorEvent('Create ride failed', { error: error.message, userId: req.userId });
+      next(error);
     }
+  },
 
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_CREATED,
-      details: { rideId: ride.id, reference: ride.reference },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('ride:booked', { userId: customerId, role: 'customer', rideId: ride.id, reference: ride.reference });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: rideConstants.SUCCESS_MESSAGES[0],
-      data: { rideId: ride.id, reference: ride.reference, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[4]);
-  }
-}
-
-async function updateRide(req, res) {
-  const { rideId } = req.params;
-  const updateData = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    await rideService.updateRide(rideId, updateData, transaction);
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { rideId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('ride:updated', { userId: customerId, role: 'customer', rideId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: rideConstants.SUCCESS_MESSAGES[0],
-      data: { rideId },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[7]);
-  }
-}
-
-async function cancelRide(req, res) {
-  const { rideId } = req.params;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    await rideService.cancelRide(rideId, transaction);
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_CANCELLED,
-      details: { rideId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('ride:cancelled', { userId: customerId, role: 'customer', rideId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: rideConstants.SUCCESS_MESSAGES[3],
-      data: { rideId },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[5]);
-  }
-}
-
-async function checkInRide(req, res) {
-  const { rideId } = req.params;
-  const { coordinates } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    await rideService.checkInRide(rideId, coordinates, transaction);
+  async updateRideStatus(req, res, next) {
+    const transaction = await sequelize.transaction();
     try {
-      await pointService.awardPoints(customerId, 'check_in', transaction);
+      const { userId, role, io } = req;
+      const { rideId, status } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (!['customer', 'driver'].includes(role)) {
+        throw new AppError(
+          formatMessage('customer', 'ride', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      await rideService.updateRideStatus(rideId, status, transaction);
+
+      const action = status === 'CANCELLED' ? 'RIDE_CANCELLED' : 'RIDE_UPDATED';
+      await auditService.logAction({
+        userId,
+        role,
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === action),
+        details: { rideId, status },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, action, {
+        userId,
+        role,
+        auditAction: action,
+        details: { rideId, status },
+      }, `${role}:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'ride', languageCode, `success.ride_${status.toLowerCase()}`),
+      });
     } catch (error) {
-      gamificationError = error.message;
+      await transaction.rollback();
+      logger.logErrorEvent('Update ride status failed', { error: error.message, userId: req.userId });
+      next(error);
     }
+  },
 
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.CHECK_IN_PROCESSED,
-      details: { rideId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('ride:check_in', { userId: customerId, role: 'customer', rideId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Ride check-in confirmed',
-      data: { rideId, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[7]);
-  }
-}
-
-async function getRideHistory(req, res) {
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    const rides = await rideService.getRideHistory(customerId, transaction);
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Ride history retrieved',
-      data: rides,
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[7]);
-  }
-}
-
-async function submitFeedback(req, res) {
-  const { rideId } = req.params;
-  const { rating, comment } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    const feedback = await rideService.submitFeedback(rideId, { rating, comment }, transaction);
+  async addFriendsToRide(req, res, next) {
+    const transaction = await sequelize.transaction();
     try {
-      await pointService.awardPoints(customerId, 'feedback_submitted', transaction);
+      const { userId, role, io } = req;
+      const { rideId, friends } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'ride', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      await rideService.addFriendsToRide(rideId, friends, transaction);
+
+      const actionConfig = customerGamificationConstants.GAMIFICATION_ACTIONS.mtxi.find(a => a.action === 'party_member_invited');
+      await pointService.awardPoints(userId, 'party_member_invited', actionConfig.points, {
+        io,
+        role: 'customer',
+        languageCode,
+        walletId: req.body.walletId,
+      });
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'FRIEND_INVITED'),
+        details: { rideId, friends },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, 'FRIEND_INVITED', {
+        userId,
+        role: 'customer',
+        auditAction: 'FRIEND_INVITED',
+        details: { rideId, friends },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'ride', languageCode, 'success.friends_added'),
+      });
     } catch (error) {
-      gamificationError = error.message;
+      await transaction.rollback();
+      logger.logErrorEvent('Add friends to ride failed', { error: error.message, userId: req.userId });
+      next(error);
     }
+  },
 
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.FEEDBACK_SUBMITTED,
-      details: { rideId, feedbackId: feedback.id },
-    }, transaction);
-
-    await socketService.emit('feedback:feedbackId', { userId: customerId, role: 'customer', rideId, rating });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Feedback submitted',
-      data: { feedbackId: feedback.id, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || 'FEEDBACK_SUBMISSION_FAILED');
-  }
-}
-
-async function addFriend(req, res) {
-  const { rideId } = req.params;
-  const { friendCustomerId } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    await rideService.addFriendsToRide(rideId, [friendCustomerId], transaction);
-    await notificationService.sendNotification({
-      userId: friendCustomerId,
-      type: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.friend_request,
-      message: formatMessage('friend_invite', { rideId }),
-    });
-
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.PARTY_MEMBER_ADDED,
-      details: { rideId, friendCustomerId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('friend:invited', { userId: customerId, role: 'customer', rideId, friendCustomerId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: rideConstants.SUCCESS_MESSAGES[7],
-      data: { rideId, friendCustomerId },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[10]);
-  }
-}
-
-async function processBillSplit(req, res) {
-  const { rideId } = req.params;
-  const { type, participants } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    await rideService.processBillSplit(rideId, { type, participants }, transaction);
+  async submitFeedback(req, res, next) {
+    const transaction = await sequelize.transaction();
     try {
-      await pointService.awardPoints(customerId, 'split_payment', transaction);
+      const { userId, role, io } = req;
+      const { rideId, rating, comment } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'ride', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      await rideService.submitFeedback(rideId, { rating, comment }, transaction);
+
+      const actionConfig = customerGamificationConstants.GAMIFICATION_ACTIONS.mtxi.find(a => a.action === 'ride_review_submitted');
+      await pointService.awardPoints(userId, 'ride_review_submitted', actionConfig.points, {
+        io,
+        role: 'customer',
+        languageCode,
+        walletId: req.body.walletId,
+      });
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'FEEDBACK_SUBMITTED'),
+        details: { rideId, rating },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, 'FEEDBACK_SUBMITTED', {
+        userId,
+        role: 'customer',
+        auditAction: 'FEEDBACK_SUBMITTED',
+        details: { rideId, rating },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'ride', languageCode, 'success.feedback_submitted'),
+      });
     } catch (error) {
-      gamificationError = error.message;
+      await transaction.rollback();
+      logger.logErrorEvent('Submit feedback failed', { error: error.message, userId: req.userId });
+      next(error);
     }
+  },
 
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.PAYMENT_PROCESSED,
-      details: { rideId, billSplit: { type, participants } },
-      ipAddress: req.ip,
-    }, transaction);
+  async getRideHistory(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role } = req;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
 
-    await socketService.emit('bill_split:processed', { userId: customerId, role: 'customer', rideId });
-    await transaction.commit();
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'ride', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
 
-    res.status(200).json({
-      status: 'success',
-      message: rideConstants.SUCCESS_MESSAGES[8],
-      data: { rideId, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[12]);
-  }
-}
+      const rides = await rideService.getRideHistory(userId, transaction);
 
-async function getRideDetails(req, res) {
-  const { rideId } = req.params;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'RIDE_HISTORY_VIEWED'),
+        details: { userId },
+        ipAddress: req.ip,
+      });
 
-  try {
-    const ride = await rideService.getRideById(rideId, transaction);
-    if (ride.customerId !== customerId) {
-      throw new AppError('Permission denied', 403, rideConstants.ERROR_CODES[2]);
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'ride', languageCode, 'success.ride_history_retrieved'),
+        data: rides,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Get ride history failed', { error: error.message, userId: req.userId });
+      next(error);
     }
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Ride details retrieved',
-      data: ride,
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[1]);
-  }
-}
-
-async function updateRideStatus(req, res) {
-  const { rideId } = req.params;
-  const { status } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    const ride = await rideService.getRideById(rideId, transaction);
-    if (ride.customerId !== customerId) {
-      throw new AppError('Permission denied', 403, rideConstants.ERROR_CODES[2]);
-    }
-    await rideService.updateRideStatus(rideId, status, transaction);
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { rideId, status },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await socketService.emit('ride:updated', { userId: customerId, role: 'customer', rideId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Ride status updated',
-      data: { rideId },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || rideConstants.ERROR_CODES[0]);
-  }
-}
-
-module.exports = {
-  bookRide,
-  updateRide,
-  cancelRide,
-  checkInRide,
-  getRideHistory,
-  submitFeedback,
-  addFriend,
-  processBillSplit,
-  getRideDetails,
-  updateRideStatus,
+  },
 };

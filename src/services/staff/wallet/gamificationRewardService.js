@@ -1,32 +1,17 @@
 'use strict';
 
-/**
- * gamificationRewardService.js
- * Manages gamification rewards for munch staff. Handles point conversion, reward tracking,
- * redemption, analytics sync, and notifications.
- * Last Updated: May 26, 2025
- */
-
-const { GamificationPoints, Wallet, UserReward, WalletTransaction, BranchMetrics, Notification, Staff, Reward, Badge, UserBadge } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const merchantConstants = require('@constants/merchant/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
-const securityService = require('@services/common/securityService');
+const { GamificationPoints, Wallet, UserReward, WalletTransaction, BranchMetrics, Notification, Staff, Reward } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
+const { Op, fn, col } = require('sequelize');
 
-/**
- * Converts points to wallet credits.
- * @param {number} staffId - Staff ID.
- * @param {number} points - Points to convert.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Transaction record.
- */
-async function convertPointsToCredits(staffId, points, ipAddress) {
+const POINTS_TO_CREDIT_RATIO = 0.1; // 10 points = 1 credit
+const POINTS_EXPIRY_DAYS = 30;
+
+async function convertPointsToCredits(staffId, points, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -42,43 +27,43 @@ async function convertPointsToCredits(staffId, points, ipAddress) {
 
     await securityService.verifyMFA(staff.user_id);
 
-    const amount = points * merchantConstants.GAMIFICATION_CONSTANTS.POINTS_TO_CREDIT_RATIO;
+    const amount = points * POINTS_TO_CREDIT_RATIO;
     await Wallet.update(
-      { balance: sequelize.literal(`balance + ${amount}`) },
+      { balance: fn('balance +', amount) },
       { where: { id: staff.wallet.id } }
     );
 
     const transaction = await WalletTransaction.create({
       wallet_id: staff.wallet.id,
-      type: merchantConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.REWARD,
+      type: paymentConstants.TRANSACTION_TYPES.includes('gamification_reward') ? 'gamification_reward' : 'reward',
       amount,
       currency: staff.wallet.currency,
-      status: 'completed',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
       description: `Converted ${points} points to credits`,
     });
 
     await GamificationPoints.create({
       user_id: staff.user_id,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: 'points_redeemed',
       points: -points,
-      expires_at: new Date(Date.now() + merchantConstants.GAMIFICATION_CONSTANTS.POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+      expires_at: new Date(Date.now() + POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, points, amount, transactionId: transaction.id, action: 'convert_points' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('gamification.points_converted', { amount });
+    const message = formatMessage('gamification.points_converted', { amount });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -87,16 +72,11 @@ async function convertPointsToCredits(staffId, points, ipAddress) {
     return transaction;
   } catch (error) {
     logger.error('Points conversion failed', { error: error.message, staffId, points });
-    throw new AppError(`Points conversion failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Points conversion failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Monitors rewards from tasks.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Array>} Reward records.
- */
-async function trackRewardEarnings(staffId) {
+async function trackRewardEarnings(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -104,7 +84,7 @@ async function trackRewardEarnings(staffId) {
     }
 
     const rewards = await GamificationPoints.findAll({
-      where: { user_id: staff.user_id, role: 'staff' },
+      where: { user_id: staff.user_id, role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff' },
       order: [['created_at', 'DESC']],
       limit: 100,
     });
@@ -114,18 +94,11 @@ async function trackRewardEarnings(staffId) {
     return rewards;
   } catch (error) {
     logger.error('Reward tracking failed', { error: error.message, staffId });
-    throw new AppError(`Reward tracking failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Reward tracking failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Processes reward redemptions.
- * @param {number} staffId - Staff ID.
- * @param {number} rewardId - Reward ID.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} UserReward record.
- */
-async function redeemRewards(staffId, rewardId, ipAddress) {
+async function redeemRewards(staffId, rewardId, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     const reward = await Reward.findByPk(rewardId);
@@ -150,42 +123,42 @@ async function redeemRewards(staffId, rewardId, ipAddress) {
     if (reward.type === 'wallet_credit') {
       const amount = reward.value.amount;
       await Wallet.update(
-        { balance: sequelize.literal(`balance + ${amount}`) },
+        { balance: fn('balance +', amount) },
         { where: { id: staff.wallet.id } }
       );
 
       await WalletTransaction.create({
         wallet_id: staff.wallet.id,
-        type: merchantConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.REWARD,
+        type: paymentConstants.TRANSACTION_TYPES.includes('gamification_reward') ? 'gamification_reward' : 'reward',
         amount,
         currency: staff.wallet.currency,
-        status: 'completed',
+        status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
         description: `Redeemed reward: ${reward.name}`,
       });
     }
 
     await GamificationPoints.create({
       user_id: staff.user_id,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: 'points_redeemed',
       points: -reward.points_required,
-      expires_at: new Date(Date.now() + merchantConstants.GAMIFICATION_CONSTANTS.POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+      expires_at: new Date(Date.now() + POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, rewardId, userRewardId: userReward.id, action: 'redeem_reward' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('gamification.reward_redeemed', { rewardName: reward.name });
+    const message = formatMessage('gamification.reward_redeemed', { rewardName: reward.name });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -194,16 +167,11 @@ async function redeemRewards(staffId, rewardId, ipAddress) {
     return userReward;
   } catch (error) {
     logger.error('Reward redemption failed', { error: error.message, staffId, rewardId });
-    throw new AppError(`Reward redemption failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Reward redemption failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Synchronizes reward data with branch analytics.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<void>}
- */
-async function syncRewardsWithAnalytics(staffId) {
+async function syncRewardsWithAnalytics(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -211,49 +179,45 @@ async function syncRewardsWithAnalytics(staffId) {
     }
 
     const rewards = await GamificationPoints.findAll({
-      where: { user_id: staff.user_id, role: 'staff' },
+      where: { user_id: staff.user_id, role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff' },
     });
 
     await BranchMetrics.update(
       { gamification_metrics: { total_points: rewards.reduce((sum, r) => sum + r.points, 0) } },
-      { where: { branch_id: staff.branch_id } }
+      { where: { staff_id: staffId } }
     );
 
     socketService.emit(`munch:reward:${staffId}`, 'reward:analytics_synced', { staffId });
 
+    return { message: 'Rewards synced with analytics' };
   } catch (error) {
     logger.error('Reward analytics sync failed', { error: error.message, staffId });
-    throw new AppError(`Analytics sync failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Analytics sync failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Notifies staff of reward credits.
- * @param {number} staffId - Staff ID.
- * @param {number} amount - Credit amount.
- * @returns {Promise<void>}
- */
-async function notifyRewardCredit(staffId, amount) {
+async function notifyRewardCredit(staffId, amount, notificationService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
       throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    const message = localization.formatMessage('gamification.reward_credited', { amount });
+    const message = formatMessage('gamification.reward_credited', { amount });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
     socketService.emit(`munch:reward:${staffId}`, 'reward:credited', { staffId, amount });
 
+    return { message: 'Reward credit notification sent' };
   } catch (error) {
     logger.error('Reward credit notification failed', { error: error.message, staffId, amount });
-    throw new AppError(`Notification failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Notification failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 

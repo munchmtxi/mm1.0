@@ -1,16 +1,16 @@
 {
   "availability": {
-    "set": "Availability set for {date} from {start_time} to {end_time}.",
-    "enabled": "Availability enabled.",
-    "disabled": "Availability disabled."
+    "set": "Availability set for {{date}} from {{start_time}} to {{end_time}}",
+    "retrieved": "Availability status retrieved successfully",
+    "enabled": "Availability enabled",
+    "disabled": "Availability disabled"
   },
   "shift": {
-    "created": "Shift #{shiftId} created for {start_time} to {end_time}.",
-    "updated": "Shift #{shiftId} updated.",
-    "scheduled": "Shift #{shiftId} scheduled.",
-    "active": "Shift #{shiftId} is now active.",
-    "completed": "Shift #{shiftId} completed.",
-    "cancelled": "Shift #{shiftId} cancelled.",
-    "high_demand": "High demand in areas: {areas}."
+    "created": "Shift {{shiftId}} created from {{start_time}} to {{end_time}}",
+    "retrieved": "{{count}} shift(s) retrieved successfully",
+    "updated": "Shift {{shiftId}} updated successfully",
+    "cancelled": "Shift {{shiftId}} cancelled successfully",
+    "completed": "Shift {{shiftId}} completed successfully",
+    "high_demand": "High-demand areas detected: {{areas}}"
   }
 }

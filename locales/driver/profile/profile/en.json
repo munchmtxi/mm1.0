@@ -1,12 +1,14 @@
 {
   "profile": {
-    "created": "Your driver profile has been created successfully, {name}.",
-    "updated": "Your driver profile has been updated successfully, {name}.",
-    "certification_uploaded": "Certification ({certType}) uploaded successfully.",
-    "verified": "Your profile verification status: {status}.",
-    "country_updated": "Your country settings have been updated to {country}.",
-    "wallet_settings_updated": "Your wallet settings have been updated successfully.",
-    "payment_method_added": "Payment method ({methodType}) added to your wallet.",
-    "withdrawal_processed": "Withdrawal of {amount} {currency} processed successfully."
+    "updated": "Driver profile {{driverId}} updated successfully",
+    "certification_updated": "{{type}} certification uploaded successfully",
+    "retrieved": "Driver profile {{driverId}} retrieved successfully",
+    "verified": "Driver profile verified successfully",
+    "settings": {
+      "country_updated": "Country updated to {{country}}",
+      "language_updated": "Language updated to {{language}}",
+      "accessibility_updated": "Accessibility settings updated successfully",
+      "privacy_updated": "Privacy settings updated successfully"
+    }
   }
 }

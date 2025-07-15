@@ -1,5 +1,6 @@
+'use strict';
+
 module.exports = {
-  PAYMENT_COMPLETED: 'payment:completed',
-  PAYMENT_REFUNDED: 'payment:refunded',
-  POINTS_AWARDED: 'points:awarded',
+  PAYMENT_COMPLETED: 'merchant:mtables:paymentCompleted',
+  PAYMENT_REFUNDED: 'merchant:mtables:paymentRefunded',
 };

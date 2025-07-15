@@ -1,243 +1,223 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\services\merchant\security\paymentSecurityService.js
 'use strict';
 
-const { sequelize, User, Wallet, WalletTransaction, Payment, Customer } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const munchConstants = require('@constants/munchConstants');
-const securityService = require('@services/common/securityService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const gamificationService = require('@services/common/gamificationService');
-const { formatMessage } = require('@utils/localization');
-const AppError = require('@utils/AppError');
-const { handleServiceError } = require('@utils/errorHandling');
-const logger = require('@utils/logger');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { 
+  Staff, 
+  Wallet, 
+  WalletTransaction, 
+  Payment, 
+  Merchant, 
+  MerchantBranch, 
+  Driver, 
+  Customer, 
+  DataAccess 
+} = require('../models');
+const staffConstants = require('@constants/staff/staffConstants');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const driverConstants = require('@constants/driver/driverConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const localizationConstants = require('@constants/localizationConstants');
 
-class PaymentSecurityService {
-  static async tokenizePayments(merchantId, payment, ipAddress) {
-    const { amount, currency, paymentMethod } = payment;
-    const transaction = await sequelize.transaction();
+/**
+ * Processes secure payment for merchant
+ * @param {Object} paymentData - Payment details
+ * @returns {Object} Payment record
+ */
+const processSecurePayment = async (paymentData) => {
+  const { customer_id, merchant_id, branch_id, amount, payment_method, order_id, driver_id } = paymentData;
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+  const [customer, merchant, branch] = await Promise.all([
+    Customer.findByPk(customer_id, { include: [{ model: DataAccess, as: 'user' }] }),
+    Merchant.findByPk(merchant_id),
+    MerchantBranch.findByPk(branch_id),
+  ]);
 
-      if (!munchConstants.PAYMENT_CONSTANTS.PAYMENT_METHODS[paymentMethod.toUpperCase()]) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidPaymentMethod'), 400, munchConstants.ERROR_CODES.INVALID_PAYMENT_METHOD);
-      }
+  if (!customer) throw new Error(customerConstants.ERROR_CODES[1]);
+  if (!merchant) throw new Error(merchantConstants.ERROR_CODES[1]);
+  if (branch_id && !branch) throw new Error(staffConstants.STAFF_ERROR_CODES[14]);
 
-      if (!merchantConstants.BRANCH_SETTINGS.SUPPORTED_CURRENCIES.includes(currency)) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidCurrency'), 400, merchantConstants.ERROR_CODES.PAYMENT_FAILED);
-      }
-
-      const wallet = await Wallet.findOne({ where: { merchant_id: merchantId }, transaction });
-      if (!wallet) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.walletNotFound'), 404, munchConstants.ERROR_CODES.WALLET_NOT_FOUND);
-      }
-
-      const tokenized = await stripe.paymentMethods.create({
-        type: paymentMethod.toLowerCase(),
-        card: { token: payment.cardToken }, // Assumes cardToken is provided
-      });
-
-      const transactionRecord = await WalletTransaction.create({
-        wallet_id: wallet.id,
-        type: munchConstants.PAYMENT_CONSTANTS.TRANSACTION_TYPES.PAYMENT,
-        amount,
-        currency,
-        status: munchConstants.PAYMENT_CONSTANTS.PAYMENT_STATUSES.COMPLETED,
-        payment_method_id: tokenized.id,
-        description: `Tokenized payment for merchant ${merchantId}`,
-      }, { transaction });
-
-      const message = formatMessage(merchant.preferred_language, 'paymentSecurity.paymentTokenized', { amount, currency });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'HIGH',
-        languageCode: merchant.preferred_language,
-        transactionId: transactionRecord.id,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { transactionId: transactionRecord.id, amount, currency },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`payment:tokenized:${merchantId}`, { transactionId: transactionRecord.id, merchantId });
-
-      await transaction.commit();
-      logger.info(`Payment tokenized for merchant ${merchantId}: ${amount} ${currency}`);
-      return { transactionId: transactionRecord.id };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('tokenizePayments', error, merchantConstants.ERROR_CODES.PAYMENT_FAILED);
-    }
+  if (!merchantConstants.WALLET_CONSTANTS.PAYMENT_METHODS.includes(payment_method)) {
+    throw new Error(merchantConstants.ERROR_CODES[2]);
   }
 
-  static async enforceMFA(merchantId, ipAddress) {
-    const transaction = await sequelize.transaction();
+  const payment = await Payment.create({
+    customer_id,
+    merchant_id,
+    branch_id,
+    order_id,
+    driver_id,
+    amount,
+    payment_method,
+    status: merchantConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[0], // pending
+    currency: merchant.currency || localizationConstants.DEFAULT_CURRENCY,
+    transaction_id: `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    risk_score: calculateRiskScore(paymentData),
+    provider: customerConstants.WALLET_CONSTANTS.SECURITY_SETTINGS.TOKENIZATION_PROVIDER,
+    verification_attempts: 0,
+  });
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language', 'mfa_status', 'mfa_method'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      if (merchant.mfa_status === merchantConstants.SECURITY_CONSTANTS.MFA_STATUSES.ENABLED) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.mfaAlreadyEnabled'), 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
-      }
-
-      const mfaMethod = merchantConstants.SECURITY_CONSTANTS.MFA_METHODS.SMS; // Default to SMS
-      const mfaToken = await securityService.generateMFAToken(merchantId, mfaMethod);
-
-      await merchant.update({
-        mfa_status: merchantConstants.SECURITY_CONSTANTS.MFA_STATUSES.PENDING,
-        mfa_method: mfaMethod,
-      }, { transaction });
-
-      const message = formatMessage(merchant.preferred_language, 'paymentSecurity.mfaEnforced', { method: mfaMethod });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'HIGH',
-        languageCode: merchant.preferred_language,
-        tokenId: mfaToken.id,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, mfaMethod },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`mfa:enforced:${merchantId}`, { merchantId, mfaMethod });
-
-      await transaction.commit();
-      logger.info(`MFA enforced for merchant ${merchantId} with method ${mfaMethod}`);
-      return { merchantId, mfaMethod };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('enforceMFA', error, merchantConstants.ERROR_CODES.PAYMENT_FAILED);
-    }
+  if (payment.status === 'completed') {
+    await updateWalletBalances(customer_id, merchant_id, branch_id, amount, payment.currency, driver_id);
   }
 
-  static async monitorFraud(merchantId, ipAddress) {
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+  return payment;
+};
 
-      const transactions = await WalletTransaction.findAll({
-        where: { wallet_id: (await Wallet.findOne({ where: { merchant_id: merchantId } })).id },
-        include: [{ model: Wallet, as: 'wallet' }],
-      });
+/**
+ * Calculates payment risk score
+ * @param {Object} paymentData - Payment details
+ * @returns {number} Risk score
+ */
+const calculateRiskScore = (paymentData) => {
+  const { amount, customer_id, merchant_id } = paymentData;
+  let score = 0;
 
-      const riskThreshold = munchConstants.PAYMENT_CONSTANTS.SECURITY_SETTINGS.ANOMALY_RISK_THRESHOLD;
-      const suspicious = transactions.filter(t => {
-        const riskScore = t.amount > munchConstants.PAYMENT_CONSTANTS.FINANCIAL_LIMITS.PAYMENT.MAX_AMOUNT ? 0.9 : 0.1;
-        return riskScore > riskThreshold;
-      });
+  if (amount > merchantConstants.WALLET_CONSTANTS.PAYOUT_SETTINGS.MAX_PAYOUT_AMOUNT) score += 30;
 
-      if (suspicious.length > 0) {
-        const message = formatMessage(merchant.preferred_language, 'paymentSecurity.fraudDetected', { count: suspicious.length });
-        await notificationService.createNotification({
-          userId: merchantId,
-          type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-          message,
-          priority: 'CRITICAL',
-          languageCode: merchant.preferred_language,
-        });
+  return Math.min(score, 100);
+};
 
-        socketService.emit(`fraud:detected:${merchantId}`, { merchantId, suspiciousCount: suspicious.length });
-      }
+/**
+ * Updates wallet balances for all parties
+ * @param {number} customerId - Customer ID
+ * @param {number} merchantId - Merchant ID
+ * @param {number} branchId - Branch ID
+ * @param {number} amount - Transaction amount
+ * @param {string} currency - Currency
+ * @param {number} driverId - Driver ID
+ */
+const updateWalletBalances = async (customerId, merchantId, branchId, amount, currency, driverId) => {
+  const [customerWallet, merchantWallet, driverWallet] = await Promise.all([
+    Wallet.findOne({ where: { user_id: customerId } }),
+    Wallet.findOne({ where: { merchant_id: merchantId } }),
+    driverId ? Wallet.findOne({ where: { user_id: driverId } }) : null,
+  ]);
 
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, suspiciousCount: suspicious.length },
-        ipAddress,
-      });
-
-      logger.info(`Fraud monitoring for merchant ${merchantId}: ${suspicious.length} suspicious transactions`);
-      return { merchantId, suspiciousCount: suspicious.length };
-    } catch (error) {
-      throw handleServiceError('monitorFraud', error, merchantConstants.ERROR_CODES.PAYMENT_FAILED);
-    }
+  if (!customerWallet || customerWallet.balance < amount) {
+    throw new Error(customerConstants.ERROR_CODES[3]);
   }
 
-  static async trackSecurityGamification(customerId, ipAddress) {
-    try {
-      const customer = await User.findByPk(customerId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-      });
-      if (!customer || !customer.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'paymentSecurity.errors.invalidCustomer'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+  await customerWallet.update({ balance: customerWallet.balance - amount });
+  await merchantWallet.update({ balance: merchantWallet.balance + amount * 0.9 }); // 90% to merchant
+  if (driverWallet) await driverWallet.update({ balance: driverWallet.balance + amount * 0.1 }); // 10% to driver
 
-      const payments = await Payment.findAll({
-        where: { customer_id: customerId, status: munchConstants.PAYMENT_CONSTANTS.PAYMENT_STATUSES.COMPLETED },
-      });
+  await Promise.all([
+    WalletTransaction.create({
+      wallet_id: customerWallet.id,
+      type: customerConstants.WALLET_CONSTANTS.TRANSACTION_TYPES[2], // order_payment
+      amount,
+      currency,
+      status: customerConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // completed
+    }),
+    WalletTransaction.create({
+      wallet_id: merchantWallet.id,
+      type: merchantConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // completed
+      amount: amount * 0.9,
+      currency,
+      status: merchantConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // completed
+    }),
+    driverWallet && WalletTransaction.create({
+      wallet_id: driverWallet.id,
+      type: driverConstants.WALLET_CONSTANTS.TRANSACTION_TYPES[1], // delivery_earning
+      amount: amount * 0.1,
+      currency,
+      status: driverConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // completed
+    }),
+  ]);
+};
 
-      const points = payments.length * merchantConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.PAYMENT_STREAK.points;
+/**
+ * Processes secure refund
+ * @param {number} paymentId - Payment ID
+ * @param {Object} refundData - Refund details
+ * @returns {Object} Refund details
+ */
+const processSecureRefund = async (paymentId, refundData) => {
+  const payment = await Payment.findByPk(paymentId, {
+    include: [
+      { model: Customer, as: 'customer' },
+      { model: Merchant, as: 'merchant' },
+      { model: Driver, as: 'driver' },
+    ],
+  });
 
-      await gamificationService.awardPoints({
-        userId: customerId,
-        action: merchantConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.PAYMENT_STREAK.action,
-        points,
-        metadata: { paymentCount: payments.length },
-      });
+  if (!payment) throw new Error(customerConstants.ERROR_CODES[4]);
+  if (payment.status !== 'completed') throw new Error('Payment not eligible for refund');
 
-      const message = formatMessage(customer.preferred_language, 'paymentSecurity.pointsAwarded', { points });
-      await notificationService.createNotification({
-        userId: customerId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'LOW',
-        languageCode: customer.preferred_language,
-      });
+  await payment.update({
+    status: merchantConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[3], // refunded
+    refund_status: merchantConstants.COMPLIANCE_CONSTANTS.CERTIFICATION_STATUSES[1], // approved
+    refund_details: { 
+      reason: refundData.reason || 'Merchant-initiated refund', 
+      timestamp: new Date(),
+      approver: refundData.approver_id,
+    },
+  });
 
-      await auditService.logAction({
-        userId: customerId,
-        role: 'customer',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { customerId, pointsAwarded: points, paymentCount: payments.length },
-        ipAddress,
-      });
+  await updateWalletBalances(
+    payment.customer_id, 
+    payment.merchant_id, 
+    payment.branch_id, 
+    -payment.amount, 
+    payment.currency, 
+    payment.driver_id
+  );
 
-      socketService.emit(`security:gamification:${customerId}`, { customerId, points });
+  return { payment_id: paymentId, status: 'refunded', reason: refundData.reason };
+};
 
-      logger.info(`Security gamification tracked for customer ${customerId}: ${points} points`);
-      return { customerId, points };
-    } catch (error) {
-      throw handleServiceError('trackSecurityGamification', error, merchantConstants.ERROR_CODES.PAYMENT_FAILED);
-    }
-  }
-}
+/**
+ * Logs secure transaction for auditing
+ * @param {number} paymentId - Payment ID
+ * @returns {Object} Transaction log
+ */
+const logSecureTransaction = async (paymentId) => {
+  const payment = await Payment.findByPk(paymentId, {
+    include: [
+      { model: Customer, as: 'customer' },
+      { model: Merchant, as: 'merchant' },
+      { model: MerchantBranch, as: 'branch' },
+      { model: Driver, as: 'driver' },
+    ],
+  });
 
-module.exports = PaymentSecurityService;
+  if (!payment) throw new Error(customerConstants.ERROR_CODES[4]);
+
+  const log = {
+    payment_id: paymentId,
+    customer_id: payment.customer_id,
+    merchant_id: payment.merchant_id,
+    branch_id: payment.branch_id,
+    driver_id: payment.driver_id,
+    amount: payment.amount,
+    currency: payment.currency,
+    status: payment.status,
+    action: merchantConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES[1], // payment_processed
+    timestamp: new Date(),
+  };
+
+  return log;
+};
+
+/**
+ * Verifies staff payment permissions
+ * @param {number} staffId - Staff ID
+ * @param {string} action - Payment action
+ * @returns {boolean} Permission status
+ */
+const verifyStaffPaymentPermissions = async (staffId, action) => {
+  const staff = await Staff.findByPk(staffId, {
+    include: [{ model: Permission, as: 'permissions' }],
+  });
+
+  if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES[1]);
+  return staff.permissions.some(p => p.name === action && staffConstants.STAFF_PERMISSIONS[staff.staff_types[0]].includes(action));
+};
+
+module.exports = {
+  processSecurePayment,
+  calculateRiskScore,
+  updateWalletBalances,
+  processSecureRefund,
+  logSecureTransaction,
+  verifyStaffPaymentPermissions,
+};

@@ -1,47 +1,24 @@
 'use strict';
 
-/**
- * Analytics Service for mtxi (Admin)
- * Provides ride completion rates, tip distribution, ride reports, and driver performance metrics.
- * Integrates with notification, socket, audit, and localization services.
- *
- * Last Updated: May 27, 2025
- */
-
 const { Driver, Ride, Tip, Payment, Route } = require('@models');
 const rideConstants = require('@constants/common/rideConstants');
 const tipConstants = require('@constants/common/tipConstants');
 const driverConstants = require('@constants/common/driverConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
+const adminServiceConstants = require('@constants/admin/adminServiceConstants');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils');
 const { AppError } = require('@utils/AppError');
 const { Op } = require('sequelize');
 
-/**
- * Retrieves ride completion rates for a driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Ride completion analytics.
- */
-async function getRideAnalytics(driverId) {
+async function getRideAnalytics(driverId, { notificationService, auditService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const rides = await Ride.findAll({
@@ -50,11 +27,7 @@ async function getRideAnalytics(driverId) {
     });
 
     if (!rides.length) {
-      throw new AppError(
-        'no rides found',
-        404,
-        rideConstants.ERROR_CODES.NO_COMPLETED_RIDES
-      );
+      throw new AppError('no rides found', 404, rideConstants.ERROR_CODES.NO_COMPLETED_RIDES);
     }
 
     const totalRides = rides.length;
@@ -72,7 +45,6 @@ async function getRideAnalytics(driverId) {
       cancellationRate: parseFloat(cancellationRate.toFixed(2)),
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_UPDATE,
@@ -82,7 +54,6 @@ async function getRideAnalytics(driverId) {
       module: 'mtxi',
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: rideConstants.ANALYTICS_CONSTANTS.METRICS.RIDE_COMPLETION_RATE,
@@ -98,45 +69,28 @@ async function getRideAnalytics(driverId) {
   }
 }
 
-/**
- * Analyzes tip distribution for a driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Tip distribution analytics.
- */
-async function getTipAnalytics(driverId) {
+async function getTipAnalytics(driverId, { notificationService, auditService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const tips = await Tip.findAll({
       where: {
         recipient_id: driver.user_id,
-        status: tipConstants.TIP_SETTINGS.TIP_STATUSES[1], // completed
+        status: tipConstants.TIP_SETTINGS.TIP_STATUSES[1],
         ride_id: { [Op.not]: null },
       },
       attributes: ['amount', 'currency', 'created_at'],
     });
 
     if (!tips.length) {
-      throw new AppError(
-        'no tips found',
-        404,
-        tipConstants.ERROR_CODES.TIP_NOT_FOUND
-      );
+      throw new AppError('no tips found', 404, tipConstants.ERROR_CODES.TIP_NOT_FOUND);
     }
 
     const totalTips = tips.length;
@@ -152,7 +106,6 @@ async function getTipAnalytics(driverId) {
       currency,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: tipConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.TIP_RECEIVED,
@@ -162,7 +115,6 @@ async function getTipAnalytics(driverId) {
       module: 'mtxi',
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: driverConstants.ANALYTICS_CONSTANTS.METRICS.CUSTOMER_RATINGS,
@@ -178,46 +130,23 @@ async function getTipAnalytics(driverId) {
   }
 }
 
-/**
- * Generates ride reports for a driver.
- * @param {number} driverId - Driver ID.
- * @param {string} format - Report format (pdf, csv, json).
- * @param {string} period - Report period (daily, weekly, monthly, yearly).
- * @returns {Promise<Object>} Report details.
- */
-async function exportRideReports(driverId, format = 'json', period = 'monthly') {
+async function exportRideReports(driverId, format = 'json', period = 'monthly', { notificationService, auditService, socketService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     if (!rideConstants.ANALYTICS_CONSTANTS.REPORT_FORMATS.includes(format)) {
-      throw new AppError(
-        'invalid report format',
-        400,
-        rideConstants.ERROR_CODES.INVALID_RIDE
-      );
+      throw new AppError('invalid report format', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
     }
 
     if (!rideConstants.ANALYTICS_CONSTANTS.REPORT_PERIODS.includes(period)) {
-      throw new AppError(
-        'invalid report period',
-        400,
-        rideConstants.ERROR_CODES.INVALID_RIDE
-      );
+      throw new AppError('invalid report period', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const dateFilter = {};
@@ -241,11 +170,7 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
     });
 
     if (!rides.length) {
-      throw new AppError(
-        'no rides found for period',
-        404,
-        rideConstants.ERROR_CODES.NO_COMPLETED_RIDES
-      );
+      throw new AppError('no rides found for period', 404, rideConstants.ERROR_CODES.NO_COMPLETED_RIDES);
     }
 
     const reportData = rides.map(ride => ({
@@ -257,7 +182,6 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
       date: ride.created_at,
     }));
 
-    // Simulate report generation
     const report = {
       driverId,
       period,
@@ -268,7 +192,6 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
       data: reportData,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_COMPLETED,
@@ -278,7 +201,6 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'analytics:report_generated', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -287,7 +209,6 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
       format,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: rideConstants.ANALYTICS_CONSTANTS.METRICS.DRIVER_EARNINGS,
@@ -303,30 +224,17 @@ async function exportRideReports(driverId, format = 'json', period = 'monthly') 
   }
 }
 
-/**
- * Tracks driver performance metrics.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Driver performance analytics.
- */
-async function analyzeDriverPerformance(driverId) {
+async function analyzeDriverPerformance(driverId, { notificationService, auditService, socketService, pointService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId, {
       include: [{ model: sequelize.models.User, as: 'user' }],
     });
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const rides = await Ride.findAll({
@@ -340,7 +248,7 @@ async function analyzeDriverPerformance(driverId) {
     const tips = await Tip.findAll({
       where: {
         recipient_id: driver.user_id,
-        status: tipConstants.TIP_SETTINGS.TIP_STATUSES[1], // completed
+        status: tipConstants.TIP_SETTINGS.TIP_STATUSES[1],
         ride_id: { [Op.not]: null },
       },
       attributes: ['amount'],
@@ -365,7 +273,6 @@ async function analyzeDriverPerformance(driverId) {
       recommendations: totalRides < 10 ? ['Increase ride frequency in high-demand areas'] : ['Maintain performance'],
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_COMPLETED,
@@ -375,7 +282,6 @@ async function analyzeDriverPerformance(driverId) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'analytics:performance_updated', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -383,12 +289,21 @@ async function analyzeDriverPerformance(driverId) {
       totalRides,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: driverConstants.ANALYTICS_CONSTANTS.METRICS.CUSTOMER_RATINGS,
       details: { driverId, totalRides, rating: performance.rating },
       ipAddress: 'unknown',
+    });
+
+    // Award points for performance analysis
+    const action = adminServiceConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.ANALYTICS_REVIEW;
+    await pointService.awardPoints({
+      userId: driver.user_id.toString(),
+      action: action.action,
+      points: action.points,
+      walletCredit: 0,
+      details: { driverId, totalRides, rating: performance.rating },
     });
 
     logger.info('Driver performance analyzed', { driverId, totalRides });

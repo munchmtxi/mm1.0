@@ -1,209 +1,292 @@
 'use strict';
 
-const { sequelize } = require('@models');
-const { updateProfile, setCountry, setLanguage, setDietaryPreferences, getProfile } = require('@services/customer/profile/profileService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
+const profileService = require('@services/customer/profileService');
 const pointService = require('@services/common/pointService');
-const customerConstants = require('@constants/customer/customerConstants');
-const gamificationConstants = require('@constants/common/gamificationConstants');
-const catchAsync = require('@utils/catchAsync');
+const notificationService = require('@services/common/notificationService');
+const socketService = require('@services/common/socketService');
+const auditService = require('@services/common/auditService');
+const { formatMessage } = require('@utils/localization');
+const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
-
-const updateCustomerProfile = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const profileData = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await updateProfile(userId, profileData, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'profile_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.updated',
-      messageParams: { customerId: result.customerId },
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, 'profile:updated', {
-      userId,
-      customerId: result.customerId,
-      updatedFields: result.updatedFields,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'UPDATE_CUSTOMER_PROFILE',
-      userId,
-      role: 'customer',
-      details: `Profile updated for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Customer profile updated', { userId });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const setCustomerCountry = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const { countryCode } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await setCountry(userId, countryCode, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'profile_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.country_updated',
-      messageParams: { countryCode },
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, 'profile:country_updated', {
-      userId,
-      customerId: result.customerId,
-      countryCode,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'SET_CUSTOMER_COUNTRY',
-      userId,
-      role: 'customer',
-      details: `Country set to ${countryCode} for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Customer country set', { userId, countryCode });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const setCustomerLanguage = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const { languageCode } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await setLanguage(userId, languageCode, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'profile_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: languageCode || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.language_updated',
-      messageParams: { languageCode },
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, 'profile:language_updated', {
-      userId,
-      customerId: result.customerId,
-      languageCode,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'SET_CUSTOMER_LANGUAGE',
-      userId,
-      role: 'customer',
-      details: `Language set to ${languageCode} for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Customer language set', { userId, languageCode });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const setCustomerDietaryPreferences = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const { preferences } = req.body;
-  const io = req.app.get('socketio');
-  const transaction = await sequelize.transaction();
-  try {
-    const result = await setDietaryPreferences(userId, preferences, transaction);
-    await pointService.awardPoints(userId, gamificationConstants.CUSTOMER_ACTIONS.find(a => a.action === 'profile_updated').action, {
-      io,
-      role: 'customer',
-      languageCode: req.user.preferred_language || customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-    }, transaction);
-    await notificationService.sendNotification({
-      userId,
-      notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.profile_updated,
-      messageKey: 'profile.dietary_updated',
-      messageParams: {},
-      role: 'customer',
-      module: 'profile',
-      deliveryMethod: customerConstants.NOTIFICATION_CONSTANTS.DELIVERY_METHODS[0],
-    }, transaction);
-    await socketService.emit(io, 'profile:dietary_updated', {
-      userId,
-      customerId: result.customerId,
-      preferences,
-    }, `customer:${userId}`);
-    await auditService.logAction({
-      action: 'SET_CUSTOMER_DIETARY_PREFERENCES',
-      userId,
-      role: 'customer',
-      details: `Dietary preferences updated for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Customer dietary preferences set', { userId });
-    res.status(200).json({ status: 'success', data: result });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
-
-const getCustomerProfile = catchAsync(async (req, res) => {
-  const { id: userId } = req.user;
-  const transaction = await sequelize.transaction();
-  try {
-    const profile = await getProfile(userId, transaction);
-    await auditService.logAction({
-      action: 'GET_CUSTOMER_PROFILE',
-      userId,
-      role: 'customer',
-      details: `Profile retrieved for user_id: ${userId}`,
-      ipAddress: req.ip,
-    }, transaction);
-    await transaction.commit();
-    logger.info('Customer profile retrieved', { userId });
-    res.status(200).json({ status: 'success', data: profile });
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
-});
+const customerConstants = require('@constants/customer/customerConstants');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
 
 module.exports = {
-  updateCustomerProfile,
-  setCustomerCountry,
-  setCustomerLanguage,
-  setCustomerDietaryPreferences,
-  getCustomerProfile,
+  async updateProfile(req, res, next) {
+    const { userId, body: { phone_number, address }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const profileData = { phone_number, address };
+      const result = await profileService.updateProfile(userId, profileData, transaction);
+
+      await pointService.awardPoints(userId, 'profile_updated', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'profile_updated').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.profile_updated',
+        messageParams: { fields: Object.keys(profileData).join(', ') },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'PROFILE_UPDATED', {
+        userId,
+        role: 'customer',
+        auditAction: 'PROFILE_UPDATED',
+        details: result.updatedFields,
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'PROFILE_UPDATED'),
+        details: result.updatedFields,
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.profile_updated_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Profile update failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Profile update failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_UPDATE_FAILED')));
+    }
+  },
+
+  async setCountry(req, res, next) {
+    const { userId, body: { country }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await profileService.setCountry(userId, country, transaction);
+
+      await pointService.awardPoints(userId, 'country_set', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'country_set').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.country_set',
+        messageParams: { country },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'COUNTRY_SET', {
+        userId,
+        role: 'customer',
+        auditAction: 'COUNTRY_SET',
+        details: { country },
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'COUNTRY_SET'),
+        details: { country },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.country_set_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Country set failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Country set failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_UPDATE_FAILED')));
+    }
+  },
+
+  async setLanguage(req, res, next) {
+    const { userId, body: { languageCode: requestedLanguage }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await profileService.setLanguage(userId, requestedLanguage, transaction);
+
+      await pointService.awardPoints(userId, 'language_set', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'language_set').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.language_set',
+        messageParams: { language: requestedLanguage },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'LANGUAGE_SET', {
+        userId,
+        role: 'customer',
+        auditAction: 'LANGUAGE_SET',
+        details: { languageCode: requestedLanguage },
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'LANGUAGE_SET'),
+        details: { languageCode: requestedLanguage },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.language_set_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Language set failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Language set failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_UPDATE_FAILED')));
+    }
+  },
+
+  async setDietaryPreferences(req, res, next) {
+    const { userId, body: { preferences }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await profileService.setDietaryPreferences(userId, preferences, transaction);
+
+      await pointService.awardPoints(userId, 'dietary_preferences_set', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'dietary_preferences_set').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.dietary_preferences_set',
+        messageParams: { preferences: preferences.join(', ') },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'DIETARY_PREFERENCES_SET', {
+        userId,
+        role: 'customer',
+        auditAction: 'DIETARY_PREFERENCES_SET',
+        details: { preferences },
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'DIETARY_PREFERENCES_SET'),
+        details: { preferences },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.dietary_preferences_set_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Dietary preferences set failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Dietary preferences set failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_UPDATE_FAILED')));
+    }
+  },
+
+  async setDefaultAddress(req, res, next) {
+    const { userId, body: { addressId }, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await profileService.setDefaultAddress(userId, addressId, transaction);
+
+      await pointService.awardPoints(userId, 'default_address_set', customerGamificationConstants.GAMIFICATION_ACTIONS.profile.find(a => a.action === 'default_address_set').points, {
+        io: req.app.get('io'),
+        role: 'customer',
+        languageCode,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'profile.default_address_set',
+        messageParams: { addressId },
+        role: 'customer',
+        module: 'profile',
+        languageCode,
+      });
+
+      await socketService.emit(req.app.get('io'), 'DEFAULT_ADDRESS_SET', {
+        userId,
+        role: 'customer',
+        auditAction: 'DEFAULT_ADDRESS_SET',
+        details: { addressId },
+      }, `customer:${userId}`, languageCode);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'DEFAULT_ADDRESS_SET'),
+        details: { addressId },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.default_address_set_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Default address set failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Default address set failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_UPDATE_FAILED')));
+    }
+  },
+
+  async getProfile(req, res, next) {
+    const { userId, languageCode = customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE } = req;
+    const transaction = await req.app.get('sequelize').transaction();
+    try {
+      const result = await profileService.getProfile(userId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(type => type === 'PROFILE_VIEWED'),
+        details: { userId },
+        ipAddress: req.ip,
+      }, transaction);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'profile', languageCode, 'profile.get_profile_success'),
+        data: result,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Get profile failed', { userId, error: error.message });
+      next(error instanceof AppError ? error : new AppError('Get profile failed', 500, customerConstants.ERROR_CODES.find(code => code === 'PROFILE_RETRIEVAL_FAILED')));
+    }
+  },
 };

@@ -1,19 +1,20 @@
 'use strict';
 
-const socketService = require('@services/common/socketService');
-const privacyEvents = require('@socket/events/customer/profile/privacy/privacyEvents');
+/**
+ * Handles privacy-related socket events for customers.
+ */
+
+const privacyEvents = require('@socket/events/customer/profile/privacyEvents');
 const logger = require('@utils/logger');
 
-const handleSetPrivacySettings = async (io, data, roomId) => {
-  const { userId, settings } = data;
-  await socketService.emit(io, privacyEvents.PRIVACY_SETTINGS_UPDATED, { userId, settings }, roomId);
-  logger.info('Privacy settings updated event emitted', { userId });
-};
+module.exports = (io, socket) => {
+  socket.on(privacyEvents.PRIVACY_SETTINGS_UPDATED, (data) => {
+    logger.info('Privacy settings updated event received', { userId: data.userId, role: data.role });
+    io.to(`customer:${data.userId}`).emit(privacyEvents.PRIVACY_SETTINGS_UPDATED, data);
+  });
 
-const handleManageDataAccess = async (io, data, roomId) => {
-  const { userId, permissions } = data;
-  await socketService.emit(io, privacyEvents.DATA_ACCESS_UPDATED, { userId, permissions }, roomId);
-  logger.info('Data access permissions updated event emitted', { userId });
+  socket.on(privacyEvents.DATA_ACCESS_UPDATED, (data) => {
+    logger.info('Data access updated event received', { userId: data.userId, role: data.role });
+    io.to(`customer:${data.userId}`).emit(privacyEvents.DATA_ACCESS_UPDATED, data);
+  });
 };
-
-module.exports = { handleSetPrivacySettings, handleManageDataAccess };

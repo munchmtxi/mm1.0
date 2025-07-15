@@ -1,18 +1,21 @@
 'use strict';
 
+/**
+ * Routes for split payment and refund endpoints.
+ */
+
 const express = require('express');
 const router = express.Router();
-const { createSplitPaymentPayment, processSplit } = require('@controllers/customer/payments/paymentSplitController');
-const { splitPaymentValidator, refundSplitPaymentSchema } = require('@validators/customer/payments/paymentSplitValidator');
-const { createSplitPayment, refundPayment } = require('@middleware/customer/payments/paymentSplitMiddleware');
-const { validate } = require('@middleware/validate');
+const paymentSplitController = require('@controllers/customer/payments/splitPaymentController');
+const paymentSplitValidator = require('@validators/customer/payments/paymentSplitValidator');
 
 /**
  * @swagger
- * /api/customer/payments/split:
+ * /customer/payments/split:
  *   post:
- *     summary: Split payment for a service
- *     tags: [Payments]
+ *     summary: Initiate a split payment
+ *     description: Initiates a split payment for a service (order, in-dining order, booking, ride, or event).
+ *     tags: [Customer Payments]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -21,70 +24,111 @@ const { validate } = require('@middleware/validate');
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [serviceId, serviceType, payments, billSplitType]
  *             properties:
  *               serviceId:
- *                 type: integer
+ *                 type: string
+ *                 description: ID of the service (e.g., order ID, ride ID).
+ *                 example: "12345"
  *               serviceType:
  *                 type: string
  *                 enum: [order, in_dining_order, booking, ride, event]
+ *                 description: Type of service.
+ *                 example: "order"
+ *               billSplitType:
+ *                 type: string
+ *                 enum: [EQUAL, CUSTOM, ITEMIZED, PERCENTAGE, SPONSOR_CONTRIBUTION]
+ *                 description: Type of bill split.
+ *                 example: "EQUAL"
  *               payments:
  *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 50
  *                 items:
  *                   type: object
+ *                   required: [customerId, amount, paymentMethod]
  *                   properties:
  *                     customerId:
- *                       type: integer
+ *                       type: string
+ *                       description: ID of the customer making the payment.
+ *                       example: "67890"
  *                     amount:
  *                       type: number
+ *                       description: Payment amount.
+ *                       example: 25.50
  *                     paymentMethod:
  *                       type: string
+ *                       enum: [CREDIT_CARD, DEBIT_CARD, WALLET, APPLE_PAY, GOOGLE_PAY, PAYPAL]
+ *                       description: Payment method.
+ *                       example: "WALLET"
+ *               location:
+ *                 type: object
+ *                 description: Location data for rides or in-dining orders.
+ *                 properties:
+ *                   lat:
+ *                     type: number
+ *                     example: 37.7749
+ *                   lng:
+ *                     type: number
+ *                     example: -122.4194
  *     responses:
  *       200:
- *         description: Split payment processed
+ *         description: Split payment initiated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
  *                   type: string
+ *                   example: "Payment initiated for service order #12345"
  *                 data:
  *                   type: object
  *                   properties:
  *                     serviceId:
- *                     type: integer
+ *                       type: string
  *                     serviceType:
+ *                       type: string
+ *                     billSplitType:
  *                       type: string
  *                     splitPayments:
  *                       type: array
  *                       items:
  *                         type: object
- *                           properties:
- *                             paymentId:
- *                             type: integer
- *                             customerId:
- *                             type: integer
- *                             amount:
+ *                         properties:
+ *                           paymentId:
+ *                             type: string
+ *                           customerId:
+ *                             type: string
+ *                           amount:
  *                             type: number
- *                             transactionId:
- *                             type: integer
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
+ *                           transactionId:
+ *                             type: string
  *       400:
  *         description: Invalid request
- *       404:
- *         description: Service or wallet not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AppError'
+ *       403:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AppError'
  */
-router.post('/split', createSplitPayment, validate(splitPaymentSchema), createSplitPayment);
+router.post('/split', paymentSplitValidator.validateSplitPayment, paymentSplitController.initiateSplitPayment);
 
 /**
  * @swagger
- * /api/customer/payments/split/refund:
+ * /customer/payments/split/refund:
  *   post:
- *     summary: Process refunds for split payment
- *     tags: [Payments]
+ *     summary: Process a split payment refund
+ *     description: Processes refunds for a split payment of a service.
+ *     tags: [Customer Payments]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -93,36 +137,51 @@ router.post('/split', createSplitPayment, validate(splitPaymentSchema), createSp
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [serviceId, serviceType, refunds]
  *             properties:
  *               serviceId:
- * type: integer
+ *                 type: string
+ *                 description: ID of the service.
+ *                 example: "12345"
  *               serviceType:
  *                 type: string
  *                 enum: [order, in_dining_order, booking, ride, event]
+ *                 description: Type of service.
+ *                 example: "order"
  *               refunds:
  *                 type: array
+ *                 minItems: 1
  *                 items:
  *                   type: object
+ *                   required: [customerId, amount]
  *                   properties:
  *                     customerId:
- *                       type: integer
+ *                       type: string
+ *                       description: ID of the customer receiving the refund.
+ *                       example: "67890"
  *                     amount:
  *                       type: number
+ *                       description: Refund amount.
+ *                       example: 25.50
  *     responses:
  *       200:
- *         description: Refunds processed
+ *         description: Refund processed successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
  *                   type: string
+ *                   example: "Refund processed for service order #12345"
  *                 data:
  *                   type: object
  *                   properties:
  *                     serviceId:
- *                       type: integer
+ *                       type: string
  *                     serviceType:
  *                       type: string
  *                     refunds:
@@ -130,23 +189,25 @@ router.post('/split', createSplitPayment, validate(splitPaymentSchema), createSp
  *                       items:
  *                         type: object
  *                         properties:
- *                           type: integer
-                           customerId:
-                           type: integer
-                           amount:
-                             type: number
-                           transactionId:
-                             type: integer
-                       401:
-                           description: Unauthorized
-                       403:
-                           description: Forbidden
-                       400:
-                           description: Invalid request
-                       404:
-                           description: Service or payment not found
-                   */
-
-router.post('/split/refund', refundPayment, validate(refundedSplitPaymentSchema), processSplitPayment);
+ *                           customerId:
+ *                             type: string
+ *                           amount:
+ *                             type: number
+ *                           transactionId:
+ *                             type: string
+ *       400:
+ *         description: Invalid request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AppError'
+ *       403:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AppError'
+ */
+router.post('/split/refund', paymentSplitValidator.validateSplitPaymentRefund, paymentSplitController.processSplitPaymentRefund);
 
 module.exports = router;

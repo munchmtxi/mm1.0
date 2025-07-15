@@ -1,32 +1,18 @@
+// supplyService.js
+// Manages supply operations for mtables staff. Handles supply monitoring, restocking requests, and readiness logging.
+// Last Updated: May 25, 2025
+
 'use strict';
 
-/**
- * supplyService.js
- * Manages supply operations for mtables (staff role). Handles BOH supply monitoring, restocking requests,
- * readiness logging, and point awarding.
- * Last Updated: May 25, 2025
- */
-
-const { MenuInventory, InventoryAlert, InventoryAdjustmentLog, GamificationPoints, Staff, SupplyStatus, InventoryBulkUpdate } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const staffRolesConstants = require('@constants/staff/staffRolesConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
-const securityService = require('@services/common/securityService');
-const { AppError } = require('@utils/errors');
+const { Op } = require('sequelize');
+const { MenuItem, InventoryAlert, InventoryAdjustmentLog, Staff, SupplyStatus } = require('@models');
+const mtablesConstants = require('@constants/common/mtablesConstants');
+const staffConstants = require('@constants/staff/staffConstants');
 const logger = require('@utils/logger');
 
-/**
- * Tracks dining supplies (BOH).
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Array>} Low stock items.
- */
 async function monitorSupplies(restaurantId) {
   try {
-    const items = await MenuInventory.findAll({
+    const items = await MenuItem.findAll({
       where: {
         branch_id: restaurantId,
         quantity: { [Op.lte]: sequelize.col('minimum_stock_level') },
@@ -43,33 +29,19 @@ async function monitorSupplies(restaurantId) {
       alert: item.alerts?.length > 0,
     }));
 
-    socketService.emit(`mtables:supply:${restaurantId}`, 'supply:monitored', {
-      restaurantId,
-      lowStockItems: lowStockItems.length,
-    });
-
     return lowStockItems;
   } catch (error) {
-    logger.error('Supply monitoring failed', { error: error.message, restaurantId });
-    throw new AppError(`Supply monitoring failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    logger.error('Error monitoring supplies', { error: error.message, restaurantId });
+    throw error;
   }
 }
 
-/**
- * Sends restocking alerts.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {number} staffId - Staff ID.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<void>}
- */
-async function requestRestock(restaurantId, staffId, ipAddress) {
+async function requestRestock(restaurantId, staffId) {
   try {
     const staff = await Staff.findByPk(staffId);
-    if (!staff || !staffRolesConstants.STAFF_PERMISSIONS[staff.position]?.manageSupplies?.includes('write')) {
-      throw new AppError('Permission denied', 403, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
-    }
+    if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
 
-    const lowStockItems = await MenuInventory.findAll({
+    const lowStockItems = await MenuItem.findAll({
       where: {
         branch_id: restaurantId,
         quantity: { [Op.lte]: sequelize.col('minimum_stock_level') },
@@ -93,103 +65,29 @@ async function requestRestock(restaurantId, staffId, ipAddress) {
       }
     }
 
-    await auditService.logAction({
-      userId: staffId,
-      role: 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { restaurantId, action: 'request_restock', itemCount: lowStockItems.length },
-      ipAddress,
-    });
-
-    const message = localization.formatMessage('supply.restock_requested', {
-      itemCount: lowStockItems.length,
-      branchId: restaurantId,
-    });
-    await notificationService.sendNotification({
-      userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.ANNOUNCEMENT,
-      message,
-      role: 'staff',
-      module: 'mtables',
-      branchId: restaurantId,
-    });
-
-    socketService.emit(`mtables:supply:${restaurantId}`, 'supply:restock_requested', {
-      restaurantId,
-      itemCount: lowStockItems.length,
-    });
+    return lowStockItems.length;
   } catch (error) {
-    logger.error('Restock request failed', { error: error.message, restaurantId });
-    throw new AppError(`Restock request failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    logger.error('Error requesting restock', { error: error.message, restaurantId });
+    throw error;
   }
 }
 
-/**
- * Records supply readiness status.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {number} staffId - Staff ID.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<void>}
- */
-async function logSupplyReadiness(restaurantId, staffId, ipAddress) {
+async function logSupplyReadiness(restaurantId, staffId) {
   try {
     const staff = await Staff.findByPk(staffId);
-    if (!staff || !staffRolesConstants.STAFF_PERMISSIONS[staff.position]?.manageSupplies?.includes('write')) {
-      throw new AppError('Permission denied', 403, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
-    }
+    if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
 
     const supplyStatus = await SupplyStatus.create({
       branch_id: restaurantId,
-      status: 'ready',
+      status: mtablesConstants.SUPPLY_STATUSES[0], // 'ready'
       checked_by: staffId,
       checked_at: new Date(),
     });
 
-    await auditService.logAction({
-      userId: staffId,
-      role: 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { restaurantId, action: 'log_readiness', supplyStatusId: supplyStatus.id },
-      ipAddress,
-    });
-
-    socketService.emit(`mtables:supply:${restaurantId}`, 'supply:readiness_logged', {
-      restaurantId,
-      status: supplyStatus.status,
-    });
+    return supplyStatus;
   } catch (error) {
-    logger.error('Supply readiness logging failed', { error: error.message, restaurantId });
-    throw new AppError(`Readiness logging failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
-  }
-}
-
-/**
- * Awards points for supply management.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<void>}
- */
-async function awardSupplyPoints(staffId) {
-  try {
-    const staff = await Staff.findByPk(staffId);
-    if (!staff) {
-      throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
-    }
-
-    await pointService.awardPoints({
-      userId: staffId,
-      role: 'staff',
-      subRole: staff.position,
-      action: staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.INVENTORY_UPDATE.action,
-      languageCode: 'en',
-    });
-
-    socketService.emit(`mtables:staff:${staffId}`, 'points:awarded', {
-      action: staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.INVENTORY_UPDATE.action,
-      points: staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.INVENTORY_UPDATE.points,
-    });
-  } catch (error) {
-    logger.error('Supply points award failed', { error: error.message, staffId });
-    throw new AppError(`Points award failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
+    logger.error('Error logging supply readiness', { error: error.message, restaurantId });
+    throw error;
   }
 }
 
@@ -197,5 +95,4 @@ module.exports = {
   monitorSupplies,
   requestRestock,
   logSupplyReadiness,
-  awardSupplyPoints,
 };

@@ -1,206 +1,189 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\services\merchant\security\dataProtectionService.js
 'use strict';
 
-const { sequelize, User, Customer } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const securityService = require('@services/common/securityService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const { formatMessage } = require('@utils/localization');
-const AppError = require('@utils/AppError');
-const { handleServiceError } = require('@utils/errorHandling');
-const logger = require('@utils/logger');
+const { 
+  Staff, 
+  Wallet, 
+  WalletTransaction, 
+  Payment, 
+  Merchant, 
+  MerchantBranch, 
+  Driver, 
+  Customer, 
+  DataAccess 
+} = require('../models');
+const staffConstants = require('@constants/staff/staffConstants');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const driverConstants = require('@constants/driver/driverConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const localizationConstants = require('@constants/localizationConstants');
 
-class DataProtectionService {
-  static async encryptSensitiveData(merchantId, data, ipAddress) {
-    const transaction = await sequelize.transaction();
+/**
+ * Encrypts sensitive merchant data
+ * @param {Object} data - Data to encrypt
+ * @returns {string} Encrypted data
+ */
+const encryptMerchantData = async (data) => {
+  const { createCipheriv, randomBytes } = require('crypto');
+  const key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(staffConstants.STAFF_SECURITY_CONSTANTS.ENCRYPTION_ALGORITHM, key, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return `${iv.toString('hex')}:${encrypted}`;
+};
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+/**
+ * Manages merchant data access permissions
+ * @param {number} userId - User ID
+ * @param {Object} permissions - Share permissions
+ * @returns {Object} Updated DataAccess
+ */
+const manageDataAccess = async (userId, permissions) => {
+  const dataAccess = await DataAccess.findOrCreate({
+    where: { user_id: userId },
+    defaults: {
+      shareWithMerchants: permissions.shareWithMerchants || false,
+      shareWithThirdParties: permissions.shareWithThirdParties || false,
+    },
+  });
 
-      const encryptedData = securityService.encryptData(JSON.stringify(data));
-
-      const message = formatMessage(merchant.preferred_language, 'dataProtection.dataEncrypted', { dataType: data.type || 'sensitive' });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, dataType: data.type || 'sensitive' },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`data:encrypted:${merchantId}`, { merchantId, dataType: data.type || 'sensitive' });
-
-      await transaction.commit();
-      logger.info(`Data encrypted for merchant ${merchantId}: ${data.type || 'sensitive'}`);
-      return { merchantId, encryptedData };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('encryptSensitiveData', error, merchantConstants.ERROR_CODES.COMPLIANCE_VIOLATION);
-    }
+  if (!dataAccess[1]) {
+    await dataAccess[0].update(permissions);
   }
 
-  static async complyWithRegulations(merchantId, ipAddress) {
-    const transaction = await sequelize.transaction();
+  return dataAccess[0];
+};
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language', 'country'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+/**
+ * Validates merchant data compliance
+ * @param {number} merchantId - Merchant ID
+ * @returns {boolean} Compliance status
+ */
+const validateDataCompliance = async (merchantId) => {
+  const merchant = await Merchant.findByPk(merchantId, {
+    include: [
+      { model: MerchantBranch, as: 'branches' },
+      { model: Staff, as: 'staff' },
+    ],
+  });
 
-      const standards = merchantConstants.COMPLIANCE_CONSTANTS.DATA_PROTECTION_STANDARDS;
-      if (!standards.includes('GDPR') && !standards.includes('CCPA')) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidStandards'), 400, merchantConstants.ERROR_CODES.COMPLIANCE_VIOLATION);
-      }
+  if (!merchant) throw new Error(merchantConstants.ERROR_CODES[1]);
 
-      const complianceStatus = { merchantId, standards, compliant: true }; // Simplified compliance check
+  const required = merchantConstants.COMPLIANCE_CONSTANTS.REGULATORY_REQUIREMENTS;
+  const details = merchant.business_type_details || {};
+  const staffCompliance = merchant.staff.every(s => 
+    s.certifications?.every(c => 
+      staffConstants.STAFF_PROFILE_CONSTANTS.ALLOWED_CERTIFICATIONS.includes(c)
+    )
+  );
+  return required.every(req => details[req]) && staffCompliance;
+};
 
-      const message = formatMessage(merchant.preferred_language, 'dataProtection.regulationsComplied', { standards: standards.join(', ') });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'HIGH',
-        languageCode: merchant.preferred_language,
-      }, transaction);
+/**
+ * Audits staff data access across branches
+ * @param {number} staffId - Staff ID
+ * @param {string} action - Audit action
+ * @returns {Object} Audit log
+ */
+const auditStaffDataAccess = async (staffId, action) => {
+  const staff = await Staff.findByPk(staffId, {
+    include: [
+      { model: Merchant, as: 'merchant' },
+      { model: MerchantBranch, as: 'branch' },
+      { model: Permission, as: 'permissions' },
+    ],
+  });
 
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, standards },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`compliance:updated:${merchantId}`, complianceStatus);
-
-      await transaction.commit();
-      logger.info(`Regulatory compliance verified for merchant ${merchantId}: ${standards.join(', ')}`);
-      return complianceStatus;
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('complyWithRegulations', error, merchantConstants.ERROR_CODES.COMPLIANCE_VIOLATION);
-    }
+  if (!staff) throw new Error(staffConstants.STAFF_ERROR_CODES[1]);
+  if (!staffConstants.STAFF_AUDIT_ACTIONS.includes(action)) {
+    throw new Error(staffConstants.STAFF_ERROR_CODES[2]);
   }
 
-  static async restrictDataAccess(merchantId, accessRequest, ipAddress) {
-    const transaction = await sequelize.transaction();
+  const log = {
+    staff_id: staffId,
+    merchant_id: staff.merchant_id,
+    branch_id: staff.branch_id,
+    permissions: staff.permissions.map(p => p.name),
+    action,
+    timestamp: new Date(),
+  };
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-        transaction,
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+  return log;
+};
 
-      const { userId, permission } = accessRequest;
-      if (!Object.values(merchantConstants.SECURITY_CONSTANTS.PERMISSION_LEVELS).includes(permission)) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidPermission'), 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
-      }
+/**
+ * Generates merchant data analytics
+ * @param {number} merchantId - Merchant ID
+ * @returns {Object} Analytics report
+ */
+const generateDataAnalytics = async (merchantId) => {
+  const merchant = await Merchant.findByPk(merchantId, {
+    include: [
+      { model: Payment, as: 'payments' },
+      { model: Staff, as: 'staff' },
+      { model: MerchantBranch, as: 'branches' },
+    ],
+  });
 
-      const requestingUser = await User.findByPk(userId, { transaction });
-      if (!requestingUser) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidUser'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+  if (!merchant) throw new Error(merchantConstants.ERROR_CODES[1]);
 
-      const message = formatMessage(merchant.preferred_language, 'dataProtection.accessRestricted', { userId, permission });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
+  const metrics = merchantConstants.ANALYTICS_CONSTANTS.METRICS;
+  const report = {
+    merchant_id: merchantId,
+    order_volume: merchant.payments.length,
+    revenue: merchant.payments.reduce((sum, p) => sum + p.amount, 0),
+    customer_retention: await calculateRetentionRate(merchantId),
+    staff_performance: merchant.staff.map(s => ({
+      id: s.id,
+      metrics: s.performance_metrics || {},
+    })),
+    branch_count: merchant.branches.length,
+    timestamp: new Date(),
+    format: merchantConstants.ANALYTICS_CONSTANTS.REPORT_FORMATS[2], // json
+  };
 
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, userId, permission },
-        ipAddress,
-      }, transaction);
+  return metrics.reduce((acc, metric) => ({ ...acc, [metric]: report[metric] || 0 }), {});
+};
 
-      socketService.emit(`access:restricted:${merchantId}`, { merchantId, userId, permission });
+/**
+ * Calculates customer retention rate
+ * @param {number} merchantId - Merchant ID
+ * @returns {number} Retention rate
+ */
+const calculateRetentionRate = async (merchantId) => {
+  const payments = await Payment.findAll({
+    where: { merchant_id: merchantId },
+    attributes: ['customer_id'],
+    group: ['customer_id'],
+    having: sequelize.where(sequelize.fn('COUNT', sequelize.col('customer_id')), '>=', 2),
+  });
 
-      await transaction.commit();
-      logger.info(`Data access restricted for merchant ${merchantId}: user ${userId}, permission ${permission}`);
-      return { merchantId, userId, permission };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('restrictDataAccess', error, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
-    }
-  }
+  return (payments.length / await Customer.count()) * 100 || 0;
+};
 
-  static async auditDataSecurity(merchantId, ipAddress) {
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [{ model: Customer, as: 'customer_profile', attributes: ['id'] }],
-      });
-      if (!merchant || !merchant.customer_profile) {
-        throw new AppError(formatMessage('merchant', 'security', 'en', 'dataProtection.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
+/**
+ * Manages merchant branch data permissions
+ * @param {number} branchId - Branch ID
+ * @param {Object} permissions - Branch permissions
+ * @returns {Object} Updated branch
+ */
+const manageBranchDataPermissions = async (branchId, permissions) => {
+  const branch = await MerchantBranch.findByPk(branchId);
+  if (!branch) throw new Error(staffConstants.STAFF_ERROR_CODES[14]);
 
-      const auditLogs = await sequelize.models.AuditLog.findAll({
-        where: { user_id: merchantId },
-        limit: 100,
-      });
+  const validPermissions = permissions.filter(p => 
+    staffConstants.STAFF_PERMISSIONS[branch.staff_types?.[0] || 'manager'].includes(p)
+  );
+  await branch.update({ payment_methods: { ...branch.payment_methods, data_permissions: validPermissions } });
 
-      const auditSummary = {
-        merchantId,
-        auditCount: auditLogs.length,
-        lastAudit: auditLogs[0]?.created_at || null,
-      };
+  return branch;
+};
 
-      const message = formatMessage(merchant.preferred_language, 'dataProtection.securityAudited', { auditCount: auditSummary.auditCount });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'LOW',
-        languageCode: merchant.preferred_language,
-      });
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: auditSummary,
-        ipAddress,
-      });
-
-      socketService.emit(`audit:completed:${merchantId}`, auditSummary);
-
-      logger.info(`Security audit completed for merchant ${merchantId}: ${auditSummary.auditCount} logs`);
-      return auditSummary;
-    } catch (error) {
-      throw handleServiceError('auditDataSecurity', error, merchantConstants.ERROR_CODES.COMPLIANCE_VIOLATION);
-    }
-  }
-}
-
-module.exports = DataProtectionService;
+module.exports = {
+  encryptMerchantData,
+  manageDataAccess,
+  validateDataCompliance,
+  auditStaffDataAccess,
+  generateDataAnalytics,
+  manageBranchDataPermissions,
+};

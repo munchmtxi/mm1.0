@@ -1,26 +1,31 @@
 'use strict';
 
-const { authenticate, restrictTo, checkPermissions } = require('@middleware/authMiddleware');
-const munchConstants = require('@constants/customer/munch/munchConstants');
-const catchAsync = require('@utils/catchAsync');
+const { validationResult } = require('express-validator');
 const AppError = require('@utils/AppError');
-const { Cart } = require('@models');
+const customerConstants = require('@constants/customer/customerConstants');
+const { formatMessage } = require('@utils/localization');
+const localizationConstants = require('@constants/common/localizationConstants');
 
-const checkCartAccess = catchAsync(async (req, res, next) => {
-  const { customerId } = req.user;
-  const { cartId } = req.body;
-  const cart = await Cart.findByPk(cartId);
-  if (!cart || cart.customer_id !== (await Customer.findOne({ where: { user_id: customerId } })).id) {
-    throw new AppError('Cart not found or access denied', 403, munchConstants.ERROR_CODES.CART_NOT_FOUND);
+/**
+ * Validates request data
+ */
+exports.validateRequest = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const languageCode = req.user?.preferred_language || localizationConstants.DEFAULT_LANGUAGE;
+    return next(new AppError(
+      formatMessage('customer', 'order', languageCode, 'validation_failed', { errors: errors.array().map(e => e.msg).join(', ') }),
+      400,
+      customerConstants.ERROR_CODES.VALIDATION_FAILED
+    ));
   }
   next();
-});
+};
 
-module.exports = {
-  browseMerchants: [authenticate, restrictTo('customer'), checkPermissions('browse_merchants')],
-  addToCart: [authenticate, restrictTo('customer'), checkPermissions('add_to_cart')],
-  updateCart: [authenticate, restrictTo('customer'), checkPermissions('update_cart'), checkCartAccess],
-  placeOrder: [authenticate, restrictTo('customer'), checkPermissions('place_order')],
-  updateOrder: [authenticate, restrictTo('customer'), checkPermissions('update_order')],
-  cancelOrder: [authenticate, restrictTo('customer'), checkPermissions('cancel_order')],
+/**
+ * Injects Socket.IO instance
+ */
+exports.injectSocket = (req, res, next) => {
+  req.io = req.app.get('io');
+  next();
 };

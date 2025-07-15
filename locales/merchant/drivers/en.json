@@ -1,0 +1,44 @@
+{
+  "driverCommunication": {
+    "driverMessage": "New message: {message} (Task ID: {taskId})",
+    "driverMessageSentDescription": "A message has been sent to the driver.",
+    "deliveryUpdate": "Delivery update for order #{orderId}: {message} (Task ID: {taskId})",
+    "deliveryUpdateBroadcast": "Delivery update for order #{orderNumber}: {message}",
+    "deliveryUpdateBroadcastDescription": "A delivery update has been broadcast to the driver.",
+    "driverChannelsUpdated": "Updated {driverCount} driver communication channels for merchant {merchantId}.",
+    "driverChannelsUpdatedDescription": "Driver communication channels have been updated.",
+    "pointsAwarded": "You earned {points} points for {action}!",
+    "pointsAwardedDescription": "Points can be redeemed for rewards or driver communication.",
+    "actions": {
+      "driverMessageSent": "Sent driver message",
+      "deliveryUpdateBroadcast": "Broadcasting delivery update",
+      "driverChannelsUpdated": "Updating driver channels"
+    },
+    "errors": {
+      "invalidDriverId": "Invalid driver ID provided.",
+      "invalidDriverIdDescription": "Please provide a valid driver ID.",
+      "driverNotFound": "Driver not found.",
+      "driverNotFoundDescription": "The specified driver does not exist.",
+      "invalidOrderId": "Invalid order ID provided.",
+      "invalidOrderIdDescription": "Please provide a valid order ID.",
+      "orderNotFound": "Order or driver not found.",
+      "orderNotFoundDescription": "The specified order or its driver does not exist.",
+      "invalidMerchantId": "Invalid merchant ID provided.",
+      "invalidMerchantIdDescription": "Please provide a valid merchant ID.",
+      "merchantNotFound": "Merchant not found.",
+      "merchantNotFoundDescription": "The specified merchant does not exist.",
+      "invalidMessage": "Invalid message content.",
+      "invalidMessageDescription": "Please provide valid message content.",
+      "unauthorized": "Unauthorized access to driver communication.",
+      "unauthorizedDescription": "Only merchants can access driver communication features."
+    },
+    "gamification": {
+      "welcome": "Welcome to driver communication rewards! Earn points by sending messages, broadcasting updates, and managing channels.",
+      "welcomeDescription": "Points unlock exclusive benefits.",
+      "progress": "Great work! You've earned {points} points so far!",
+      "progressDescription": "Continue using driver communication features to earn more.",
+      "milestone": "Milestone reached! You've earned {points} points!",
+      "milestoneDescription": "Check your dashboard for new rewards."
+    }
+  }
+}

@@ -1,71 +1,37 @@
 'use strict';
 
-/**
- * Driver Service for mtxi (Admin)
- * Manages driver ride assignments, availability, safety reports, and training.
- * Integrates with notification, socket, audit, and localization services.
- * Focuses exclusively on mtxi ride-related functionality.
- *
- * Last Updated: May 27, 2025
- */
-
 const { Driver, Ride, DriverAvailability, DriverSafetyIncident } = require('@models');
 const rideConstants = require('@constants/common/rideConstants');
 const driverConstants = require('@constants/common/driverConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
+const adminServiceConstants = require('@constants/admin/adminServiceConstants');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils');
 const { AppError } = require('@utils/AppError');
 const { Op } = require('sequelize');
 
-/**
- * Configures ride assignments for a driver.
- * @param {number} driverId - Driver ID.
- * @param {Object} assignment - { rideId }.
- * @returns {Object} Assignment details.
- */
-async function manageDriverAssignment(driverId, assignment) {
+async function manageDriverAssignment(driverId, assignment, { notificationService, socketService, auditService, pointService }) {
   try {
     if (!driverId || !assignment?.rideId) {
-      throw new AppError(
-        'invalid driver_id or ride_id',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('invalid driver_id or ride_id', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     if (driver.availability_status !== driverConstants.DRIVER_STATUSES.AVAILABLE) {
-      throw new AppError(
-        'driver is not available',
-        400,
-        driverConstants.ERROR_CODES.RIDE_FAILED
-      );
+      throw new AppError('driver is not available', 400, driverConstants.ERROR_CODES.RIDE_FAILED);
     }
 
     const ride = await Ride.findByPk(assignment.rideId);
     if (!ride || ride.status !== rideConstants.RIDE_STATUSES.PENDING) {
-      throw new AppError(
-        'invalid or unavailable ride',
-        404,
-        rideConstants.ERROR_CODES.RIDE_NOT_FOUND
-      );
+      throw new AppError('invalid or unavailable ride', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
     }
 
     await ride.update({ driverId, status: rideConstants.RIDE_STATUSES.ACCEPTED });
     await driver.update({ availability_status: driverConstants.DRIVER_STATUSES.ON_RIDE });
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_ASSIGNED,
@@ -75,7 +41,6 @@ async function manageDriverAssignment(driverId, assignment) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'driver:assignment_updated', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -83,12 +48,21 @@ async function manageDriverAssignment(driverId, assignment) {
       rideId: ride.id,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: rideConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.RIDE_ASSIGNED,
       details: { driverId, rideId: ride.id },
       ipAddress: 'unknown',
+    });
+
+    // Award points for ride assignment
+    const action = adminServiceConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.USER_ONBOARDING; // Using as a proxy for assignment action
+    await pointService.awardPoints({
+      userId: driver.user_id.toString(),
+      action: action.action,
+      points: action.points,
+      walletCredit: 0,
+      details: { driverId, rideId: ride.id },
     });
 
     logger.info('Ride assignment updated', { driverId, rideId: ride.id });
@@ -99,30 +73,17 @@ async function manageDriverAssignment(driverId, assignment) {
   }
 }
 
-/**
- * Tracks driver schedules and availability.
- * @param {number} driverId - Driver ID.
- * @returns {Object} Availability details.
- */
-async function monitorDriverAvailability(driverId) {
+async function monitorDriverAvailability(driverId, { notificationService, auditService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId, {
       include: [{ model: DriverAvailability, as: 'availability' }],
     });
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const now = new Date();
@@ -146,7 +107,6 @@ async function monitorDriverAvailability(driverId) {
         .sort((a, b) => new Date(a.date) - new Date(b.date)),
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SCHEDULE_UPDATE,
@@ -156,7 +116,6 @@ async function monitorDriverAvailability(driverId) {
       module: 'mtxi',
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: driverConstants.ANALYTICS_CONSTANTS.METRICS.RIDE_COMPLETION_RATE,
@@ -172,32 +131,19 @@ async function monitorDriverAvailability(driverId) {
   }
 }
 
-/**
- * Reviews safety incidents for a driver.
- * @param {number} driverId - Driver ID.
- * @returns {Object} Safety incident details.
- */
-async function overseeSafetyReports(driverId) {
+async function overseeSafetyReports(driverId, { notificationService, socketService, auditService }) {
   try {
     if (!driverId) {
-      throw new AppError(
-        'driver_id required',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('driver_id required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const incidents = await DriverSafetyIncident.findAll({
-      where: { driver_id: driverId, ride_id: { [Op.not]: null } }, // Filter for rides only
+      where: { driver_id: driverId, ride_id: { [Op.not]: null } },
       attributes: ['id', 'incident_type', 'description', 'status', 'created_at'],
     });
 
@@ -212,7 +158,6 @@ async function overseeSafetyReports(driverId) {
       details: incidents,
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SAFETY_ALERT,
@@ -222,7 +167,6 @@ async function overseeSafetyReports(driverId) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'safety:incidents_reviewed', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -230,7 +174,6 @@ async function overseeSafetyReports(driverId) {
       totalIncidents: incidentSummary.totalIncidents,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
       action: driverConstants.SAFETY_CONSTANTS.INCIDENT_TYPES.OTHER,
@@ -246,38 +189,20 @@ async function overseeSafetyReports(driverId) {
   }
 }
 
-/**
- * Manages driver training (simulated without certification persistence).
- * @param {number} driverId - Driver ID.
- * @param {Object} trainingDetails - { module, action: 'assign' | 'complete' | 'verify' }.
- * @returns {Object} Training status.
- */
-async function administerTraining(driverId, trainingDetails) {
+async function administerTraining(driverId, trainingDetails, { notificationService, socketService, auditService, pointService }) {
   try {
     if (!driverId || !trainingDetails?.module || !['assign', 'complete', 'verify'].includes(trainingDetails.action)) {
-      throw new AppError(
-        'invalid driver_id or training details',
-        400,
-        driverConstants.ERROR_CODES.INVALID_DRIVER
-      );
+      throw new AppError('invalid driver_id or training details', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
     }
 
     const driver = await Driver.findByPk(driverId);
     if (!driver) {
-      throw new AppError(
-        'driver not found',
-        404,
-        driverConstants.ERROR_CODES.DRIVER_NOT_FOUND
-      );
+      throw new AppError('driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
     }
 
     const moduleKey = trainingDetails.module.toUpperCase();
-    if (!driverConstants.ONBOARDING_CONSTANTS.TRAINING_MODULES[moduleKey]) {
-      throw new AppError(
-        'invalid training module',
-        400,
-        driverConstants.ERROR_CODES.INVALID_VEHICLE_TYPE
-      );
+    if (!driverConstants.ONBOARDING_CONSTANTS.TRAINING_MODULES.includes(trainingDetails.module)) {
+      throw new AppError('invalid training module', 400, driverConstants.ERROR_CODES.INVALID_VEHICLE_TYPE);
     }
 
     const trainingStatus = {
@@ -288,7 +213,6 @@ async function administerTraining(driverId, trainingDetails) {
               trainingDetails.action === 'complete' ? 'completed' : 'verified',
     };
 
-    // Send notification
     await notificationService.sendNotification({
       userId: driver.user_id.toString(),
       type: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SCHEDULE_UPDATE,
@@ -298,7 +222,6 @@ async function administerTraining(driverId, trainingDetails) {
       module: 'mtxi',
     });
 
-    // Emit socket event
     await socketService.emit(null, 'training:updated', {
       userId: driver.user_id.toString(),
       role: 'driver',
@@ -307,13 +230,24 @@ async function administerTraining(driverId, trainingDetails) {
       action: trainingDetails.action,
     });
 
-    // Log audit action
     await auditService.logAction({
       userId: driver.user_id.toString(),
-      action: driverConstants.ONBOARDING_CONSTANTS.TRAINING_MODULES[moduleKey],
+      action: driverConstants.ONBOARDING_CONSTANTS.TRAINING_MODULES.find(m => m === trainingDetails.module),
       details: { driverId, module: trainingDetails.module, action: trainingDetails.action },
       ipAddress: 'unknown',
     });
+
+    // Award points for training completion
+    if (trainingDetails.action === 'complete') {
+      const action = adminServiceConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.USER_ONBOARDING; // Proxy for training completion
+      await pointService.awardPoints({
+        userId: driver.user_id.toString(),
+        action: action.action,
+        points: action.points,
+        walletCredit: 0,
+        details: { driverId, module: trainingDetails.module },
+      });
+    }
 
     logger.info('Training administered', { driverId, module: trainingDetails.module, action: trainingDetails.action });
     return trainingStatus;

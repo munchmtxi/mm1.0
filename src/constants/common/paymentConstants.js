@@ -2,66 +2,74 @@
 
 module.exports = {
   WALLET_SETTINGS: {
-    WALLET_TYPES: ['admin', 'customer', 'driver', 'merchant', 'staff'],
+    WALLET_TYPES: ['customer', 'driver', 'merchant', 'staff'],
     MIN_BALANCE: 0,
     MAX_BALANCE: 100000,
-    TRANSACTION_LIMIT_PER_DAY: 50,
-    MAX_PAYMENT_METHODS: 5,
+    TRANSACTION_LIMIT_PER_DAY: 100,
+    TRANSACTION_LIMIT_PER_HOUR: 20,
+    MAX_REWARD_TRANSACTIONS_PER_HOUR: 5,
+    MAX_PAYMENT_METHODS: 10,
+    AUTO_TOP_UP_MIN: 5,
+    AUTO_TOP_UP_MAX: 1000,
+    CRYPTO_WALLETS: ['BTC', 'ETH', 'USDT'],
   },
-  PAYMENT_METHODS: [
-    'credit_card',
-    'debit_card',
-    'digital_wallet',
-    'bank_transfer',
-    'mobile_money',
-  ],
+  PAYMENT_METHODS: ['CREDIT_CARD', 'DEBIT_CARD', 'DIGITAL_WALLET', 'BANK_TRANSFER', 'MOBILE_MONEY', 'CRYPTO'],
   TRANSACTION_TYPES: [
-    'deposit',
-    'payment',
-    'refund',
-    'withdrawal',
-    'earning',
-    'salary',
-    'bonus',
-    'tip',
-    'cashback',
-    'transfer',
-    'social_bill_split', // For Social Service
+    'DEPOSIT',
+    'RIDE_PAYMENT', // mtxi
+    'ORDER_PAYMENT', // munch
+    'EVENT_PAYMENT', // mevents
+    'PARKING_PAYMENT', // mpark
+    'BOOKING_PAYMENT', // mtables
+    'REFUND',
+    'WITHDRAWAL',
+    'TIP',
+    'SOCIAL_BILL_SPLIT',
+    'GAMIFICATION_REWARD', // Added for gamification
   ],
-  TRANSACTION_STATUSES: ['pending', 'completed', 'failed', 'rejected'],
+  TRANSACTION_STATUSES: ['PENDING', 'COMPLETED', 'FAILED', 'REJECTED', 'REFUNDED'],
   FINANCIAL_LIMITS: [
-    { type: 'DEPOSIT', min: 5, max: 5000 },
-    { type: 'WITHDRAWAL', min: 10, max: 10000 },
-    { type: 'PAYMENT', min: 1, max: 10000 },
-    { type: 'TIP', min: 0.01, max: 1000 }, // Aligned with tipConstants
-    { type: 'CASHBACK', min: 1, max: 100 },
-    { type: 'GAMIFICATION_REWARD', min: 0.01, max: 500 }, // For Wallet creditWallet
-    { type: 'SOCIAL_BILL_SPLIT', min: 1, max: 5000 }, // For Social Service
+    { type: 'DEPOSIT', min: 5, max: 10000 },
+    { type: 'WITHDRAWAL', min: 10, max: 20000, max_attempts_per_hour: 5 },
+    { type: 'RIDE_PAYMENT', min: 1, max: 10000 },
+    { type: 'ORDER_PAYMENT', min: 1, max: 10000 },
+    { type: 'EVENT_PAYMENT', min: 1, max: 50000 },
+    { type: 'PARKING_PAYMENT', min: 1, max: 500 },
+    { type: 'BOOKING_PAYMENT', min: 1, max: 10000 },
+    { type: 'TIP', min: 0.01, max: 1000 },
+    { type: 'SOCIAL_BILL_SPLIT', min: 1, max: 10000 },
+    { type: 'GAMIFICATION_REWARD', min: 0.01, max: 1000 },
   ],
+  ANALYTICS_CONSTANTS: {
+    REPORT_PERIODS: ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'],
+    METRICS: ['TRANSACTION_VOLUME', 'AVERAGE_AMOUNT', 'SUCCESS_RATE', 'REFUND_RATE'],
+  },
   NOTIFICATION_CONSTANTS: {
     NOTIFICATION_TYPES: {
       WALLET_CREATED: 'WALLET_CREATED',
       DEPOSIT_CONFIRMED: 'DEPOSIT_CONFIRMED',
       WITHDRAWAL_PROCESSED: 'WITHDRAWAL_PROCESSED',
       PAYMENT_CONFIRMATION: 'PAYMENT_CONFIRMATION',
-      GAMIFICATION_REWARD: 'GAMIFICATION_REWARD',
-      TIP_SENT: 'TIP_SENT', // For Tip Service
+      TIP_SENT: 'TIP_SENT',
       TIP_RECEIVED: 'TIP_RECEIVED',
       TIP_UPDATED: 'TIP_UPDATED',
       TIP_FAILED: 'TIP_FAILED',
-      SOCIAL_BILL_SPLIT_REQUEST: 'SOCIAL_BILL_SPLIT_REQUEST', // For Social Service
+      SOCIAL_BILL_SPLIT_REQUEST: 'SOCIAL_BILL_SPLIT_REQUEST',
       SOCIAL_BILL_SPLIT_COMPLETED: 'SOCIAL_BILL_SPLIT_COMPLETED',
+      REWARD_CREDITED: 'REWARD_CREDITED', // Added for gamification
     },
-    DELIVERY_METHODS: {
-      PUSH: 'push',
-      EMAIL: 'email',
-      SMS: 'sms',
-    },
-    PRIORITY_LEVELS: {
-      LOW: 'low',
-      MEDIUM: 'medium',
-      HIGH: 'high',
-    },
+    DELIVERY_METHODS: ['PUSH', 'EMAIL', 'SMS', 'WHATSAPP', 'TELEGRAM'],
+    PRIORITY_LEVELS: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
+  },
+  SECURITY_CONSTANTS: {
+    TOKENIZATION_PROVIDER: 'stripe',
+    KYC_REQUIREMENTS: ['ID_DOCUMENT', 'ADDRESS_PROOF'],
+    AML_THRESHOLD: 5000,
+    MFA_METHODS: ['SMS', 'EMAIL', 'AUTHENTICATOR'],
+    SESSION_TOKEN_EXPIRY_MINUTES: 30,
+    MAX_WITHDRAWAL_ATTEMPTS_PER_HOUR: 5,
+    ANOMALY_RISK_THRESHOLD: 80,
+    ENCRYPTION_ALGORITHM: 'HS256',
   },
   ERROR_CODES: [
     'WALLET_NOT_FOUND',
@@ -74,16 +82,18 @@ module.exports = {
     'WITHDRAWAL_ATTEMPTS_EXCEEDED',
     'INVALID_IP_ADDRESS',
     'CURRENCY_MISMATCH',
-    'INVALID_BALANCE',
-    'INVALID_SOCIAL_BILL_SPLIT', // For Social Service
+    'INVALID_AMOUNT',
+    'INVALID_SOCIAL_BILL_SPLIT',
+    'REWARD_LIMIT_EXCEEDED', // Added for gamification
   ],
   SUCCESS_MESSAGES: [
-    'Wallet created',
-    'Payment completed',
-    'Deposit confirmed',
-    'Withdrawal processed',
-    'Payment method added',
-    'Transaction recorded',
-    'Bill split completed', // For Social Service
+    'WALLET_CREATED',
+    'PAYMENT_COMPLETED',
+    'DEPOSIT_CONFIRMED',
+    'WITHDRAWAL_PROCESSED',
+    'PAYMENT_METHOD_ADDED',
+    'TRANSACTION_RECORDED',
+    'BILL_SPLIT_COMPLETED',
+    'REWARD_CREDITED', // Added for gamification
   ],
 };

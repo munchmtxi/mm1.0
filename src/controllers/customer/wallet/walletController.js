@@ -1,315 +1,354 @@
 'use strict';
 
-const { sequelize } = require('@models');
-const { createWallet, addFunds, withdrawFunds, payWithWallet, getWalletBalance, getWalletTransactions, creditWallet } = require('@services/customer/wallet/walletService');
+const { Wallet, WalletTransaction, User, Customer, Payment } = require('@models');
+const walletService = require('@services/common/walletService');
+const socketService = require('@services/common/socketService');
+const pointService = require('@services/common/pointService');
 const notificationService = require('@services/common/notificationService');
 const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const walletEvents = require('@socket/events/customer/wallet/walletEvents');
-const paymentConstants = require('@constants/common/paymentConstants');
+const { formatMessage } = require('@utils/localization');
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
-const { formatMessage } = require('@utils/localization');
-
-const createWalletAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const wallet = await createWallet(customerId, transaction);
-
-    // Notify customer
-    await notificationService.sendNotification({
-      userId: customerId,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_CREATED,
-      messageKey: 'wallet.created',
-      messageParams: { walletId: wallet.id },
-      deliveryMethod: 'push',
-      priority: 'medium',
-      role: 'customer',
-      module: 'wallet',
-    }, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'CREATE_WALLET',
-      details: { walletId: wallet.id, currency: wallet.currency },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.WALLET_CREATED, {
-      userId: customerId,
-      walletId: wallet.id,
-      currency: wallet.currency,
-    }, `customer:${customerId}`);
-
-    await transaction.commit();
-    res.status(201).json({ status: 'success', data: wallet });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Wallet creation failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Wallet creation failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
-  }
-};
-
-const addFundsAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const { walletId, amount, paymentMethod } = req.body;
-
-    const transactionRecord = await addFunds(walletId, amount, paymentMethod, transaction);
-
-    // Notify customer
-    await notificationService.sendNotification({
-      userId: customerId,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.DEPOSIT_CONFIRMED,
-      messageKey: 'wallet.deposit_confirmed',
-      messageParams: { amount, currency: transactionRecord.currency },
-      deliveryMethod: 'push',
-      priority: 'medium',
-      role: 'customer',
-      module: 'wallet',
-    }, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'DEPOSIT_FUNDS',
-      details: { walletId, amount, currency: transactionRecord.currency },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.FUNDS_ADDED, {
-      userId: customerId,
-      walletId,
-      amount,
-      currency: transactionRecord.currency,
-    }, `customer:${customerId}`);
-
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: transactionRecord });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Add funds failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Add funds failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
-  }
-};
-
-const withdrawFundsAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const { walletId, amount, destination } = req.body;
-
-    const transactionRecord = await withdrawFunds(walletId, amount, destination, transaction);
-
-    // Notify customer
-    await notificationService.sendNotification({
-      userId: customerId,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WITHDRAWAL_PROCESSED,
-      messageKey: 'wallet.withdrawal_confirmed',
-      messageParams: { amount, currency: transactionRecord.currency },
-      deliveryMethod: 'push',
-      priority: 'medium',
-      role: 'customer',
-      module: 'wallet',
-    }, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'WITHDRAW_FUNDS',
-      details: { walletId, amount, currency: transactionRecord.currency, bankName: destination.bankName },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.FUNDS_WITHDRAWN, {
-      userId: customerId,
-      walletId,
-      amount,
-      currency: transactionRecord.currency,
-    }, `customer:${customerId}`);
-
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: transactionRecord });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Withdraw funds failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Withdraw funds failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
-  }
-};
-
-const payWithWalletAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const { walletId, serviceId, amount } = req.body;
-
-    const payment = await payWithWallet(walletId, serviceId, amount, transaction);
-
-    // Notify customer
-    await notificationService.sendNotification({
-      userId: customerId,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
-      messageKey: 'wallet.payment_confirmed',
-      messageParams: { amount, currency: payment.currency, serviceId },
-      deliveryMethod: 'push',
-      priority: 'medium',
-      role: 'customer',
-      module: 'wallet',
-    }, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'PAYMENT_WITH_WALLET',
-      details: { walletId, serviceId, amount, currency: payment.currency },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.PAYMENT_PROCESSED, {
-      userId: customerId,
-      walletId,
-      serviceId,
-      amount,
-      currency: payment.currency,
-    }, `customer:${customerId}`);
-
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: payment });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Payment with wallet failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Payment failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
-  }
-};
-
-const getWalletBalanceAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const { walletId } = req.params;
-
-    const balance = await getWalletBalance(walletId, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'GET_WALLET_BALANCE',
-      details: { walletId, balance: balance.balance },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.BALANCE_RETRIEVED, {
-      userId: customerId,
-      walletId,
-      balance: balance.balance,
-      currency: balance.currency,
-    }, `customer:${customerId}`);
-
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: balance });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Balance retrieval failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Balance retrieval failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
-  }
-};
-
-const getWalletTransactionsAction = async (req, res) => {
-  try {
-    const { customerId } = req.user;
-    const { walletId } = req.params;
-
-    const transactions = await getWalletTransactions(walletId);
-
-    // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'GET_TRANSACTION_HISTORY',
-      details: { walletId, transactionCount: transactions.length },
-      ipAddress: req.ip,
-    });
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.TRANSACTIONS_RETRIEVED, {
-      userId: customerId,
-      walletId,
-      transactionCount: transactions.length,
-    }, `customer:${customerId}`);
-
-    res.status(200).json({ status: 'success', data: transactions });
-  } catch (error) {
-    logger.error('Transaction history retrieval failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Transaction history retrieval failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
-  }
-};
-
-const creditWalletAction = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  try {
-    const { customerId } = req.user;
-    const { userId, amount, currency, transactionType, description } = req.body;
-
-    const transactionRecord = await creditWallet({ userId, amount, currency, transactionType, description }, transaction);
-
-    // Notify customer
-    await notificationService.sendNotification({
-      userId,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.GAMIFICATION_REWARD,
-      messageKey: 'wallet.gamification_reward',
-      messageParams: { amount, currency, description },
-      deliveryMethod: 'push',
-      priority: 'medium',
-      role: 'customer',
-      module: 'wallet',
-    }, transaction);
-
-    // Log audit
-    await auditService.logAction({
-      userId,
-      role: 'customer',
-      action: 'GAMIFICATION_REWARD',
-      details: { walletId: transactionRecord.wallet_id, amount, currency, description },
-      ipAddress: req.ip,
-    }, transaction);
-
-    // Emit socket event
-    socketService.emit(req.app.get('socketio'), walletEvents.GAMIFICATION_REWARD, {
-      userId,
-      walletId: transactionRecord.wallet_id,
-      amount,
-      currency,
-      description,
-    }, `customer:${userId}`);
-
-    await transaction.commit();
-    res.status(200).json({ status: 'success', data: transactionRecord });
-  } catch (error) {
-    await transaction.rollback();
-    logger.error('Gamification reward failed', { customerId: req.user.customerId, error: error.message });
-    throw new AppError(`Gamification reward failed: ${error.message}`, error.statusCode || 500, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
-  }
-};
+const customerWalletConstants = require('@constants/customer/customerWalletConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants'); // Added import
+const paymentConstants = require('@constants/common/paymentConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { sequelize } = require('@models');
+const catchAsync = require('@utils/catchAsync');
 
 module.exports = {
-  createWalletAction,
-  addFundsAction,
-  withdrawFundsAction,
-  payWithWalletAction,
-  getWalletBalanceAction,
-  getWalletTransactionsAction,
-  creditWalletAction,
+  createWallet: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.body;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const wallet = await walletService.createWallet(userId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_CREATED,
+        details: { walletId: wallet.id },
+        ipAddress,
+      }, transaction);
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], // announcement
+        messageKey: 'wallet.created',
+        messageParams: { walletId: wallet.id },
+        role: 'customer',
+        module: 'payments/wallet',
+        languageCode,
+      });
+
+      await socketService.emit(req.io, 'WALLET_CREATED', {
+        userId,
+        role: 'customer',
+        walletId: wallet.id,
+        auditAction: 'WALLET_CREATED',
+      }, `customer:${userId}`, languageCode);
+
+      const walletActivationAction = customerGamificationConstants.GAMIFICATION_ACTIONS.wallet.find(a => a.action === 'ADD_FUNDS'); // Updated reference
+      await pointService.awardPoints(userId, walletActivationAction.action, walletActivationAction.points, {
+        io: req.io,
+        role: 'customer',
+        languageCode,
+        walletId: wallet.id,
+      });
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.created_success', { walletId: wallet.id });
+      logger.logApiEvent('Wallet created', { userId, walletId: wallet.id });
+      res.status(201).json({ success: true, message, data: wallet });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Wallet creation failed', { userId, error: error.message });
+      next(error);
+    }
+  }),
+
+  addFunds: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, amount, paymentMethod, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.body;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const transactionRecord = await walletService.addFunds(walletId, amount, paymentMethod, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_FUNDED,
+        details: { walletId, amount, transactionId: transactionRecord.id },
+        ipAddress,
+      }, transaction);
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], // announcement
+        messageKey: 'wallet.funded',
+        messageParams: { amount, currency: transactionRecord.currency },
+        role: 'customer',
+        module: 'payments/wallet',
+        languageCode,
+      });
+
+      await socketService.emit(req.io, 'WALLET_FUNDED', {
+        userId,
+        role: 'customer',
+        walletId,
+        amount,
+        transactionId: transactionRecord.id,
+        auditAction: 'WALLET_FUNDED',
+      }, `customer:${userId}`, languageCode);
+
+      const topUpAction = customerGamificationConstants.GAMIFICATION_ACTIONS.wallet.find(a => a.action === 'ADD_FUNDS'); // Updated reference
+      await pointService.awardPoints(userId, topUpAction.action, topUpAction.points, {
+        io: req.io,
+        role: 'customer',
+        languageCode,
+        walletId,
+      });
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.funded_success', { amount, currency: transactionRecord.currency });
+      logger.logApiEvent('Funds added', { userId, walletId, transactionId: transactionRecord.id });
+      res.status(200).json({ success: true, message, data: transactionRecord });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Add funds failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
+
+  withdrawFunds: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, amount, destination, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.body;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const transactionRecord = await walletService.withdrawFunds(walletId, amount, destination, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_WITHDRAWAL,
+        details: { walletId, amount, transactionId: transactionRecord.id },
+        ipAddress,
+      }, transaction);
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], // announcement
+        messageKey: 'wallet.withdrawn',
+        messageParams: { amount, currency: transactionRecord.currency },
+        role: 'customer',
+        module: 'payments/wallet',
+        languageCode,
+      });
+
+      await socketService.emit(req.io, 'WALLET_WITHDRAWN', {
+        userId,
+        role: 'customer',
+        walletId,
+        amount,
+        transactionId: transactionRecord.id,
+        auditAction: 'WALLET_WITHDRAWAL',
+      }, `customer:${userId}`, languageCode);
+
+      const withdrawalAction = customerGamificationConstants.GAMIFICATION_ACTIONS.wallet.find(a => a.action === 'WITHDRAWAL'); // Updated reference
+      if (withdrawalAction) {
+        await pointService.awardPoints(userId, withdrawalAction.action, withdrawalAction.points, {
+          io: req.io,
+          role: 'customer',
+          languageCode,
+          walletId,
+        });
+      }
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.withdrawn_success', { amount, currency: transactionRecord.currency });
+      logger.logApiEvent('Funds withdrawn', { userId, walletId, transactionId: transactionRecord.id });
+      res.status(200).json({ success: true, message, data: transactionRecord });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Withdraw funds failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
+
+  payWithWallet: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, serviceId, amount, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.body;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const payment = await walletService.payWithWallet(walletId, serviceId, amount, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_PAYMENT,
+        details: { walletId, serviceId, amount, paymentId: payment.id },
+        ipAddress,
+      }, transaction);
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], // announcement
+        messageKey: 'wallet.payment_processed',
+        messageParams: { amount, currency: paymentConstants.WALLET_SETTINGS.SUPPORTED_CURRENCIES[0] },
+        role: 'customer',
+        module: 'payments/wallet',
+        languageCode,
+      });
+
+      await socketService.emit(req.io, 'WALLET_PAYMENT_PROCESSED', {
+        userId,
+        role: 'customer',
+        walletId,
+        serviceId,
+        amount,
+        paymentId: payment.id,
+        auditAction: 'WALLET_PAYMENT',
+      }, `customer:${userId}`, languageCode);
+
+      const paymentAction = customerGamificationConstants.GAMIFICATION_ACTIONS.wallet.find(a => a.action === 'ORDER_PAYMENT'); // Updated reference
+      await pointService.awardPoints(userId, paymentAction.action, paymentAction.points, {
+        io: req.io,
+        role: 'customer',
+        languageCode,
+        walletId,
+      });
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.payment_success', { amount, serviceId });
+      logger.logApiEvent('Payment processed', { userId, walletId, paymentId: payment.id });
+      res.status(200).json({ success: true, message, data: payment });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Payment failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
+
+  getWalletBalance: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.query;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const balance = await walletService.getWalletBalance(walletId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_BALANCE_CHECKED,
+        details: { walletId, balance: balance.balance },
+        ipAddress,
+      }, transaction);
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.balance_retrieved', { balance: balance.balance, currency: balance.currency });
+      logger.logApiEvent('Wallet balance retrieved', { userId, walletId, balance: balance.balance });
+      res.status(200).json({ success: true, message, data: balance });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Get wallet balance failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
+
+  getWalletTransactions: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.query;
+    const ipAddress = req.ip;
+
+    try {
+      const transactions = await walletService.getWalletTransactions(walletId);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_TRANSACTIONS_VIEWED,
+        details: { walletId, transactionCount: transactions.length },
+        ipAddress,
+      });
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.transactions_retrieved', { count: transactions.length });
+      logger.logApiEvent('Wallet transactions retrieved', { userId, walletId, transactionCount: transactions.length });
+      res.status(200).json({ success: true, message, data: transactions });
+    } catch (error) {
+      logger.logErrorEvent('Get wallet transactions failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
+
+  creditWalletForReward: catchAsync(async (req, res, next) => {
+    const { userId } = req.user;
+    const { walletId, amount, rewardId, description, languageCode = localizationConstants.DEFAULT_LANGUAGE } = req.body;
+    const ipAddress = req.ip;
+
+    const transaction = await sequelize.transaction();
+    try {
+      const transactionRecord = await walletService.creditWallet({
+        userId,
+        amount,
+        currency: paymentConstants.WALLET_SETTINGS.SUPPORTED_CURRENCIES[0], // USD
+        transactionType: paymentConstants.TRANSACTION_TYPES.GAMIFICATION_REWARD,
+        description,
+      }, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.WALLET_REWARD_CREDITED,
+        details: { walletId, amount, rewardId, transactionId: transactionRecord.id },
+        ipAddress,
+      }, transaction);
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0], // announcement
+        messageKey: 'wallet.reward_credited',
+        messageParams: { amount, currency: transactionRecord.currency, rewardId },
+        role: 'customer',
+        module: 'payments/wallet',
+        languageCode,
+      });
+
+      await socketService.emit(req.io, 'WALLET_REWARD_CREDITED', {
+        userId,
+        role: 'customer',
+        walletId,
+        amount,
+        rewardId,
+        transactionId: transactionRecord.id,
+        auditAction: 'WALLET_REWARD_CREDITED',
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+
+      const message = formatMessage('customer', 'payments/wallet', languageCode, 'wallet.reward_credited_success', { amount, rewardId });
+      logger.logApiEvent('Reward credited', { userId, walletId, transactionId: transactionRecord.id });
+      res.status(200).json({ success: true, message, data: transactionRecord });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Reward credit failed', { userId, walletId, error: error.message });
+      next(error);
+    }
+  }),
 };

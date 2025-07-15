@@ -1,97 +1,69 @@
 {
-  "booking": {
-    "created": "Your reservation for table {tableId} at branch {branchId} on {date} at {time} has been created.",
-    "updated": "Your reservation for table {tableId} at branch {branchId} on {date} at {time} has been updated.",
-    "cancelled": "Your reservation for table {tableId} at branch {branchId} has been cancelled.",
-    "party_member_invited": "You have been invited to join booking {bookingId} by {inviterName}."
-  },
-  "check_in": {
-    "confirmed": "Check-in confirmed for booking {bookingId}."
-  },
-  "order": {
-    "created": "Order #{id} created with total amount {total_amount}.",
-    "pre_order": {
-      "created": "Pre-order #{id} created with total amount {total_amount}."
+  "notifications": {
+    "booking": {
+      "created": "Reservation {reference} created successfully.",
+      "updated": "Reservation {reference} updated successfully.",
+      "cancelled": "Reservation {reference} cancelled successfully.",
+      "checked_in": "Checked in for reservation {reference}.",
+      "history_retrieved": "Booking history retrieved successfully.",
+      "feedback_submitted": "Feedback for reservation {reference} submitted successfully."
     },
-    "updated": "Order #{id} updated with total amount {total_amount}.",
-    "cancelled": "Order #{id} cancelled."
-  },
-  "feedback": {
-    "submitted": "Feedback submitted for booking {bookingId} with rating {rating}."
-  },
-  "payment": {
-    "confirmed": "Payment of {amount} {currency} has been confirmed.",
-    "refund": {
-      "processed": "Refund of {amount} {currency} has been processed."
+    "cart": {
+      "added": "Items added to cart {cartId} successfully.",
+      "updated": "Cart {cartId} updated successfully.",
+      "cleared": "Cart {cartId} cleared successfully.",
+      "retrieved": "Cart {cartId} retrieved successfully."
     },
-    "requested": "A payment request of {amount} has been sent for booking {bookingId}."
-  },
-  "promotion": {
-    "redeemed": "Promotion #{id} redeemed with discount {discount_amount}."
-  },
-  "support": {
-    "ticket": {
-      "created": "Support ticket #{ticketNumber} created.",
-      "escalated": "Support ticket #{id} escalated."
+    "order": {
+      "order_placed": "Order {orderNumber} placed at {branchName}.",
+      "order_updated": "Order {orderNumber} updated to {status}.",
+      "feedback_submitted": "Feedback submitted for order {orderNumber} with rating {rating}.",
+      "history_retrieved": "Retrieved {count} orders successfully.",
+      "order_placed_success": "Order {orderNumber} placed successfully.",
+      "order_updated_success": "Order {orderNumber} updated successfully.",
+      "feedback_submitted_success": "Feedback for order {orderNumber} submitted successfully.",
+      "pre_order_created": "Pre-order {orderNumber} for {amount} placed successfully."
+    },
+    "party": {
+      "invite_received": "You have been invited to join reservation {bookingId} by {inviterName}.",
+      "status_updated": "Your status for reservation {bookingId} has been updated to {status}.",
+      "member_removed": "You have been removed from reservation {bookingId} by {inviterName}.",
+      "bill_split_request": "A bill split request for {amount} has been initiated for reservation {bookingId} by {inviterName}.",
+      "payment_request_sent": "Payment request for {amount} sent for booking {bookingId}.",
+      "pre_order_payment_request_sent": "Pre-order payment request for {amount} sent for order {orderId}."
+    },
+    "tables": {
+      "search_success": "Found {count} available tables."
     }
   },
   "errors": {
-    "invalid_customer": "Customer not found.",
-    "invalid_booking_details": "Invalid booking details.",
-    "invalid_party_size": "Invalid party size.",
-    "invalid_dietary_filter": "Invalid dietary preferences.",
-    "table_not_available": "Table not available.",
-    "max_bookings_exceeded": "Maximum bookings reached.",
-    "payment_failed": "Payment processing failed.",
-    "booking_not_found": "Booking not found.",
-    "cancellation_window_expired": "Cancellation window expired.",
-    "booking_creation_failed": "Failed to create booking.",
-    "booking_update_failed": "Failed to update booking.",
-    "booking_cancellation_failed": "Failed to cancel booking.",
-    "check_in_failed": "Failed to process check-in.",
-    "booking_history_failed": "Failed to retrieve booking history.",
-    "feedback_submission_failed": "Failed to submit feedback.",
-    "cart_update_failed": "Failed to update cart.",
-    "order_creation_failed": "Failed to create order.",
-    "order_update_failed": "Failed to update order.",
-    "order_cancellation_failed": "Failed to cancel order.",
-    "order_status_tracking_failed": "Failed to track order status.",
-    "payment_processing_failed": "Failed to process payment.",
-    "refund_processing_failed": "Failed to process refund.",
-    "invalid_type": "Invalid type specified.",
-    "promotion_not_available": "Promotion not available.",
-    "invalid_promotion": "Invalid promotion.",
-    "promotion_redemption_failed": "Failed to redeem promotion.",
-    "promotions_retrieval_failed": "Failed to retrieve promotions.",
-    "promotion_engagement_analysis_failed": "Failed to analyze promotion engagement.",
-    "invalid_ticket_details": "Invalid ticket details.",
-    "ticket_not_found": "Ticket not found.",
-    "support_ticket_creation_failed": "Failed to create support ticket.",
-    "ticket_status_tracking_failed": "Failed to track ticket status.",
-    "ticket_escalation_failed": "Failed to escalate ticket.",
-    "party_member_addition_failed": "Failed to add party member."
-  },
-  "success": {
-    "booking_created": "Success",
-    "booking_updated": "Success",
-    "booking_cancelled": "Success",
-    "check_in_confirmed_success": "Success",
-    "booking_history_retrieved": "Success",
-    "feedback_submitted": "Success",
-    "cart_updated": "Success",
-    "order_created": "Success",
-    "pre_order_created": "Success",
-    "order_updated": "Success",
-    "order_cancelled": "Success",
-    "order_status_tracked_success": "Success",
-    "payment_processed": "Success",
-    "refund_processed": "Success",
-    "promotion_redeemed": "Success",
-    "promotions_retrieved": "Success",
-    "promotion_engagement_analyzed": "Success",
-    "support_ticket_created": "Success",
-    "ticket_status_tracked": "Success",
-    "ticket_escalated": "Success",
-    "party_member_added": "Success"
+    "INVALID_INPUT": "Invalid input provided.",
+    "INVALID_BOOKING_DETAILS": "Invalid booking date or time.",
+    "INVALID_PARTY_SIZE": "Party size is invalid or exceeds table capacity.",
+    "TABLE_NOT_AVAILABLE": "Requested table is not available.",
+    "BOOKING_NOT_FOUND": "Booking not found.",
+    "INVALID_CUSTOMER_ID": "Invalid customer ID.",
+    "INVALID_DIETARY_FILTER": "Invalid dietary preferences.",
+    "MAX_BOOKINGS_EXCEEDED": "Maximum active bookings limit reached.",
+    "CANCELLATION_WINDOW_EXPIRED": "Cancellation window has expired.",
+    "CHECK_IN_FAILED": "Check-in failed. Invalid booking status or QR code.",
+    "INVALID_FEEDBACK_RATING": "Rating must be between 1 and 5.",
+    "INVALID_BRANCH_ID": "Invalid branch ID.",
+    "INVALID_CART_ID": "Cart not found.",
+    "INVALID_MENU_ITEM": "Invalid or unavailable menu item.",
+    "INVALID_CUSTOMIZATIONS": "Invalid customizations provided.",
+    "ORDER_NOT_FOUND": "Order not found.",
+    "WALLET_INSUFFICIENT_FUNDS": "Insufficient funds for order.",
+    "unauthorized_access": "Unauthorized access to order history.",
+    "INVALID_INVITE": "Invalid invite status or method.",
+    "PARTY_MEMBER_ALREADY_INVITED": "Customer already invited to the party.",
+    "PARTY_MEMBER_NOT_FOUND": "Party member not found.",
+    "INVALID_BILL_SPLIT": "Invalid bill split type or parameters.",
+    "NOT_FRIEND": "Customer is not a friend.",
+    "INVALID_PERMISSIONS": "Customer lacks required permissions.",
+    "INVALID_AMOUNT": "Amount is invalid or outside allowed range.",
+    "MAX_SPLIT_PARTICIPANTS_EXCEEDED": "Too many participants for bill split.",
+    "WALLET_NOT_FOUND": "Customer wallet not found.",
+    "CUSTOMER_NOT_FOUND": "Customer not found."
   }
 }

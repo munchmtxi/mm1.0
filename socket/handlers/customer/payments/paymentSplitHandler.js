@@ -1,19 +1,68 @@
 'use strict';
 
+/**
+ * Socket handler for split payment events.
+ */
+
 const socketService = require('@services/common/socketService');
-const paymentSplitEvents = require('@socket/events/customer/payments/paymentSplitEvents');
-const logger = require('@services/logger');
+const socketConstants = require('@constants/common/socketConstants');
+const { formatMessage } = require('@utils/localization');
+const localizationConstants = require('@constants/common/localizationConstants');
+const logger = require('@utils/logger');
 
-const handleSplitPayment = async (io, data, roomId) => {
-  const { serviceId, serviceType, paymentId, amount, status, customerId } = data;
-  await socketService.emit(io, paymentSplitEvents.SPLIT_PAYMENT_PROCESSED, { serviceId, serviceType, paymentId, amount, status, customerId }, roomId);
-  logger.info('Split payment event emitted', { serviceId, paymentId, customerId });
+/**
+ * Handles customer payment confirmed event.
+ */
+exports.handlePaymentConfirmed = (socket, io) => (data) => {
+  const { userId, serviceId, serviceType, billSplitType, splitPayments } = data;
+  const languageCode = socket.user?.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+  try {
+    socketService.emit(
+      io,
+      socketConstants.SOCKET_EVENT_TYPES.CUSTOMER_PAYMENT_CONFIRMED,
+      {
+        userId,
+        role: 'customer',
+        serviceId,
+        serviceType,
+        billSplitType,
+        splitPayments,
+        message: formatMessage('customer', 'payments', languageCode, 'success.payment_initiated', { serviceId, serviceType }),
+      },
+      `customer:${userId}`,
+      languageCode
+    );
+    logger.info('Payment confirmed event handled', { userId, serviceId, serviceType });
+  } catch (error) {
+    logger.error('Failed to handle payment confirmed event', { userId, serviceId, error: error.message });
+  }
 };
 
-const handleRefundProcessed = async (io, data, roomId) => {
-  const { serviceId, serviceType, amount, status, customerId } = data;
-  await socketService.emit(io, paymentSplitEvents.REFUND_PROCESSED, { serviceId, serviceType, amount, status, customerId }, roomId);
-  logger.info('Refund processed event emitted', { serviceId, customerId, amount });
-};
+/**
+ * Handles customer payment refunded event.
+ */
+exports.handlePaymentRefunded = (socket, io) => (data) => {
+  const { userId, serviceId, serviceType, refunds } = data;
+  const languageCode = socket.user?.languageCode || localizationConstants.DEFAULT_LANGUAGE;
 
-module.exports = { handleSplitPayment, handleRefundProcessed };
+  try {
+    socketService.emit(
+      io,
+      socketConstants.SOCKET_EVENT_TYPES.CUSTOMER_PAYMENT_REFUNDED,
+      {
+        userId,
+        role: 'customer',
+        serviceId,
+        serviceType,
+        refunds,
+        message: formatMessage('customer', 'payments', languageCode, 'success.refunded', { serviceId, serviceType }),
+      },
+      `customer:${userId}`,
+      languageCode
+    );
+    logger.info('Payment refunded event handled', { userId, serviceId, serviceType });
+  } catch (error) {
+    logger.error('Failed to handle payment refunded event', { userId, serviceId, error: error.message });
+  }
+};

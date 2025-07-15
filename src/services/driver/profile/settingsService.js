@@ -1,28 +1,13 @@
 'use strict';
 
-/**
- * Driver Settings Service
- * Manages driver profile settings, including country, language,
- * accessibility features, and privacy preferences.
- */
-
 const { Driver, User, AccessibilitySettings, sequelize } = require('@models');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
 const driverConstants = require('@constants/driverConstants');
 const authConstants = require('@constants/common/authConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-/**
- * Configures the driver's country for currency and time format.
- * @param {number} driverId - Driver ID.
- * @param {string} country - Country code (e.g., 'US', 'MW').
- * @returns {Promise<void>}
- */
-async function setCountry(driverId, country) {
+async function setCountry(driverId, country, auditService, notificationService, socketService, pointService) {
   if (!authConstants.AUTH_SETTINGS.SUPPORTED_COUNTRIES.includes(country)) {
     throw new AppError('Invalid country', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
@@ -48,12 +33,19 @@ async function setCountry(driverId, country) {
       message: formatMessage(
         'driver',
         'profile',
-        driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
         'settings.country_updated',
         { country }
       ),
       priority: 'LOW',
     }, { transaction });
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'settings_update').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'settings:country_updated', { driverId, country });
 
@@ -65,13 +57,7 @@ async function setCountry(driverId, country) {
   }
 }
 
-/**
- * Overrides the UI language for the driver.
- * @param {number} driverId - Driver ID.
- * @param {string} language - Language code (e.g., 'en', 'sw').
- * @returns {Promise<void>}
- */
-async function setLanguage(driverId, language) {
+async function setLanguage(driverId, language, auditService, notificationService, socketService, pointService) {
   if (!driverConstants.DRIVER_SETTINGS.SUPPORTED_LANGUAGES.includes(language)) {
     throw new AppError('Invalid language', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
@@ -81,10 +67,8 @@ async function setLanguage(driverId, language) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Update User.preferred_language
     await driver.user.update({ preferred_language: language }, { transaction });
 
-    // Update or create AccessibilitySettings
     let accessibility = await AccessibilitySettings.findOne({
       where: { user_id: driver.user_id },
       transaction,
@@ -114,12 +98,19 @@ async function setLanguage(driverId, language) {
       message: formatMessage(
         'driver',
         'profile',
-        driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
         'settings.language_updated',
         { language }
       ),
       priority: 'LOW',
     }, { transaction });
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'settings_update').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'settings:language_updated', { driverId, language });
 
@@ -131,13 +122,7 @@ async function setLanguage(driverId, language) {
   }
 }
 
-/**
- * Configures accessibility features for the driver.
- * @param {number} driverId - Driver ID.
- * @param {Object} settings - Accessibility settings (e.g., { screenReaderEnabled: true, fontSize: 16 }).
- * @returns {Promise<void>}
- */
-async function configureAccessibility(driverId, settings) {
+async function configureAccessibility(driverId, settings, auditService, notificationService, socketService, pointService) {
   const { screenReaderEnabled, fontSize } = settings;
 
   if (typeof screenReaderEnabled !== 'boolean') {
@@ -182,11 +167,18 @@ async function configureAccessibility(driverId, settings) {
       message: formatMessage(
         'driver',
         'profile',
-        driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
         'settings.accessibility_updated'
       ),
       priority: 'LOW',
     }, { transaction });
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'settings_update').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'settings:accessibility_updated', {
       driverId,
@@ -202,13 +194,7 @@ async function configureAccessibility(driverId, settings) {
   }
 }
 
-/**
- * Updates privacy settings for the driver.
- * @param {number} driverId - Driver ID.
- * @param {Object} preferences - Privacy preferences (e.g., { location_visibility: 'anonymized', data_sharing: 'none', notifications: { email: true } }).
- * @returns {Promise<void>}
- */
-async function updatePrivacySettings(driverId, preferences) {
+async function updatePrivacySettings(driverId, preferences, auditService, notificationService, socketService, pointService) {
   const { location_visibility, data_sharing, notifications } = preferences;
 
   if (location_visibility && !driverConstants.PROFILE_CONSTANTS.PRIVACY_SETTINGS.LOCATION_VISIBILITY.includes(location_visibility)) {
@@ -256,11 +242,18 @@ async function updatePrivacySettings(driverId, preferences) {
       message: formatMessage(
         'driver',
         'profile',
-        driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
         'settings.privacy_updated'
       ),
       priority: 'LOW',
     }, { transaction });
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'settings_update').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'settings:privacy_updated', { driverId, preferences });
 

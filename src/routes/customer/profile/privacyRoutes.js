@@ -1,20 +1,21 @@
 'use strict';
 
+/**
+ * Customer privacy routes.
+ */
+
 const express = require('express');
 const router = express.Router();
-const { updatePrivacySettings, updateDataAccess } = require('@controllers/customer/profile/privacy/privacyController');
-const { setPrivacySettingsSchema, manageDataAccessSchema } = require('@validators/customer/profile/privacy/privacyValidator');
-const { updatePrivacySettings: updatePrivacyMW, updateDataAccess: updateDataAccessMW } = require('@middleware/customer/profile/privacy/privacyMiddleware');
-const { validate } = require('@middleware/validate');
+const privacyController = require('@controllers/customer/profile/privacyController');
+const privacyValidator = require('@validators/customer/profile/privacyValidator');
+const privacyMiddleware = require('@middleware/customer/profile/privacyMiddleware');
 
 /**
  * @swagger
- * /api/customer/profile/privacy/settings:
- *   patch:
- *     summary: Update customer privacy settings
- *     tags: [Privacy]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/privacy/settings:
+ *   post:
+ *     summary: Set privacy settings
+ *     tags: [Customer Privacy]
  *     requestBody:
  *       required: true
  *       content:
@@ -22,51 +23,40 @@ const { validate } = require('@middleware/validate');
  *           schema:
  *             type: object
  *             properties:
- *               anonymizeLocation:
+ *               location_visibility:
+ *                 type: string
+ *                 enum: [public, private, contacts]
+ *               data_sharing:
  *                 type: boolean
- *               anonymizeProfile:
- *                 type: boolean
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Privacy settings updated
+ *         description: Privacy settings updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                     settings:
- *                       type: object
- *                       properties:
- *                         anonymizeLocation:
- *                           type: boolean
- *                         anonymizeProfile:
- *                           type: boolean
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
- *         description: Invalid settings
- *       404:
- *         description: Customer not found
+ *         description: Invalid privacy settings
+ *       500:
+ *         description: Server error
  */
-router.patch('/settings', updatePrivacyMW, validate(setPrivacySettingsSchema), updatePrivacySettings);
+router.post('/settings', privacyMiddleware.validateUserId, privacyMiddleware.validateLanguageCode, privacyValidator.validateSetPrivacySettings, privacyController.setPrivacySettings);
 
 /**
  * @swagger
- * /api/customer/profile/privacy/data-access:
- *   patch:
- *     summary: Update customer data access permissions
- *     tags: [Privacy]
- *     security:
- *       - bearerAuth: []
+ * /api/v1/customer/profile/privacy/data-access:
+ *   post:
+ *     summary: Manage data access permissions
+ *     tags: [Customer Privacy]
  *     requestBody:
  *       required: true
  *       content:
@@ -74,41 +64,29 @@ router.patch('/settings', updatePrivacyMW, validate(setPrivacySettingsSchema), u
  *           schema:
  *             type: object
  *             properties:
- *               shareWithMerchants:
- *                 type: boolean
- *               shareWithThirdParties:
- *                 type: boolean
+ *               permissions:
+ *                 type: object
+ *               languageCode:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Data access permissions updated
+ *         description: Data access settings updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status:
+ *                 success:
+ *                   type: boolean
+ *                 message:
  *                   type: string
  *                 data:
  *                   type: object
- *                   properties:
- *                     userId:
- *                       type: string
- *                     permissions:
- *                       type: object
- *                       properties:
- *                         shareWithMerchants:
- *                           type: boolean
- *                         shareWithThirdParties:
- *                           type: boolean
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden
  *       400:
  *         description: Invalid permissions
- *       404:
- *         description: Customer not found
+ *       500:
+ *         description: Server error
  */
-router.patch('/data-access', updateDataAccessMW, validate(manageDataAccessSchema), updateDataAccess);
+router.post('/data-access', privacyMiddleware.validateUserId, privacyMiddleware.validateLanguageCode, privacyValidator.validateManageDataAccess, privacyController.manageDataAccess);
 
 module.exports = router;

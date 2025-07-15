@@ -1,225 +1,351 @@
 'use strict';
 
-/**
- * deliveryService.js
- * Manages delivery tasks, driver assignments, status tracking, communication, and gamification for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
 const { Op } = require('sequelize');
-const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const locationService = require('@services/common/locationService');
-const { formatMessage } = require('@utils/localization/localization');
+const { sequelize } = require('@models');
+const { Order, Driver, MerchantBranch, Customer, Address, DeliveryHotspot, Staff, Merchant } = sequelize.models;
 const munchConstants = require('@constants/common/munchConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Order, Driver, GamificationPoints, Notification, AuditLog, MerchantBranch, Customer } = require('@models');
+const driverConstants = require('@constants/driver/driverConstants');
+const staffConstants = require('@constants/staff/staffConstants');
+const customerConstants = require('@constants/customer/customerConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { AppError } = require('@utils/AppError');
+const logger = require('@utils/logger');
+const { formatDate, getTimeDifference, isWithinRange } = require('@utils/dateTimeUtils');
 
-/**
- * Assigns a delivery task to a driver.
- * @param {number} orderId - Order ID.
- * @param {number} driverId - Driver ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated order.
- */
-async function assignDelivery(orderId, driverId, io) {
+async function assignDelivery(orderId, driverId, staffId = null) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!orderId || !driverId) throw new Error('Order ID and Driver ID required');
+    if (!orderId || !driverId) {
+      throw new AppError('Invalid input: orderId and driverId required', 400, munchConstants.ERROR_CODES[0]);
+    }
 
-    const order = await Order.findByPk(orderId, { include: [{ model: MerchantBranch, as: 'branch' }] });
-    if (!order) throw new Error('Order not found');
-    if (order.status !== 'ready') throw new Error('Order not ready for delivery');
+    const order = await Order.findByPk(orderId, {
+      include: [
+        {
+          model: MerchantBranch,
+          as: 'branch',
+          include: [
+            { model: Address, as: 'addressRecord' },
+            { model: Merchant, as: 'merchant' },
+          ],
+        },
+        { model: Customer, as: 'customer', include: [{ model: Address, as: 'defaultAddress' }] },
+      ],
+      transaction,
+    });
+    if (!order) {
+      throw new AppError('Order not found', 404, munchConstants.ERROR_CODES[0]);
+    }
+    if (!munchConstants.ORDER_CONSTANTS.ORDER_STATUSES.includes(order.status) || order.status !== 'ready') {
+      throw new AppError('Invalid order status for assignment', 400, munchConstants.ERROR_CODES[0]);
+    }
+    if (!merchantConstants.MERCHANT_TYPES.includes(order.branch?.merchant?.type)) {
+      throw new AppError('Invalid merchant type', 400, merchantConstants.ERROR_CODES[0]);
+    }
 
-    const driver = await Driver.findByPk(driverId);
-    if (!driver || driver.availability_status !== 'available') throw new Error('Driver unavailable');
+    const driver = await Driver.findByPk(driverId, {
+      include: [
+        { model: DriverAvailability, as: 'availability' },
+        { model: Address, as: 'user' },
+      ],
+      transaction,
+    });
+    if (!driver || !driverConstants.DRIVER_STATUSES.includes(driver.status) || driver.status !== 'available') {
+      throw new AppError('Driver unavailable or not found', 400, driverConstants.ERROR_CODES[0]);
+    }
 
-    await order.update({ driver_id: driverId, status: 'out_for_delivery' });
+    const now = new Date();
+    const currentDate = formatDate(now, localizationConstants.LOCALIZATION_SETTINGS.DATE_FORMATS.US);
+    const currentTime = now.toTimeString().split(' ')[0];
+    const availability = driver.availability.find(
+      (avail) =>
+        avail.date === currentDate &&
+        isWithinRange(currentTime, avail.start_time, avail.end_time) &&
+        avail.status === driverConstants.AVAILABILITY_CONSTANTS.AVAILABILITY_STATUSES[0]
+    );
+    if (!availability) {
+      throw new AppError('Driver unavailable at this time', 400, driverConstants.ERROR_CODES[2]);
+    }
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'assign_delivery',
-      details: { orderId, driverId },
-      ipAddress: '127.0.0.1',
+    // Validate certifications
+    const requiredCertifications = driverConstants.CERTIFICATIONS.REQUIRED;
+    const driverCertifications = driver.certifications || [];
+    const missingCertifications = requiredCertifications.filter((cert) => !driverCertifications.includes(cert));
+    if (missingCertifications.length > 0) {
+      throw new AppError('Missing required driver certifications', 400, driverConstants.ERROR_CODES[9]);
+    }
+
+    // Validate driver is within delivery radius
+    const branchLocation = order.branch?.addressRecord?.location;
+    const driverLocation = driver.current_location;
+    if (branchLocation && driverLocation) {
+      const distance = calculateDistance(branchLocation, driverLocation);
+      const maxRadius = Math.min(
+        order.branch.delivery_radius,
+        order.branch.merchant?.service_radius || munchConstants.DELIVERY_CONSTANTS.DELIVERY_SETTINGS.MAX_DELIVERY_RADIUS_KM
+      );
+      if (distance > maxRadius) {
+        throw new AppError('Driver outside delivery radius', 400, munchConstants.ERROR_CODES[0]);
+      }
+    }
+
+    // Check delivery hotspots
+    const hotspots = await DeliveryHotspot.findAll({
+      where: { totalDeliveries: { [Op.gt]: 0 } },
+      transaction,
+    });
+    const isInHotspot = hotspots.some((hotspot) => {
+      const hotspotCenter = hotspot.center;
+      const distance = calculateDistance(hotspotCenter, driver.current_location);
+      return distance <= hotspot.radius;
     });
 
-    socketService.emit(io, 'delivery:assigned', { orderId, driverId, status: 'out_for_delivery' }, `driver:${driverId}`);
+    // Validate staff if provided
+    let staff = null;
+    if (staffId) {
+      staff = await Staff.findByPk(staffId, {
+        include: [
+          { model: MerchantBranch, as: 'branch' },
+          { model: Merchant, as: 'merchant' },
+        ],
+        transaction,
+      });
+      if (
+        !staff ||
+        !staffConstants.STAFF_STATUSES.includes(staff.status) ||
+        staff.status !== 'active' ||
+        staff.branch_id !== order.branch_id ||
+        !staffConstants.STAFF_ROLES.packager.supportedMerchantTypes.includes(order.branch?.merchant?.type)
+      ) {
+        throw new AppError('Invalid or unavailable staff', 400, staffConstants.ERROR_CODES[0]);
+      }
+    }
 
-    await notificationService.sendNotification({
-      userId: driverId,
-      notificationType: 'delivery_assignment',
-      messageKey: 'delivery.assigned',
-      messageParams: { orderNumber: order.order_number },
-      deliveryMethod: 'WHATSAPP',
-      role: 'driver',
-      module: 'delivery',
-      languageCode: driver.preferred_language || 'en',
+    // Update order
+    await order.update(
+      {
+        driver_id: driverId,
+        staff_id: staffId,
+        status: munchConstants.DELIVERY_CONSTANTS.DELIVERY_STATUSES[2], // picked_up
+        routing_info: {
+          ...order.routing_info,
+          driver_assigned_at: formatDate(now),
+          hotspot_assigned: isInHotspot,
+          staff_assigned: !!staffId,
+          merchant_id: order.branch?.merchant?.id,
+          currency: localizationConstants.COUNTRY_CURRENCY_MAP[order.branch?.merchant?.country] || munchConstants.MUNCH_SETTINGS.DEFAULT_CURRENCY,
+        },
+      },
+      { transaction }
+    );
+
+    // Log audit
+    logger.logApiEvent('Delivery assigned', {
+      audit_type: munchConstants.AUDIT_TYPES.ASSIGN_DELIVERY,
+      orderId,
+      driverId,
+      staffId,
+      merchantId: order.branch?.merchant?.id,
     });
 
-    return order;
+    await transaction.commit();
+    logger.info('Delivery assigned', { orderId, driverId, staffId, hotspot_assigned: isInHotspot });
+    return {
+      orderId,
+      status: order.status,
+      driverId,
+      staffId,
+      hotspot_assigned: isInHotspot,
+      merchantName: order.branch?.merchant?.business_name,
+      success_message: munchConstants.SUCCESS_MESSAGES[2], // Delivery tracked
+    };
   } catch (error) {
-    logger.error('Error assigning delivery', { error: error.message });
+    await transaction.rollback();
+    logger.logErrorEvent('Error assigning delivery', { error: error.message, orderId, driverId });
     throw error;
   }
 }
 
-/**
- * Tracks real-time delivery progress.
- * @param {number} orderId - Order ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Delivery status.
- */
-async function trackDeliveryStatus(orderId, io) {
+async function trackDeliveryStatus(orderId) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!orderId) throw new Error('Order ID required');
+    if (!orderId) {
+      throw new AppError('Invalid input: orderId required', 400, munchConstants.ERROR_CODES[0]);
+    }
 
     const order = await Order.findByPk(orderId, {
       include: [
-        { model: Driver, as: 'driver' },
-        { model: Customer, as: 'customer' },
-        { model: MerchantBranch, as: 'branch' },
+        {
+          model: Driver,
+          as: 'driver',
+          include: [
+            { model: Address, as: 'user' },
+            { model: DriverAvailability, as: 'availability' },
+          ],
+        },
+        { model: Customer, as: 'customer', include: [{ model: Address, as: 'defaultAddress' }] },
+        {
+          model: MerchantBranch,
+          as: 'branch',
+          include: [
+            { model: Address, as: 'addressRecord' },
+            { model: Merchant, as: 'merchant' },
+          ],
+        },
+        { model: Staff, as: 'staff' },
       ],
+      transaction,
     });
-    if (!order) throw new Error('Order not found');
+    if (!order) {
+      throw new AppError('Order not found', 404, munchConstants.ERROR_CODES[0]);
+    }
 
-    let currentLocation = null;
-    if (order.driver && order.driver.current_location) {
-      currentLocation = await locationService.resolveLocation(order.driver.current_location);
+    // Check hotspot for delivery location
+    const hotspots = await DeliveryHotspot.findAll({
+      where: { totalDeliveries: { [Op.gt]: 0 } },
+      transaction,
+    });
+    const isInHotspot = hotspots.some((hotspot) => {
+      const hotspotCenter = hotspot.center;
+      const deliveryLocation = order.delivery_location || order.customer?.defaultAddress?.location;
+      const distance = calculateDistance(hotspotCenter, deliveryLocation);
+      return distance <= hotspot.radius;
+    });
+
+    // Calculate estimated delivery time if not set
+    let estimatedDeliveryTime = order.estimated_delivery_time;
+    if (!estimatedDeliveryTime && order.driver?.current_location && order.delivery_location) {
+      const distance = calculateDistance(order.driver.current_location, order.delivery_location);
+      const avgSpeedKmh = 30; // Assume average delivery speed
+      const estimatedMinutes = (distance / avgSpeedKmh) * 60;
+      estimatedDeliveryTime = formatDate(
+        addDaysToDate(new Date(), estimatedMinutes / (24 * 60)),
+        localizationConstants.LOCALIZATION_SETTINGS.DATE_FORMATS.US
+      );
     }
 
     const status = {
       orderId,
       status: order.status,
       driverId: order.driver_id,
-      driverLocation: currentLocation?.coordinates,
-      estimatedDeliveryTime: order.estimated_delivery_time,
+      driverName: order.driver?.name || null,
+      driverPhone: order.driver ? order.driver.format_phone_for_whatsapp() : null,
+      driverLocation: order.driver?.current_location?.coordinates || null,
+      staffId: order.staff_id,
+      staffName: order.staff?.name || null,
+      customerPhone: order.customer ? order.customer.format_phone_for_whatsapp() : null,
+      customerAddress: order.customer?.defaultAddress?.formattedAddress || order.delivery_location,
+      branchAddress: order.branch?.addressRecord?.formattedAddress || null,
+      merchantName: order.branch?.merchant?.business_name || null,
+      merchantPhone: order.branch?.merchant ? order.branch.merchant.format_phone_for_whatsapp() : null,
+      estimatedDeliveryTime,
       actualDeliveryTime: order.actual_delivery_time,
       deliveryLocation: order.delivery_location,
+      isInHotspot,
+      isFeedbackRequested: order.is_feedback_requested,
+      currency: localizationConstants.COUNTRY_CURRENCY_MAP[order.branch?.merchant?.country] || munchConstants.MUNCH_SETTINGS.DEFAULT_CURRENCY,
     };
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'track_delivery_status',
-      details: { orderId, status },
-      ipAddress: '127.0.0.1',
+    // Log audit
+    logger.logApiEvent('Delivery status tracked', {
+      audit_type: munchConstants.AUDIT_TYPES.TRACK_DELIVERY_STATUS,
+      orderId,
+      status: order.status,
     });
 
-    socketService.emit(io, 'delivery:statusUpdate', status, `order:${orderId}`);
-
+    await transaction.commit();
+    logger.info('Delivery status tracked', { orderId, status: order.status });
     return status;
   } catch (error) {
-    logger.error('Error tracking delivery status', { error: error.message });
+    await transaction.rollback();
+    logger.logErrorEvent('Error tracking delivery status', { error: error.message, orderId });
     throw error;
   }
 }
 
-/**
- * Facilitates communication with a driver.
- * @param {number} orderId - Order ID.
- * @param {string} message - Message content.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Notification result.
- */
-async function communicateWithDriver(orderId, message, io) {
-  try {
-    if (!orderId || !message) throw new Error('Order ID and message required');
+async function communicateWithDriver(orderId, message, sender = 'system') {
+  const transaction = await sequelize.transaction();
 
-    const order = await Order.findByPk(orderId, { include: [{ model: Driver, as: 'driver' }] });
-    if (!order || !order.driver) throw new Error('Order or driver not found');
+  try {
+    if (!orderId || !message) {
+      throw new AppError('Invalid input: orderId and message required', 400, munchConstants.ERROR_CODES[0]);
+    }
+
+    const order = await Order.findByPk(orderId, {
+      include: [
+        {
+          model: Driver,
+          as: 'driver',
+          include: [{ model: Address, as: 'user' }],
+        },
+        {
+          model: MerchantBranch,
+          as: 'branch',
+          include: [{ model: Merchant, as: 'merchant' }],
+        },
+        { model: Staff, as: 'staff' },
+        { model: Customer, as: 'customer' },
+      ],
+      transaction,
+    });
+    if (!order || !order.driver) {
+      throw new AppError('Order or driver not found', 404, munchConstants.ERROR_CODES[1]);
+    }
 
     const sanitizedMessage = message.trim();
-    if (!sanitizedMessage) throw new Error('Invalid message');
+    if (!sanitizedMessage) {
+      throw new AppError('Invalid message', 400, munchConstants.ERROR_CODES[0]);
+    }
 
-    const notificationResult = await notificationService.sendNotification({
-      userId: order.driver_id,
-      notificationType: 'driver_communication',
-      messageKey: 'delivery.message',
-      messageParams: { message: sanitizedMessage, orderNumber: order.order_number },
-      deliveryMethod: 'WHATSAPP',
-      role: 'driver',
-      module: 'delivery',
-      languageCode: order.driver.preferred_language || 'en',
+    // Log communication in routing_history
+    const routingHistory = order.routing_history || [];
+    routingHistory.push({
+      timestamp: formatDate(new Date()),
+      message: sanitizedMessage,
+      from: sender === 'staff' && order.staff ? order.staff.name : order.branch?.merchant?.business_name || 'System',
+      to: order.driver.name,
+      type: munchConstants.NOTIFICATION_TYPES.DRIVER_COMMUNICATION,
     });
 
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'communicate_with_driver',
-      details: { orderId, driverId: order.driver_id, message: sanitizedMessage },
-      ipAddress: '127.0.0.1',
-    });
+    await order.update({ routing_history }, { transaction });
 
-    socketService.emit(io, 'delivery:driverMessage', {
+    // Log audit
+    logger.logApiEvent('Driver communication', {
+      audit_type: munchConstants.AUDIT_TYPES.COMMUNICATE_WITH_DRIVER,
       orderId,
       driverId: order.driver_id,
       message: sanitizedMessage,
-    }, `driver:${order.driver_id}`);
+    });
 
-    return notificationResult;
+    await transaction.commit();
+    logger.info('Driver communication initiated', { orderId, driverId: order.driver_id, message: sanitizedMessage });
+    return {
+      orderId,
+      driverId: order.driver_id,
+      driverPhone: order.driver.format_phone_for_whatsapp(),
+      merchantName: order.branch?.merchant?.business_name,
+      customerPhone: order.customer ? order.customer.format_phone_for_whatsapp() : null,
+      message: sanitizedMessage,
+      success_message: munchConstants.SUCCESS_MESSAGES[3], // Driver message sent
+    };
   } catch (error) {
-    logger.error('Error communicating with driver', { error: error.message });
+    await transaction.rollback();
+    logger.logErrorEvent('Error communicating with driver', { error: error.message, orderId });
     throw error;
   }
 }
 
-/**
- * Awards gamification points for driver deliveries.
- * @param {number} driverId - Driver ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Points record.
- */
-async function logDeliveryGamification(driverId, io) {
-  try {
-    if (!driverId) throw new Error('Driver ID required');
-
-    const driver = await Driver.findByPk(driverId);
-    if (!driver) throw new Error('Driver not found');
-
-    const recentDeliveries = await Order.count({
-      where: {
-        driver_id: driverId,
-        status: 'completed',
-        actual_delivery_time: { [Op.gte]: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      },
-    });
-
-    if (recentDeliveries === 0) throw new Error('No recent deliveries');
-
-    const pointsRecord = await pointService.awardPoints({
-      userId: driverId,
-      role: 'driver',
-      action: 'delivery_completed',
-      languageCode: driver.preferred_language || 'en',
-    });
-
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'log_delivery_gamification',
-      details: { driverId, points: pointsRecord.points },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'gamification:pointsAwarded', {
-      driverId,
-      points: pointsRecord.points,
-      action: 'delivery_completed',
-    }, `driver:${driverId}`);
-
-    return pointsRecord;
-  } catch (error) {
-    logger.error('Error logging delivery gamification', { error: error.message });
-    throw error;
-  }
+function calculateDistance(loc1, loc2) {
+  // Placeholder for Haversine formula or external map provider
+  // Example: Use google_maps or openstreetmap based on localizationConstants.SUPPORTED_MAP_PROVIDERS
+  return 0; // Implement based on requirements
 }
 
 module.exports = {
   assignDelivery,
   trackDeliveryStatus,
   communicateWithDriver,
-  logDeliveryGamification,
 };

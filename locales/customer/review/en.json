@@ -1,31 +1,26 @@
 {
-  "error": {
-    "invalid_customer": "Invalid customer ID",
-    "order_not_found": "Order not found",
-    "booking_not_found": "Booking not found",
-    "ride_not_found": "Ride not found",
-    "invalid_service_type": "Invalid service type",
-    "invalid_order_status": "Order must be completed to be reviewed",
-    "invalid_booking_status": "Booking must be seated to be reviewed",
-    "invalid_ride_status": "Ride must be completed to be reviewed",
-    "invalid_rating": "Rating must be between 1 from and 5",
-    "review_already_submitted": "Review already submitted",
-    "review_submission_failed": "Failed to submit review",
-    "review_not_found": "Review not found",
-    "review_not_approved": "Review is not approved",
-    "invalid_action": "Invalid interaction type",
-    "already_upgraded": "You have already upvoted this review",
-    "comment_required": "Comment is required for commenting",
-    "review_interaction_failed": "Failed to process interaction",
-    "unauthorized": "Unauthorized to perform this action",
-    "review_not_editable": "Review cannot be edited",
-    "invalid_photos": "Invalid photo URLs"
+  "success": {
+    "review_submitted": "Review submitted successfully",
+    "review_updated": "Review updated successfully",
+    "review_deleted": "Review deleted successfully",
+    "interaction_upvote": "Review upvoted successfully",
+    "interaction_comment": "Comment added to review successfully"
   },
-  "reviews": {
-    "review_submitted": "Your review for {serviceType} {serviceId} has been submitted with rating {rating}.",
-    "review_updated": "Your review {reviewId} has been updated.",
-    "review_deleted": "Your review {review_id} has been deleted.",
-    "review_upvoted": "Your review {reviewId} has been upvoted.",
-    "review_commented": "Your review {reviewId} has received a new comment."
-  }
+  "error": {
+    "generic": "An error occurred. Please try again.",
+    "INVALID_SERVICE_TYPE": "Invalid service type provided",
+    "INVALID_TARGET_TYPE": "Invalid target type provided",
+    "INVALID_RATING": "Rating must be between 1 and 5",
+    "REVIEW_NOT_FOUND": "Review not found",
+    "INVALID_INTERACTION_TYPE": "Invalid interaction type",
+    "REVIEW_SUBMISSION_FAILED": "Failed to submit review",
+    "REVIEW_UPDATE_FAILED": "Failed to update review",
+    "REVIEW_DELETION_FAILED": "Failed to delete review",
+    "REVIEW_INTERACTION_FAILED": "Failed to record interaction"
+  },
+  "merchant_review_received": "You received a {rating}-star review for {serviceType}!",
+  "staff_review_received": "You received a {rating}-star review for {serviceType}!",
+  "driver_review_received": "You received a {rating}-star review for {serviceType}!",
+  "interaction_upvote": "Your review received an upvote!",
+  "interaction_comment": "Your review received a new comment!"
 }

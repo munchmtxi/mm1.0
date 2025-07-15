@@ -1,31 +1,29 @@
 'use strict';
 
 const { body } = require('express-validator');
-const customerConstants = require('@constants/customer/customerConstants');
-const { validate } = require('@utils/validation');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { formatMessage } = require('@utils/localization');
 
-const validateEnrollSubscription = [
-  body('planId').isIn(['BASIC', 'PREMIUM']),
-  body('serviceType').isIn(['mtxi', 'munch', 'mtables']),
-  body('paymentMethodId').isInt(),
-  validate,
-];
-
-const validateManageSubscription = [
-  body('subscriptionId').isInt(),
-  body('action').isIn(['UPGRADE', 'PAUSE']),
-  body('newPlanId').optional().isIn(['BASIC', 'PREMIUM']),
-  body('paymentMethodId').optional().isInt(),
-  validate,
-];
-
-const validateCancelSubscription = [
-  body('subscriptionId').isInt(),
-  validate,
-];
-
+/**
+ * Subscription validation middleware
+ */
 module.exports = {
-  validateEnrollSubscription,
-  validateManageSubscription,
-  validateCancelSubscription,
+  enrollSubscription: [
+    body('planId').isString().withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_plan_id')),
+    body('serviceType').isString().withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_service_type')),
+  ],
+  manageSubscription: [
+    body('subscriptionId').isInt().withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_subscription_id')),
+    body('action').isString().isIn(['UPGRADE', 'DOWNGRADE']).withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_action')),
+    body('newPlanId').optional().isString().withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_plan_id')),
+  ],
+  cancelSubscription: [
+    body('subscriptionId').isInt().withMessage((_, { req }) => 
+      formatMessage('customer', 'subscription', req.languageCode || localizationConstants.DEFAULT_LANGUAGE, 'error.invalid_subscription_id')),
+  ],
 };

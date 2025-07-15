@@ -1,5 +1,8 @@
 'use strict';
 
+/**
+ * Controller for customer cancellation and refund.
+ */
 const { sequelize } = require('@models');
 const cancellationService = require('@services/customer/cancellationService');
 const notificationService = require('@services/common/notificationService');
@@ -11,18 +14,21 @@ const { formatMessage } = require('@utils/localization/localization');
 const AppError = require('@utils/AppError');
 const catchAsync = require('@utils/catchAsync');
 const logger = require('@utils/logger');
-const authConstants = require('@constants/common/authConstants');
+const customerConstants = require('@constants/customer/customerConstants');
 const mtablesConstants = require('@constants/mtablesConstants');
 const munchConstants = require('@constants/munchConstants');
 const rideConstants = require('@constants/rideConstants');
+const mparkConstants = require('@constants/mparkConstants');
 const paymentConstants = require('@constants/paymentConstants');
 
+/**
+ * Processes cancellation request.
+ */
 const processCancellation = catchAsync(async (req, res, next) => {
   const { serviceId, serviceType, reason } = req.body;
   const userId = req.user.id;
   const ipAddress = req.ip;
   const io = req.app.get('io');
-  let gamificationError = null;
 
   logger.info('Processing cancellation request', { serviceId, serviceType, userId });
 
@@ -30,6 +36,7 @@ const processCancellation = catchAsync(async (req, res, next) => {
   try {
     const { serviceType: resolvedServiceType, reference, user } = await cancellationService.processCancellation({
       serviceId,
+      serviceType,
       reason,
       userId,
       transaction,
@@ -53,16 +60,24 @@ const processCancellation = catchAsync(async (req, res, next) => {
       bookingId: resolvedServiceType === 'mtables' ? serviceId : null,
       orderId: resolvedServiceType === 'munch' ? serviceId : null,
       inDiningOrderId: resolvedServiceType === 'in_dining' ? serviceId : null,
+      parkingBookingId: resolvedServiceType === 'mpark' ? serviceId : null,
     }, transaction);
 
     await auditService.logAction({
       userId,
-      logType: 'CANCELLATION',
+      role: 'customer',
+      action: 'CANCELLATION',
       details: { serviceType: resolvedServiceType, serviceId, reason },
       ipAddress,
     }, transaction);
 
-    await socketService.emit(io, `cancellation:${resolvedServiceType}:${serviceId}`, { status: 'cancelled', reason });
+    await socketService.emit(io, `cancellation:${resolvedServiceType}:${serviceId}`, {
+      userId,
+      role: 'customer',
+      status: 'cancelled',
+      reason,
+      auditAction: 'CANCELLATION_EVENT',
+    });
 
     // Award gamification points
     const gamificationActions = {
@@ -70,7 +85,9 @@ const processCancellation = catchAsync(async (req, res, next) => {
       munch: munchConstants.GAMIFICATION_ACTIONS,
       mtxi: rideConstants.GAMIFICATION_ACTIONS,
       in_dining: mtablesConstants.GAMIFICATION_ACTIONS,
+      mpark: mparkConstants.GAMIFICATION_ACTIONS,
     }[resolvedServiceType];
+    let gamificationError = null;
     const action = gamificationActions?.CANCELLATION;
     if (action) {
       try {
@@ -94,21 +111,25 @@ const processCancellation = catchAsync(async (req, res, next) => {
   } catch (error) {
     await transaction.rollback();
     logger.error('Cancellation failed', { error: error.message, serviceId, userId });
-    return next(new AppError(error.message, 400, 'CANCELLATION_FAILED'));
+    return next(new AppError(error.message, 400, customerConstants.ERROR_CODES.find(code => code === 'CANCELLATION_FAILED')));
   }
 });
 
+/**
+ * Processes refund request.
+ */
 const issueRefund = catchAsync(async (req, res, next) => {
-  const { serviceId, walletId } = req.body;
+  const { serviceId, walletId, serviceType } = req.body;
   const userId = req.user.id;
   const ipAddress = req.ip;
 
-  logger.info('Processing refund request', { serviceId, walletId, userId });
+  logger.info('Processing refund request', { serviceId, walletId, serviceType, userId });
 
   const transaction = await sequelize.transaction();
   try {
-    const { payment, serviceType, adjustedAmount, wallet, eventService } = await cancellationService.issueRefund({
+    const { payment, serviceType: resolvedServiceType, adjustedAmount, wallet } = await cancellationService.issueRefund({
       serviceId,
+      serviceType,
       walletId,
       userId,
       transaction,
@@ -119,7 +140,7 @@ const issueRefund = catchAsync(async (req, res, next) => {
       amount: adjustedAmount,
       type: paymentConstants.TRANSACTION_TYPES.REFUNDED,
       currency: payment.currency,
-      description: `Refund for ${serviceType} service ${serviceId}`,
+      description: `Refund for ${resolvedServiceType} service ${serviceId}`,
     }, transaction);
 
     await payment.update({ status: paymentConstants.PAYMENT_STATUSES.REFUNDED }, { transaction });
@@ -129,7 +150,7 @@ const issueRefund = catchAsync(async (req, res, next) => {
       module: 'notifications',
       languageCode: 'en',
       messageKey: 'cancellation.refunded',
-      params: { amount: adjustedAmount, currency: payment.currency, serviceType },
+      params: { amount: adjustedAmount, currency: payment.currency, serviceType: resolvedServiceType },
     });
 
     await notificationService.sendNotification({
@@ -142,8 +163,9 @@ const issueRefund = catchAsync(async (req, res, next) => {
 
     await auditService.logAction({
       userId,
-      logType: 'refund_processed',
-      details: { serviceId, serviceType, amount: adjustedAmount, currency: payment.currency },
+      role: 'customer',
+      action: 'refund_processed',
+      details: { serviceId, serviceType: resolvedServiceType, amount: adjustedAmount, currency: payment.currency },
       ipAddress,
     }, transaction);
 
@@ -156,7 +178,7 @@ const issueRefund = catchAsync(async (req, res, next) => {
   } catch (error) {
     await transaction.rollback();
     logger.error('Refund failed', { error: error.message, serviceId, userId });
-    return next(new AppError(error.message, 400, 'REFUND_FAILED'));
+    return next(new AppError(error.message, 400, customerConstants.ERROR_CODES.find(code => code === 'REFUND_FAILED')));
   }
 });
 

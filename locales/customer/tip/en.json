@@ -1,23 +1,18 @@
 {
-  "error": {
-    "invalid_customer": "Invalid customer account",
-    "invalid_recipient": "Invalid recipient (must be driver or staff)",
-    "invalid_ride": "Invalid or unauthorized ride",
-    "invalid_order": "Invalid or unauthorized order",
-    "invalid_booking": "Invalid or unauthorized booking",
-    "invalid_event_service": "Invalid or unauthorized event service",
-    "invalid_in_dining_order": "Invalid or unauthorized in-dining order",
-    "invalid_wallet": "Invalid wallet or currency mismatch",
-    "insufficient_balance": "Insufficient balance",
-    "invalid_amount": "Invalid tip amount",
-    "tip_already_exists": "Tip already exists for this service",
-    "tip_not_found": "Tip not found or unauthorized",
-    "tip_action_failed": "Tip action failed"
+  "success": {
+    "tip_created": "Tip created successfully for {amount} {currency}",
+    "tip_updated": "Tip updated successfully",
+    "tips_retrieved": "Tips retrieved successfully"
   },
-  "notification": {
-    "tip_sent": "You sent a {amount} {currency} tip to {recipientName}",
-    "tip_received": "You received a {amount} {currency} tip from {customerName}",
-    "tip_updated": "Your tip of {amount} {currency} to {recipientName} was updated",
-    "tip_failed": "Your tip of {amount} {currency} to {recipientName} failed"
+  "error": {
+    "invalid_customer": "Invalid customer",
+    "invalid_service": "Exactly one service ID must be provided",
+    "tip_creation_failed": "Failed to create tip",
+    "tip_update_failed": "Failed to update tip",
+    "tips_retrieval_failed": "Failed to retrieve tips"
+  },
+  "tip": {
+    "received": "You received a tip of {amount} {currency} for {serviceType}",
+    "updated": "Tip {tipId} status updated to {status}"
   }
 }

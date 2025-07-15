@@ -1,35 +1,18 @@
 'use strict';
 
-/**
- * Configuration Service for mtables (Admin)
- * Manages table assignment policies, gamification rules, waitlist settings, and pricing models.
- * Integrates with notification, socket, audit, point, and localization services.
- *
- * Last Updated: May 27, 2025
- */
-
 const { sequelize } = require('sequelize');
 const { MerchantBranch, Table, BookingTimeSlot } = require('@models');
-const mtablesConstants = require('@constants/common/mtablesConstants');
+const mtablesConstants = require('@constants/admin/mtablesConstants');
 const adminServiceConstants = require('@constants/admin/adminServiceConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils/logger');
 const { AppError } = require('@utils/AppError');
 
-/**
- * Defines table assignment policies for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} rules - Table assignment rules (e.g., autoAssign, minCapacity).
- * @returns {Promise<Object>} Updated table rules.
- */
-async function setTableRules(restaurantId, rules) {
+async function setTableRules(restaurantId, rules, { pointService }) {
   try {
     if (!restaurantId || !rules) {
       throw new AppError(
-        'Restaurant ID and rules required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -38,37 +21,35 @@ async function setTableRules(restaurantId, rules) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
     }
 
-    // Validate rules
     const { autoAssign = true, minCapacity, maxCapacity, preferredLocation } = rules;
-    if (minCapacity && (minCapacity < mtablesConstants.TABLE_MANAGEMENT.MIN_TABLE_CAPACITY)) {
+    if (minCapacity && minCapacity < mtablesConstants.TABLE_MANAGEMENT.MIN_TABLE_CAPACITY) {
       throw new AppError(
-        `Minimum capacity must be at least ${mtablesConstants.TABLE_MANAGEMENT.MIN_TABLE_CAPACITY}`,
+        formatMessage('error.invalid_min_capacity', { min: mtablesConstants.TABLE_MANAGEMENT.MIN_TABLE_CAPACITY }),
         400,
         mtablesConstants.ERROR_CODES.INVALID_PARTY_SIZE
       );
     }
-    if (maxCapacity && (maxCapacity > mtablesConstants.TABLE_MANAGEMENT.MAX_TABLE_CAPACITY)) {
+    if (maxCapacity && maxCapacity > mtablesConstants.TABLE_MANAGEMENT.MAX_TABLE_CAPACITY) {
       throw new AppError(
-        `Maximum capacity cannot exceed ${mtablesConstants.TABLE_MANAGEMENT.MAX_TABLE_CAPACITY}`,
+        formatMessage('error.invalid_max_capacity', { max: mtablesConstants.TABLE_MANAGEMENT.MAX_TABLE_CAPACITY }),
         400,
         mtablesConstants.ERROR_CODES.INVALID_PARTY_SIZE
       );
     }
     if (preferredLocation && !mtablesConstants.TABLE_MANAGEMENT.LOCATION_TYPES.includes(preferredLocation)) {
       throw new AppError(
-        'Invalid location type',
+        formatMessage('error.invalid_location_type'),
         400,
         mtablesConstants.ERROR_CODES.TABLE_NOT_AVAILABLE
       );
     }
 
-    // Update time slot settings
     await BookingTimeSlot.update(
       {
         auto_assign_tables: autoAssign,
@@ -78,31 +59,11 @@ async function setTableRules(restaurantId, rules) {
       { where: { branch_id: restaurantId } }
     );
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'configuration.table_rules_updated',
-      messageParams: { restaurantId, autoAssign },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'configuration:table_rules_updated', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      rules: { autoAssign, minCapacity, maxCapacity, preferredLocation },
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, rules },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.settingsUpdated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SETTINGS_UPDATE.points,
     });
 
     logger.info('Table rules updated', { restaurantId, rules });
@@ -113,17 +74,11 @@ async function setTableRules(restaurantId, rules) {
   }
 }
 
-/**
- * Sets gamification point values for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} gamificationRules - Point values for actions.
- * @returns {Promise<Object>} Updated gamification rules.
- */
-async function configureGamificationRules(restaurantId, gamificationRules) {
+async function configureGamificationRules(restaurantId, gamificationRules, { pointService }) {
   try {
     if (!restaurantId || !gamificationRules) {
       throw new AppError(
-        'Restaurant ID and gamification rules required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -132,31 +87,29 @@ async function configureGamificationRules(restaurantId, gamificationRules) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
     }
 
-    // Validate gamification rules
     for (const [action, config] of Object.entries(gamificationRules)) {
-      if (!mtablesConstants.GAMIFICATION_ACTIONS[action]) {
+      if (!mtablesConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS[action] && !mtablesConstants.GAMIFICATION_CONSTANTS.STAFF_ACTIONS[action]) {
         throw new AppError(
-          `Invalid gamification action: ${action}`,
+          formatMessage('error.invalid_gamification_action', { action }),
           400,
           mtablesConstants.ERROR_CODES.GAMIFICATION_POINTS_FAILED
         );
       }
       if (config.points < 0 || config.walletCredit < 0) {
         throw new AppError(
-          'Points and wallet credit must be non-negative',
+          formatMessage('error.invalid_gamification_values'),
           400,
           mtablesConstants.ERROR_CODES.GAMIFICATION_POINTS_FAILED
         );
       }
     }
 
-    // Store gamification rules in branch metadata
     await branch.update({
       booking_metadata: {
         ...branch.booking_metadata,
@@ -164,31 +117,11 @@ async function configureGamificationRules(restaurantId, gamificationRules) {
       },
     });
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'configuration.gamification_updated',
-      messageParams: { restaurantId },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'configuration:gamification_updated', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      gamificationRules,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, gamificationRules },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.settingsUpdated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SETTINGS_UPDATE.points,
     });
 
     logger.info('Gamification rules updated', { restaurantId, gamificationRules });
@@ -199,17 +132,11 @@ async function configureGamificationRules(restaurantId, gamificationRules) {
   }
 }
 
-/**
- * Adjusts waitlist policies for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} waitlistSettings - Waitlist settings (e.g., maxWaitlist, notificationInterval).
- * @returns {Promise<Object>} Updated waitlist settings.
- */
-async function updateWaitlistSettings(restaurantId, waitlistSettings) {
+async function updateWaitlistSettings(restaurantId, waitlistSettings, { pointService }) {
   try {
     if (!restaurantId || !waitlistSettings) {
       throw new AppError(
-        'Restaurant ID and waitlist settings required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -218,30 +145,28 @@ async function updateWaitlistSettings(restaurantId, waitlistSettings) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
     }
 
-    // Validate waitlist settings
     const { maxWaitlist, notificationInterval } = waitlistSettings;
-    if (maxWaitlist && (maxWaitlist > mtablesConstants.TABLE_MANAGEMENT.WAITLIST_LIMIT)) {
+    if (maxWaitlist && maxWaitlist > mtablesConstants.TABLE_MANAGEMENT.WAITLIST_LIMIT) {
       throw new AppError(
-        `Waitlist limit cannot exceed ${mtablesConstants.TABLE_MANAGEMENT.WAITLIST_LIMIT}`,
+        formatMessage('error.max_waitlist_exceeded', { limit: mtablesConstants.TABLE_MANAGEMENT.WAITLIST_LIMIT }),
         400,
         mtablesConstants.ERROR_CODES.MAX_BOOKINGS_EXCEEDED
       );
     }
     if (notificationInterval && (notificationInterval < 5 || notificationInterval > 60)) {
       throw new AppError(
-        'Notification interval must be between 5 and 60 minutes',
+        formatMessage('error.invalid_notification_interval'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
     }
 
-    // Update branch metadata with waitlist settings
     await branch.update({
       booking_metadata: {
         ...branch.booking_metadata,
@@ -252,31 +177,11 @@ async function updateWaitlistSettings(restaurantId, waitlistSettings) {
       },
     });
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'configuration.waitlist_updated',
-      messageParams: { restaurantId, maxWaitlist },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'configuration:waitlist_updated', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      waitlistSettings,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, waitlistSettings },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.settingsUpdated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SETTINGS_UPDATE.points,
     });
 
     logger.info('Waitlist settings updated', { restaurantId, waitlistSettings });
@@ -287,17 +192,11 @@ async function updateWaitlistSettings(restaurantId, waitlistSettings) {
   }
 }
 
-/**
- * Sets deposit and service fee models for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @param {Object} pricingModels - Pricing configurations (e.g., depositPercentage, serviceFee).
- * @returns {Promise<Object>} Updated pricing models.
- */
-async function configurePricingModels(restaurantId, pricingModels) {
+async function configurePricingModels(restaurantId, pricingModels, { pointService }) {
   try {
     if (!restaurantId || !pricingModels) {
       throw new AppError(
-        'Restaurant ID and pricing models required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -306,13 +205,12 @@ async function configurePricingModels(restaurantId, pricingModels) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
     }
 
-    // Validate pricing models
     const { depositPercentage, serviceFee } = pricingModels;
     if (
       depositPercentage &&
@@ -320,20 +218,22 @@ async function configurePricingModels(restaurantId, pricingModels) {
         depositPercentage > mtablesConstants.BOOKING_POLICIES.MAX_DEPOSIT_PERCENTAGE)
     ) {
       throw new AppError(
-        `Deposit percentage must be between ${mtablesConstants.BOOKING_POLICIES.MIN_DEPOSIT_PERCENTAGE}% and ${mtablesConstants.BOOKING_POLICIES.MAX_DEPOSIT_PERCENTAGE}%`,
+        formatMessage('error.invalid_deposit_percentage', {
+          min: mtablesConstants.BOOKING_POLICIES.MIN_DEPOSIT_PERCENTAGE,
+          max: mtablesConstants.BOOKING_POLICIES.MAX_DEPOSIT_PERCENTAGE,
+        }),
         400,
         mtablesConstants.ERROR_CODES.PAYMENT_FAILED
       );
     }
     if (serviceFee && (serviceFee < 0 || serviceFee > 100)) {
       throw new AppError(
-        'Service fee must be between 0 and 100',
+        formatMessage('error.invalid_service_fee'),
         400,
         mtablesConstants.ERROR_CODES.PAYMENT_FAILED
       );
     }
 
-    // Update branch metadata with pricing models
     await branch.update({
       booking_metadata: {
         ...branch.booking_metadata,
@@ -344,31 +244,11 @@ async function configurePricingModels(restaurantId, pricingModels) {
       },
     });
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: branch.merchant_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'configuration.pricing_updated',
-      messageParams: { restaurantId, depositPercentage },
-      role: 'merchant',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'configuration:pricing_updated', {
+    await pointService.awardPoints({
       userId: branch.merchant_id.toString(),
       role: 'merchant',
-      restaurantId,
-      pricingModels,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, pricingModels },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.settingsUpdated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS.SETTINGS_UPDATE.points,
     });
 
     logger.info('Pricing models updated', { restaurantId, pricingModels });

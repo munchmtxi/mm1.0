@@ -1,6 +1,11 @@
+// src/middleware/customer/disputes/disputeMiddleware.js
 'use strict';
 
-const { authenticate, restrictTo, checkPermissions } = require('@middleware/common/auth/authMiddleware');
+/**
+ * Dispute middleware for validating dispute-related requests.
+ */
+
+const { restrictTo, checkPermissions } = require('@middleware/common/auth/authMiddleware');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const catchAsync = require('@utils/catchAsync');
@@ -12,7 +17,7 @@ const validateDisputeAccess = catchAsync(async (req, res, next) => {
 
   logger.info('Validating dispute access', { serviceId, customerId });
 
-  const { Booking, Order, Ride } = require('@models');
+  const { Booking, Order, Ride, ParkingBooking, InDiningOrder } = require('@models');
   let service;
 
   service = await Booking.findByPk(serviceId);
@@ -33,7 +38,21 @@ const validateDisputeAccess = catchAsync(async (req, res, next) => {
           throw new AppError('Unauthorized dispute', 403, disputeConstants.ERROR_CODES.UNAUTHORIZED_DISPUTE);
         }
       } else {
-        throw new AppError('Service not found', 404, disputeConstants.ERROR_CODES.INVALID_SERVICE);
+        service = await ParkingBooking.findByPk(serviceId);
+        if (service) {
+          if (service.customer_id !== customerId) {
+            throw new AppError('Unauthorized dispute', 403, disputeConstants.ERROR_CODES.UNAUTHORIZED_DISPUTE);
+          }
+        } else {
+          service = await InDiningOrder.findByPk(serviceId);
+          if (service) {
+            if (service.customer_id !== customerId) {
+              throw new AppError('Unauthorized dispute', 403, disputeConstants.ERROR_CODES.UNAUTHORIZED_DISPUTE);
+            }
+          } else {
+            throw new AppError('Service not found', 404, disputeConstants.ERROR_CODES.INVALID_SERVICE);
+          }
+        }
       }
     }
   }
@@ -80,7 +99,6 @@ const validateResolveAccess = catchAsync(async (req, res, next) => {
 });
 
 module.exports = {
-  authenticate,
   restrictTo,
   checkPermissions,
   validateDisputeAccess,

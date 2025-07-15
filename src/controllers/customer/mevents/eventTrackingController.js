@@ -3,7 +3,7 @@
 const { sequelize } = require('@models');
 const eventTrackingService = require('@services/customer/mevents/eventTrackingService');
 const notificationService = require('@services/common/notificationService');
-const gamificationService = require('@services/common/gamificationService');
+const pointService = require('@services/common/pointService'); // Updated import
 const auditService = require('@services/common/auditService');
 const socketService = require('@services/common/socketService');
 const { formatMessage } = require('@utils/localization/localization');
@@ -39,10 +39,10 @@ const trackUserInteractions = catchAsync(async (req, res, next) => {
       messageKey: 'tracking.points_awarded',
       params: { points: meventsTrackingConstants.GAMIFICATION_CONSTANTS.INTERACTION_TRACKED.points || 5 },
     });
-    await notificationService.createNotification(
+    await notificationService.sendNotification(
       {
         userId: customerId,
-        type: meventsTrackingConstants.NOTIFICATION_TYPES.TRACKING_POINTS_AWARDED,
+        notificationType: meventsTrackingConstants.NOTIFICATION_TYPES.TRACKING_POINTS_AWARDED,
         message,
         priority: 'LOW',
         languageCode: customer.preferred_language || 'en',
@@ -55,7 +55,8 @@ const trackUserInteractions = catchAsync(async (req, res, next) => {
     await auditService.logAction(
       {
         userId: customerId,
-        logType: meventsTrackingConstants.AUDIT_TYPES.INTERACTION_TRACKED,
+        role: 'customer',
+        action: meventsTrackingConstants.AUDIT_TYPES.INTERACTION_TRACKED,
         details: { trackingId: tracking.id, interactionType, eventId, metadata },
         ipAddress,
       },
@@ -63,22 +64,29 @@ const trackUserInteractions = catchAsync(async (req, res, next) => {
     );
 
     // Emit socket event
-    await socketService.emit(io, `tracking:interaction:${customerId}`, {
-      trackingId: tracking.id,
-      interactionType,
-      eventId,
-    });
+    await socketService.emit(
+      io,
+      `tracking:interaction:${customerId}`,
+      {
+        trackingId: tracking.id,
+        interactionType,
+        eventId,
+        userId: customerId,
+        role: 'customer',
+        auditAction: 'INTERACTION_TRACKED',
+      },
+      null,
+      customer.preferred_language || 'en'
+    );
 
     // Award gamification points
     try {
       const action = meventsTrackingConstants.GAMIFICATION_CONSTANTS.INTERACTION_TRACKED;
-      await gamificationService.awardPoints(
-        {
-          userId: customerId,
-          action: action.action,
-          points: action.points || 5,
-          metadata: { io, role: 'customer', trackingId: tracking.id, interactionType, eventId },
-        },
+      await pointService.awardPoints(
+        customerId,
+        action.action,
+        action.points || 5,
+        { io, role: 'customer', trackingId: tracking.id, interactionType, eventId, languageCode: customer.preferred_language || 'en' },
         transaction
       );
     } catch (error) {
@@ -109,19 +117,27 @@ const analyzeEngagement = catchAsync(async (req, res, next) => {
 
   logger.info('Analyzing engagement', { customerId });
 
+  const transaction = await sequelize.transaction();
   try {
-    const { metrics, customer } = await eventTrackingService.analyzeEngagement({ customerId });
+    const { metrics, customer } = await eventTrackingService.analyzeEngagement({ customerId, transaction });
 
     // Award high engagement points if applicable
-    if (metrics.totalInteractions >= 20) {
+    if (metrics.totalInteractions >= meventsTrackingConstants.TRACKING_SETTINGS.HIGH_ENGAGEMENT_THRESHOLD) {
       try {
         const action = meventsTrackingConstants.GAMIFICATION_CONSTANTS.HIGH_ENGAGEMENT;
-        await gamificationService.awardPoints({
-          userId: customerId,
-          action: action.action,
-          points: action.points || 20,
-          metadata: { role: 'customer', totalInteractions: metrics.totalInteractions, periodDays: meventsTrackingConstants.TRACKING_SETTINGS.ENGAGEMENT_ANALYSIS_PERIOD_DAYS },
-        });
+        await pointService.awardPoints(
+          customerId,
+          action.action,
+          action.points || 20,
+          {
+            io: req.app.get('io'),
+            role: 'customer',
+            totalInteractions: metrics.totalInteractions,
+            periodDays: meventsTrackingConstants.TRACKING_SETTINGS.ENGAGEMENT_ANALYSIS_PERIOD_DAYS,
+            languageCode: customer.preferred_language || 'en',
+          },
+          transaction
+        );
 
         const message = formatMessage({
           role: 'customer',
@@ -130,24 +146,33 @@ const analyzeEngagement = catchAsync(async (req, res, next) => {
           messageKey: 'tracking.engagement_summary',
           params: { totalInteractions: metrics.totalInteractions, eventCount: metrics.eventCount },
         });
-        await notificationService.createNotification({
-          userId: customerId,
-          type: meventsTrackingConstants.NOTIFICATION_TYPES.ENGAGEMENT_SUMMARY,
-          message,
-          priority: 'MEDIUM',
-          languageCode: customer.preferred_language || 'en',
-        });
+        await notificationService.sendNotification(
+          {
+            userId: customerId,
+            notificationType: meventsTrackingConstants.NOTIFICATION_TYPES.ENGAGEMENT_SUMMARY,
+            message,
+            priority: 'MEDIUM',
+            languageCode: customer.preferred_language || 'en',
+          },
+          transaction
+        );
       } catch (error) {
         gamificationError = { message: error.message };
       }
     }
 
     // Log audit
-    await auditService.logAction({
-      userId: customerId,
-      logType: meventsTrackingConstants.AUDIT_TYPES.ENGAGEMENT_ANALYZED,
-      details: { metrics, periodDays: meventsTrackingConstants.TRACKING_SETTINGS.ENGAGEMENT_ANALYSIS_PERIOD_DAYS },
-    });
+    await auditService.logAction(
+      {
+        userId: customerId,
+        role: 'customer',
+        action: meventsTrackingConstants.AUDIT_TYPES.ENGAGEMENT_ANALYZED,
+        details: { metrics, periodDays: meventsTrackingConstants.TRACKING_SETTINGS.ENGAGEMENT_ANALYSIS_PERIOD_DAYS },
+      },
+      transaction
+    );
+
+    await transaction.commit();
 
     res.status(200).json({
       status: 'success',
@@ -155,6 +180,7 @@ const analyzeEngagement = catchAsync(async (req, res, next) => {
       data: { metrics, gamificationError },
     });
   } catch (error) {
+    await transaction.rollback();
     logger.error('Engagement analysis failed', { error: error.message, customerId });
     return next(new AppError(error.message, 400, 'ENGAGEMENT_ANALYSIS_FAILED'));
   }

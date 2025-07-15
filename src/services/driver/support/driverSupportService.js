@@ -1,34 +1,16 @@
 'use strict';
 
-/**
- * Driver Support Service
- * Manages driver support requests, ticket tracking, cancellation policies, and escalations.
- */
-
 const { Driver, User, DriverSupportTicket, Ride, Order, sequelize } = require('@models');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
 const driverConstants = require('@constants/driverConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-/**
- * Generates a unique ticket number
- * @returns {string} - Unique ticket number
- */
 function generateTicketNumber() {
   return `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 }
 
-/**
- * Submits a support request for a driver.
- * @param {number} driverId - Driver ID.
- * @param {Object} issue - Issue details (service_type, issue_type, description, ride_id, delivery_order_id).
- * @returns {Promise<Object>} - Created ticket details.
- */
-async function createSupportTicket(driverId, issue) {
+async function createSupportTicket(driverId, issue, auditService, notificationService, socketService, pointService) {
   const { service_type, issue_type, description, ride_id, delivery_order_id } = issue;
 
   if (!driverConstants.SUPPORT_CONSTANTS.SERVICE_TYPES.includes(service_type)) {
@@ -46,7 +28,6 @@ async function createSupportTicket(driverId, issue) {
 
   const transaction = await sequelize.transaction();
   try {
-    // Validate ride_id or delivery_order_id
     if (ride_id && service_type === 'mtxi') {
       const ride = await Ride.findByPk(ride_id, { transaction });
       if (!ride || ride.driverId !== driverId) {
@@ -94,7 +75,7 @@ async function createSupportTicket(driverId, issue) {
         message: formatMessage(
           'driver',
           'support',
-          driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
           'support.ticket_created',
           { ticket_number: ticket.ticket_number }
         ),
@@ -102,6 +83,13 @@ async function createSupportTicket(driverId, issue) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'support_ticket_create').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'support:ticket_created', {
       driverId,
@@ -126,13 +114,7 @@ async function createSupportTicket(driverId, issue) {
   }
 }
 
-/**
- * Tracks the status of a support ticket.
- * @param {number} driverId - Driver ID.
- * @param {number} ticketId - Ticket ID.
- * @returns {Promise<Object>} - Ticket status and details.
- */
-async function trackTicketStatus(driverId, ticketId) {
+async function trackTicketStatus(driverId, ticketId, auditService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -140,7 +122,6 @@ async function trackTicketStatus(driverId, ticketId) {
     include: [
       { model: Ride, as: 'ride', attributes: ['id', 'status'] },
       { model: Order, as: 'deliveryOrder', attributes: ['id', 'status'] },
-      { model: Staff, as: 'assignedStaff', attributes: ['id'] },
     ],
   });
   if (!ticket || ticket.driver_id !== driverId) {
@@ -159,6 +140,13 @@ async function trackTicketStatus(driverId, ticketId) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'support_ticket_track').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'support:ticket_status', {
       driverId,
@@ -189,12 +177,7 @@ async function trackTicketStatus(driverId, ticketId) {
   }
 }
 
-/**
- * Retrieves cancellation policies for the driver.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} - Cancellation policies.
- */
-async function getCancellationPolicies(driverId) {
+async function getCancellationPolicies(driverId, auditService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -213,6 +196,13 @@ async function getCancellationPolicies(driverId) {
       { transaction }
     );
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'support_policy_access').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emitToUser(driver.user_id, 'support:cancellation_policies', { driverId, policies });
 
     await transaction.commit();
@@ -224,13 +214,7 @@ async function getCancellationPolicies(driverId) {
   }
 }
 
-/**
- * Escalates an urgent support ticket.
- * @param {number} driverId - Driver ID.
- * @param {number} ticketId - Ticket ID.
- * @returns {Promise<Object>} - Updated ticket details.
- */
-async function escalateTicket(driverId, ticketId) {
+async function escalateTicket(driverId, ticketId, auditService, notificationService, socketService, pointService) {
   const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
@@ -267,7 +251,7 @@ async function escalateTicket(driverId, ticketId) {
         message: formatMessage(
           'driver',
           'support',
-          driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
           'support.ticket_escalated',
           { ticket_number: ticket.ticket_number }
         ),
@@ -275,6 +259,13 @@ async function escalateTicket(driverId, ticketId) {
       },
       { transaction }
     );
+
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'support_ticket_escalate').action,
+      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
 
     socketService.emitToUser(driver.user_id, 'support:ticket_escalated', {
       driverId,

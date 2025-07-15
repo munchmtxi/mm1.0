@@ -1,68 +1,82 @@
-/**
- * frontOfHouseConstants.js
- *
- * Defines constants for the Front of House staff role, handling customer-facing tasks like
- * check-ins, orders, and support for restaurant, cafe, and grocery merchants. Supports global
- * (Malawi, Tanzania, Kenya, Mozambique, Nigeria, South Africa, India, Brazil) with inclusivity
- * (e.g., halal filters) and aligns with merchantConstants.js, driverConstants.js, etc.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
-  // Role Definition
   STAFF_ROLE: 'front_of_house',
   NAME: 'Front of House',
-  DESCRIPTION: 'Handles customer-facing tasks like check-ins, orders, and support.',
-  SUPPORTED_MERCHANT_TYPES: ['restaurant', 'cafe', 'grocery'],
-
-  // Responsibilities
+  DESCRIPTION: 'Handles customer-facing tasks like check-ins, orders, and support across merchants.',
+  SUPPORTED_MERCHANT_TYPES: ['restaurant', 'cafe', 'grocery', 'parking_lot'],
   RESPONSIBILITIES: [
-    'Process check-ins and manage bookings (mtables)',
-    'Handle pre-orders, takeaway confirmations (munch)',
-    'Coordinate driver pickups (mtxi)',
-    'Address customer inquiries',
-    'Log gamification points'
+    'process_check_ins',
+    'manage_bookings',
+    'handle_orders',
+    'coordinate_drivers',
+    'resolve_disputes',
+    'assist_customers',
+    'monitor_parking'
   ],
-
-  // Permissions
   PERMISSIONS: [
-    'manage_bookings', 'process_orders', 'manage_check_ins', 'handle_support_requests',
-    'view_customer_data', 'coordinate_drivers', 'view_wallet', 'request_withdrawal',
-    'log_gamification', 'escalate_issues'
+    'manage_bookings',
+    'process_orders',
+    'manage_check_ins',
+    'handle_support_requests',
+    'view_customer_data',
+    'coordinate_drivers',
+    'view_wallet',
+    'request_withdrawal',
+    'escalate_issues',
+    'monitor_parking'
   ],
-
-  // Task Types
   TASK_TYPES: {
     mtables: ['check_in', 'booking_update', 'table_assignment', 'pre_order', 'extra_order', 'resolve_dispute'],
-    munch: ['takeaway_confirm', 'resolve_dispute'],
+    munch: ['takeaway_confirm', 'resolve_dispute', 'assist_customer'],
     mtxi: ['driver_pickup'],
-    mevents: ['event_check_in']
+    mevents: ['event_check_in'],
+    mpark: ['parking_check_in', 'parking_assist']
   },
-
-  // Certifications
-  REQUIRED_CERTIFICATIONS: ['financial_compliance'],
-
-  // Training
-  TRAINING_CATEGORIES: ['customer_service', 'financial'],
-
-  // Gamification
-  GAMIFICATION_ACTIONS: [
-    { action: 'check_in_log', points: 10, walletCredit: 0.40 },
-    { action: 'waitlist_resolution', points: 12, walletCredit: 0.40 },
-    { action: 'task_completion', points: 10, walletCredit: 0.30 },
-    { action: 'performance_improvement', points: 20, walletCredit: 0.60 }
+  SHIFT_SETTINGS: {
+    MIN_SHIFT_HOURS: 2,
+    MAX_SHIFT_HOURS: 14,
+    MAX_SHIFTS_PER_WEEK: 7,
+    AI_SHIFT_SCHEDULING: true
+  },
+  CERTIFICATIONS: {
+    REQUIRED: ['financial_compliance', 'customer_service'],
+    EXPIRY_DAYS: 365,
+    RENEWAL_NOTIFICATION_DAYS: [30, 15, 7]
+  },
+  TRAINING_MODULES: [
+    'customer_service',
+    'booking_management',
+    'financial_compliance',
+    'parking_operations'
   ],
-
-  // Analytics Metrics
-  ANALYTICS_METRICS: ['task_completion_rate', 'customer_satisfaction', 'checkout_speed'],
-
-  // Notification Types
-  NOTIFICATION_TYPES: ['task_assignment', 'shift_update', 'wallet_update', 'profile_updated', 'announcement'],
-
-  // Error Codes
-  ERROR_CODES: ['PERMISSION_DENIED', 'TASK_ASSIGNMENT_FAILED', 'INVALID_BRANCH'],
-
-  // Success Messages
-  SUCCESS_MESSAGES: ['Task completed', 'Gamification points awarded']
+  ANALYTICS_CONSTANTS: {
+    METRICS: [
+      'task_completion_rate',
+      'customer_satisfaction',
+      'check_in_speed',
+      'booking_management',
+      'parking_assist_time'
+    ],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['task_assignment', 'shift_update', 'wallet_update', 'booking_update', 'announcement', 'parking_alert'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp'],
+    MAX_PER_HOUR: 10,
+    RETRY_ATTEMPTS: 3
+  },
+  ERROR_CODES: [
+    'PERMISSION_DENIED',
+    'TASK_ASSIGNMENT_FAILED',
+    'INVALID_BRANCH',
+    'INVALID_PARKING'
+  ],
+  SUCCESS_MESSAGES: [
+    'task_completed',
+    'booking_processed',
+    'check_in_completed',
+    'parking_assisted'
+  ]
 };

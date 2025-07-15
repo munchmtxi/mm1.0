@@ -1,28 +1,17 @@
-'use strict';
+// walletService.js
+// Manages merchant wallet creation, payments, payouts, balance, and transaction history.
+// Last Updated: July 14, 2025
 
-/**
- * walletService.js
- * Manages merchant wallet creation, payments, payouts, balance, and transaction history for Munch merchant service.
- * Last Updated: May 21, 2025
- */
+'use strict';
 
 const { Op } = require('sequelize');
 const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const { formatMessage } = require('@utils/localization/localization');
-const paymentConstants = require('@constants/common/paymentConstants');
+const merchantWalletConstants = require('@constants/merchant/merchantWalletConstants');
 const merchantConstants = require('@constants/merchant/merchantConstants');
-const { Wallet, WalletTransaction, Merchant, Staff, Customer, AuditLog, Notification } = require('@models');
+const munchConstants = require('@constants/common/munchConstants');
+const { Wallet, WalletTransaction, Merchant, Staff, Customer, User } = require('@models');
 
-/**
- * Creates a merchant wallet.
- * @param {number} merchantId - Merchant ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Created wallet.
- */
-async function createMerchantWallet(merchantId, io) {
+async function createMerchantWallet(merchantId) {
   try {
     if (!merchantId) throw new Error('Merchant ID required');
 
@@ -32,32 +21,17 @@ async function createMerchantWallet(merchantId, io) {
     const existingWallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
     if (existingWallet) throw new Error('Merchant wallet already exists');
 
+    const currency = munchConstants.MUNCH_SETTINGS.COUNTRY_CURRENCY_MAP[merchant.country] || munchConstants.MUNCH_SETTINGS.DEFAULT_CURRENCY;
+    if (!munchConstants.MUNCH_SETTINGS.SUPPORTED_CURRENCIES.includes(currency)) {
+      throw new Error('Unsupported currency');
+    }
+
     const wallet = await Wallet.create({
       user_id: merchant.user_id,
       merchant_id: merchantId,
       balance: 0.00,
-      currency: paymentConstants.WALLET_SETTINGS.DEFAULT_CURRENCY,
-      type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES.MERCHANT,
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'create_wallet',
-      details: { merchantId, walletId: wallet.id },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'wallet:created', { walletId: wallet.id, merchantId }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: merchant.user_id,
-      notificationType: 'wallet_created',
-      messageKey: 'wallet.created',
-      messageParams: { walletId: wallet.id },
-      role: 'merchant',
-      module: 'wallet',
-      languageCode: merchant.preferred_language || 'en',
+      currency,
+      type: merchantWalletConstants.WALLET_CONSTANTS.WALLET_TYPE,
     });
 
     return wallet;
@@ -67,15 +41,7 @@ async function createMerchantWallet(merchantId, io) {
   }
 }
 
-/**
- * Credits customer payments to merchant wallet.
- * @param {number} merchantId - Merchant ID.
- * @param {number} amount - Payment amount.
- * @param {number} walletId - Customer wallet ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Transaction record.
- */
-async function receivePayment(merchantId, amount, walletId, io) {
+async function receivePayment(merchantId, amount, walletId) {
   try {
     if (!merchantId || !amount || !walletId) throw new Error('Merchant ID, amount, and wallet ID required');
     if (amount <= 0) throw new Error('Amount must be positive');
@@ -86,30 +52,21 @@ async function receivePayment(merchantId, amount, walletId, io) {
     const merchantWallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
     if (!merchantWallet) throw new Error('Merchant wallet not found');
 
-    const customerWallet = await Wallet.findByPk(walletId);
-    if (!customerWallet || customerWallet.type !== paymentConstants.WALLET_SETTINGS.WALLET_TYPES.CUSTOMER) {
-      throw new Error('Invalid customer wallet');
-    }
-    if (customerWallet.balance < amount) throw new Error('Insufficient customer balance');
+    const customerWallet = await Wallet.findByPk(walletId, { include: [{ model: Customer, as: 'customer' }] });
+    if (!customerWallet || customerWallet.type !== 'customer') throw new Error('Invalid customer wallet');
+    if (customerWallet.balance < amount) throw new Error(merchantWalletConstants.WALLET_CONSTANTS.ERROR_CODES.WALLET_INSUFFICIENT_FUNDS);
 
     const transaction = await sequelize.transaction(async (t) => {
-      await customerWallet.update(
-        { balance: customerWallet.balance - amount },
-        { transaction: t }
-      );
-
-      await merchantWallet.update(
-        { balance: merchantWallet.balance + amount },
-        { transaction: t }
-      );
+      await customerWallet.update({ balance: customerWallet.balance - amount }, { transaction: t });
+      await merchantWallet.update({ balance: merchantWallet.balance + amount }, { transaction: t });
 
       const tx = await WalletTransaction.create(
         {
           wallet_id: merchantWallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYMENT,
+          type: munchConstants.ORDER_CONSTANTS.ORDER_TYPES.includes('delivery') ? merchantWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.order_payment : 'payment',
           amount,
           currency: merchantWallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
           description: `Payment from customer wallet ${walletId}`,
         },
         { transaction: t }
@@ -118,40 +75,16 @@ async function receivePayment(merchantId, amount, walletId, io) {
       await WalletTransaction.create(
         {
           wallet_id: customerWallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYMENT,
+          type: merchantWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.order_payment,
           amount: -amount,
           currency: customerWallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
           description: `Payment to merchant ${merchantId}`,
         },
         { transaction: t }
       );
 
       return tx;
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'receive_payment',
-      details: { merchantId, amount, walletId, transactionId: transaction.id },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'wallet:paymentReceived', {
-      transactionId: transaction.id,
-      merchantId,
-      amount,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: merchant.user_id,
-      notificationType: 'payment_received',
-      messageKey: 'wallet.payment_received',
-      messageParams: { amount, currency: merchantWallet.currency },
-      role: 'merchant',
-      module: 'wallet',
-      languageCode: merchant.preferred_language || 'en',
     });
 
     return transaction;
@@ -161,15 +94,7 @@ async function receivePayment(merchantId, amount, walletId, io) {
   }
 }
 
-/**
- * Sends payouts to drivers or staff.
- * @param {number} merchantId - Merchant ID.
- * @param {number} recipientId - Staff ID.
- * @param {number} amount - Payout amount.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Transaction record.
- */
-async function disbursePayout(merchantId, recipientId, amount, io) {
+async function disbursePayout(merchantId, recipientId, amount) {
   try {
     if (!merchantId || !recipientId || !amount) throw new Error('Merchant ID, recipient ID, and amount required');
     if (amount <= 0) throw new Error('Amount must be positive');
@@ -179,29 +104,22 @@ async function disbursePayout(merchantId, recipientId, amount, io) {
 
     const merchantWallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
     if (!merchantWallet) throw new Error('Merchant wallet not found');
-    if (merchantWallet.balance < amount) throw new Error('Insufficient merchant balance');
+    if (merchantWallet.balance < amount) throw new Error(merchantWalletConstants.WALLET_CONSTANTS.ERROR_CODES.WALLET_INSUFFICIENT_FUNDS);
 
     const recipient = await Staff.findByPk(recipientId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!recipient || !recipient.wallet) throw new Error('Invalid recipient or no wallet');
 
     const transaction = await sequelize.transaction(async (t) => {
-      await merchantWallet.update(
-        { balance: merchantWallet.balance - amount },
-        { transaction: t }
-      );
-
-      await recipient.wallet.update(
-        { balance: recipient.wallet.balance + amount },
-        { transaction: t }
-      );
+      await merchantWallet.update({ balance: merchantWallet.balance - amount }, { transaction: t });
+      await recipient.wallet.update({ balance: recipient.wallet.balance + amount }, { transaction: t });
 
       const tx = await WalletTransaction.create(
         {
           wallet_id: merchantWallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYOUT,
+          type: merchantWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.payout,
           amount: -amount,
           currency: merchantWallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
           description: `Payout to staff ${recipientId}`,
         },
         { transaction: t }
@@ -210,41 +128,16 @@ async function disbursePayout(merchantId, recipientId, amount, io) {
       await WalletTransaction.create(
         {
           wallet_id: recipient.wallet.id,
-          type: paymentConstants.TRANSACTION_TYPES.PAYOUT,
+          type: staffWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.salary_payment,
           amount,
           currency: recipient.wallet.currency,
-          status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+          status: merchantWalletConstants.WALLET_CONSTANTS.PAYMENT_STATUSES.completed,
           description: `Payout from merchant ${merchantId}`,
         },
         { transaction: t }
       );
 
       return tx;
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'disburse_payout',
-      details: { merchantId, recipientId, amount, transactionId: transaction.id },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'wallet:payoutDisbursed', {
-      transactionId: transaction.id,
-      merchantId,
-      recipientId,
-      amount,
-    }, `merchant:${merchantId}`);
-
-    await notificationService.sendNotification({
-      userId: recipient.user_id,
-      notificationType: 'payout_received',
-      messageKey: 'wallet.payout_received',
-      messageParams: { amount, currency: merchantWallet.currency },
-      role: 'staff',
-      module: 'wallet',
-      languageCode: recipient.user?.preferred_language || 'en',
     });
 
     return transaction;
@@ -254,11 +147,6 @@ async function disbursePayout(merchantId, recipientId, amount, io) {
   }
 }
 
-/**
- * Retrieves merchant wallet balance.
- * @param {number} merchantId - Merchant ID.
- * @returns {Promise<Object>} Wallet balance.
- */
 async function getWalletBalance(merchantId) {
   try {
     if (!merchantId) throw new Error('Merchant ID required');
@@ -269,14 +157,6 @@ async function getWalletBalance(merchantId) {
     const wallet = await Wallet.findOne({ where: { merchant_id: merchantId } });
     if (!wallet) throw new Error('Merchant wallet not found');
 
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'get_wallet_balance',
-      details: { merchantId, balance: wallet.balance },
-      ipAddress: '127.0.0.1',
-    });
-
     return { balance: wallet.balance, currency: wallet.currency };
   } catch (error) {
     logger.error('Error retrieving wallet balance', { error: error.message });
@@ -284,11 +164,6 @@ async function getWalletBalance(merchantId) {
   }
 }
 
-/**
- * Retrieves payment and payout history.
- * @param {number} merchantId - Merchant ID.
- * @returns {Promise<Array>} Transaction history.
- */
 async function getTransactionHistory(merchantId) {
   try {
     if (!merchantId) throw new Error('Merchant ID required');
@@ -303,14 +178,6 @@ async function getTransactionHistory(merchantId) {
       where: { wallet_id: wallet.id },
       order: [['created_at', 'DESC']],
       limit: 100,
-    });
-
-    await auditService.logAction({
-      userId: merchant.user_id,
-      role: 'merchant',
-      action: 'get_transaction_history',
-      details: { merchantId, transactionCount: transactions.length },
-      ipAddress: '127.0.0.1',
     });
 
     return transactions;

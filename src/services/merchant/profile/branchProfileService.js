@@ -1,372 +1,328 @@
 'use strict';
 
-/**
- * Branch Profile Service
- * Manages branch-specific operations, including branch details, settings, media uploads, and profile
- * synchronization for the Merchant Role System. Integrates with merchantConstants.js for configuration
- * and ensures compliance with security and localization requirements.
- *
- * Last Updated: May 15, 2025
- */
-
-const { MerchantBranch, Merchant, Media } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const imageService = require('@services/common/imageService');
-const locationService = require('@services/common/locationService');
-const auditService = require('@services/common/auditService');
-const AppError = require('@utils/AppError');
+const { sequelize, Merchant, MerchantBranch, User } = require('@models');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const restaurantConstants = require('@constants/merchant/restaurantConstants');
+const parkingLotConstants = require('@constants/merchant/parkingLotConstants');
+const groceryConstants = require('@constants/merchant/groceryConstants');
+const darkKitchenConstants = require('@constants/merchant/darkKitchenConstants');
+const catererConstants = require('@constants/merchant/catererConstants');
+const cafeConstants = require('@constants/merchant/cafeConstants');
+const butcherConstants = require('@constants/merchant/butcherConstants');
+const bakeryConstants = require('@constants/merchant/bakeryConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
-const { formatMessage } = require('@utils/localization/localization');
-const validation = require('@utils/validation');
-const catchAsync = require('@utils/catchAsync');
 
-/**
- * Updates branch hours or location.
- * @param {string} branchId - Branch ID.
- * @param {Object} details - Branch details (e.g., operatingHours, location, contactPhone).
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<Object>} Updated branch.
- */
-const updateBranchDetails = catchAsync(async (branchId, details, ipAddress) => {
-  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
-  if (!branch) {
-    throw new AppError(
-      'Branch not found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
+const typeConstantsMap = {
+  restaurant: restaurantConstants,
+  parking_lot: parkingLotConstants,
+  grocery: groceryConstants,
+  dark_kitchen: darkKitchenConstants,
+  caterer: catererConstants,
+  cafe: cafeConstants,
+  butcher: butcherConstants,
+  bakery: bakeryConstants,
+};
+
+async function getAllowedSettings(merchantId) {
+  const merchant = await Merchant.findByPk(merchantId);
+  if (!merchant || !merchant.merchant_types || !merchant.merchant_types.length) {
+    return {
+      services: merchantConstants.BUSINESS_SETTINGS.DEFAULT_SERVICES,
+      tasks: merchantConstants.BUSINESS_SETTINGS.DEFAULT_TASKS,
+      bookings: merchantConstants.BUSINESS_SETTINGS.DEFAULT_BOOKINGS_ENABLED,
+      delivery: merchantConstants.BUSINESS_SETTINGS.DEFAULT_DELIVERY_ENABLED,
+      pickup: merchantConstants.BUSINESS_SETTINGS.DEFAULT_PICKUP_ENABLED,
+      ui: merchantConstants.BUSINESS_SETTINGS.DEFAULT_UI,
+      typeSpecificSettings: {},
+    };
   }
 
-  const { operatingHours, location, contactPhone } = details;
+  const services = new Set(merchantConstants.BUSINESS_SETTINGS.DEFAULT_SERVICES);
+  const tasks = new Set(merchantConstants.BUSINESS_SETTINGS.DEFAULT_TASKS);
+  let bookings = merchantConstants.BUSINESS_SETTINGS.DEFAULT_BOOKINGS_ENABLED;
+  let delivery = merchantConstants.BUSINESS_SETTINGS.DEFAULT_DELIVERY_ENABLED;
+  let pickup = merchantConstants.BUSINESS_SETTINGS.DEFAULT_PICKUP_ENABLED;
+  let ui = merchantConstants.BUSINESS_SETTINGS.DEFAULT_UI;
+  const typeSpecificSettings = {};
 
-  // Validate operating hours
-  if (operatingHours && (!operatingHours.open || !operatingHours.close)) {
-    throw new AppError(
-      'Operating hours must include open and close times',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_OPERATING_HOURS
-    );
-  }
+  merchant.merchant_types.forEach(type => {
+    const typeConstants = typeConstantsMap[type] || merchantConstants;
+    typeConstants.BUSINESS_SETTINGS.services.forEach(s => services.add(s));
+    typeConstants.BUSINESS_SETTINGS.tasks.forEach(t => tasks.add(t));
+    bookings = bookings || typeConstants.BUSINESS_SETTINGS.bookings;
+    delivery = delivery || typeConstants.BUSINESS_SETTINGS.delivery;
+    pickup = pickup || typeConstants.BUSINESS_SETTINGS.pickup;
+    ui = typeConstants.BUSINESS_SETTINGS.ui || ui;
+    Object.assign(typeSpecificSettings, typeConstants[type.toUpperCase() + '_CONFIG'] || {});
+  });
 
-  // Validate contact phone
-  if (contactPhone && !validation.validatePhone(contactPhone)) {
-    throw new AppError(
-      'Invalid contact phone number format',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_PHONE
-    );
-  }
+  return {
+    services: Array.from(services),
+    tasks: Array.from(tasks),
+    bookings,
+    delivery,
+    pickup,
+    ui,
+    typeSpecificSettings,
+  };
+}
 
-  // Validate and resolve location
-  let resolvedLocation = null;
-  if (location) {
-    resolvedLocation = await locationService.resolveLocation(location);
-    if (!merchantConstants.MERCHANT_SETTINGS.SUPPORTED_CITIES[resolvedLocation.countryCode]) {
-      throw new AppError(
-        'Unsupported location',
-        400,
-        merchantConstants.ERROR_CODES.UNSUPPORTED_LOCATION
-      );
+async function createBranch(merchantId, branchDetails) {
+  const transaction = await sequelize.transaction();
+  try {
+    const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }], transaction });
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, merchantConstants.ERROR_CODES[0]);
     }
-  }
 
-  // Update branch
-  const updatedFields = {
-    operating_hours: operatingHours || branch.operating_hours,
-    location: resolvedLocation ? resolvedLocation : branch.location,
-    contact_phone: contactPhone || branch.contact_phone,
-    updated_at: new Date(),
-  };
+    const { name, address, city, country, phone, email, businessHours } = branchDetails;
+    if (!name || !address || !city || !country || !phone || !email) {
+      throw new AppError('Missing required fields', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (!localizationConstants.SUPPORTED_COUNTRIES.includes(country)) {
+      throw new AppError('Unsupported country', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (!localizationConstants.SUPPORTED_CITIES[country].includes(city)) {
+      throw new AppError('Unsupported city', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (phone && !/^\+?[1-9]\d{1,14}$/.test(phone)) {
+      throw new AppError('Invalid phone number', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new AppError('Invalid email', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (businessHours && (!businessHours.open || !businessHours.close)) {
+      throw new AppError('Invalid business hours', 400, merchantConstants.ERROR_CODES[3]);
+    }
 
-  await branch.update(updatedFields);
+    const allowedSettings = await getAllowedSettings(merchantId);
+    const branchCount = await MerchantBranch.count({ where: { merchant_id: merchantId }, transaction });
+    const maxBranches = merchant.merchant_types.reduce((max, type) => {
+      const typeConstants = typeConstantsMap[type] || merchantConstants;
+      return Math.max(max, typeConstants.BRANCH_SETTINGS.MAX_BRANCHES || merchantConstants.BRANCH_SETTINGS.DEFAULT_MAX_BRANCHES);
+    }, merchantConstants.BRANCH_SETTINGS.DEFAULT_MAX_BRANCHES);
+    if (branchCount >= maxBranches) {
+      throw new AppError('Maximum branches exceeded', 400, merchantConstants.ERROR_CODES[0]);
+    }
 
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPDATE_BRANCH_DETAILS,
-    userId: branch.merchant.user_id,
-    role: 'merchant',
-    details: updatedFields,
-    ipAddress: ipAddress || '0.0.0.0',
-    metadata: { branchId },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: branch.merchant.user_id,
-    merchant_id: branch.merchant_id,
-    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
-    message: formatMessage(
-      'merchant',
-      'branch',
-      branch.merchant.preferred_language,
-      'branch.updated',
-      { branchId }
-    ),
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-    languageCode: branch.merchant.preferred_language,
-  });
-
-  // Emit real-time event
-  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'branch:updated', {
-    userId: branch.merchant.user_id,
-    branchId,
-    updatedFields,
-  });
-
-  logger.info('Branch details updated successfully', { branchId });
-  return branch;
-});
-
-/**
- * Configures branch-specific currency and language settings.
- * @param {string} branchId - Branch ID.
- * @param {Object} settings - Settings (e.g., currency, language).
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<Object>} Updated branch.
- */
-const configureBranchSettings = catchAsync(async (branchId, settings, ipAddress) => {
-  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
-  if (!branch) {
-    throw new AppError(
-      'Branch not found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
-  }
-
-  const { currency, language } = settings;
-
-  // Validate currency
-  if (currency && !merchantConstants.MERCHANT_SETTINGS.SUPPORTED_CURRENCIES.includes(currency)) {
-    throw new AppError(
-      'Unsupported currency',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_CURRENCY
-    );
-  }
-
-  // Validate language
-  if (language && !['en', 'fr', 'es'].includes(language)) {
-    throw new AppError(
-      'Unsupported language',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_LANGUAGE
-    );
-  }
-
-  // Update branch
-  const updatedFields = {
-    currency: currency || branch.currency,
-    preferred_language: language || branch.preferred_language,
-    updated_at: new Date(),
-  };
-
-  await branch.update(updatedFields);
-
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.CONFIGURE_BRANCH_SETTINGS,
-    userId: branch.merchant.user_id,
-    role: 'merchant',
-    details: updatedFields,
-    ipAddress: ipAddress || '0.0.0.0',
-    metadata: { branchId },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: branch.merchant.user_id,
-    merchant_id: branch.merchant_id,
-    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
-    message: formatMessage(
-      'merchant',
-      'branch',
-      branch.merchant.preferred_language,
-      'branch.settings_updated',
-      { branchId }
-    ),
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-    languageCode: branch.merchant.preferred_language,
-  });
-
-  // Emit real-time event
-  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'branch:settings_updated', {
-    userId: branch.merchant.user_id,
-    branchId,
-    settings: updatedFields,
-  });
-
-  logger.info('Branch settings configured successfully', { branchId });
-  return branch;
-});
-
-/**
- * Uploads branch-specific media (e.g., photos, videos).
- * @param {string} branchId - Branch ID.
- * @param {Object} media - Media data (e.g., file, type).
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<string>} URL of the uploaded media.
- */
-const manageBranchMedia = catchAsync(async (branchId, media, ipAddress) => {
-  const branch = await MerchantBranch.findByPk(branchId, { include: [{ model: Merchant, as: 'merchant' }] });
-  if (!branch) {
-    throw new AppError(
-      'Branch not found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
-  }
-
-  const { file, type } = media;
-
-  // Validate media type
-  if (!['menu_photos', 'promotional_media', 'branch_media', 'banner', 'promo_video'].includes(type)) {
-    throw new AppError(
-      'Invalid media type',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_MEDIA_TYPE
-    );
-  }
-
-  // Validate file
-  if (!file || !file.originalname) {
-    throw new AppError(
-      'Invalid file data',
-      400,
-      merchantConstants.ERROR_CODES.INVALID_FILE_DATA
-    );
-  }
-
-  const imageUrl = await imageService.uploadImage(branch.id, file, type);
-
-  // Save media record
-  const mediaRecord = await Media.create({
-    branch_id: branchId,
-    merchant_id: branch.merchant_id,
-    type,
-    url: imageUrl,
-    created_at: new Date(),
-    updated_at: new Date(),
-  });
-
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.UPLOAD_BRANCH_MEDIA,
-    userId: branch.merchant.user_id,
-    role: 'merchant',
-    details: { branchId, type, url: imageUrl },
-    ipAddress: ipAddress || '0.0.0.0',
-    metadata: { mediaId: mediaRecord.id },
-  });
-
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: branch.merchant.user_id,
-    merchant_id: branch.merchant_id,
-    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.MEDIA_UPLOADED,
-    message: formatMessage(
-      'merchant',
-      'media',
-      branch.merchant.preferred_language,
-      'media.uploaded',
-      { branchId }
-    ),
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-    languageCode: branch.merchant.preferred_language,
-  });
-
-  // Emit real-time event
-  await socketService.emitToRoom(`merchant:${branch.merchant.user_id}`, 'media:uploaded', {
-    userId: branch.merchant.user_id,
-    branchId,
-    mediaId: mediaRecord.id,
-    imageUrl,
-  });
-
-  logger.info('Branch media uploaded successfully', { branchId, mediaId: mediaRecord.id });
-  return imageUrl;
-});
-
-/**
- * Ensures consistency across multiple branch profiles.
- * @param {string} merchantId - Merchant ID.
- * @param {string} ipAddress - IP address of the request.
- * @returns {Promise<Array>} Updated branches.
- */
-const syncBranchProfiles = catchAsync(async (merchantId, ipAddress) => {
-  const merchant = await Merchant.findByPk(merchantId, { include: [{ model: User, as: 'user' }] });
-  if (!merchant) {
-    throw new AppError(
-      'Merchant not found',
-      404,
-      merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND
-    );
-  }
-
-  const branches = await MerchantBranch.findAll({ where: { merchant_id: merchantId } });
-  if (!branches.length) {
-    throw new AppError(
-      'No branches found',
-      404,
-      merchantConstants.ERROR_CODES.BRANCH_NOT_FOUND
-    );
-  }
-
-  // Sync settings (e.g., currency, language) across branches
-  const updatedBranches = await Promise.all(
-    branches.map(async (branch) => {
-      const updatedFields = {
-        currency: merchant.currency || branch.currency,
-        preferred_language: merchant.preferred_language || branch.preferred_language,
+    const branch = await MerchantBranch.create(
+      {
+        merchant_id: merchantId,
+        name,
+        address,
+        city,
+        country,
+        phone,
+        email,
+        business_hours: businessHours,
+        services: allowedSettings.services,
+        tasks: allowedSettings.tasks,
+        bookings_enabled: allowedSettings.bookings,
+        delivery_enabled: allowedSettings.delivery,
+        pickup_enabled: allowedSettings.pickup,
+        ui: allowedSettings.ui,
+        type_specific_settings: allowedSettings.typeSpecificSettings,
+        status: 'active',
+        created_at: new Date(),
         updated_at: new Date(),
-      };
-      await branch.update(updatedFields);
-      return branch;
-    })
-  );
+      },
+      { transaction }
+    );
 
-  // Log audit event
-  await auditService.logAction({
-    action: merchantConstants.STAFF_CONSTANTS.TASK_TYPES.SYNC_BRANCH_PROFILES,
-    userId: merchant.user_id,
-    role: 'merchant',
-    details: { merchantId, branchCount: updatedBranches.length },
-    ipAddress: ipAddress || '0.0.0.0',
-    metadata: { merchantId },
-  });
+    await transaction.commit();
+    logger.info('Branch created', { merchantId, branchId: branch.id });
+    return branch;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error creating branch', { error: error.message, merchantId });
+    throw error;
+  }
+}
 
-  // Notify merchant
-  await notificationService.sendNotification({
-    userId: merchant.user_id,
-    merchant_id: merchant.id,
-    type: merchantConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.BRANCH_UPDATED,
-    message: formatMessage(
-      'merchant',
-      'branch',
-      merchant.preferred_language,
-      'branch.synced',
-      { merchantId }
-    ),
-    priority: merchantConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.LOW,
-    languageCode: merchant.preferred_language,
-  });
+async function updateBranch(branchId, branchDetails) {
+  const transaction = await sequelize.transaction();
+  try {
+    const branch = await MerchantBranch.findByPk(branchId, {
+      include: [{ model: Merchant, as: 'merchant', include: [{ model: User, as: 'user' }] }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
 
-  // Emit real-time event
-  await socketService.emitToRoom(`merchant:${merchant.user_id}`, 'branch:synced', {
-    userId: merchant.user_id,
-    merchantId,
-    branchCount: updatedBranches.length,
-  });
+    const { name, address, city, country, phone, email, businessHours, status } = branchDetails;
+    if (country && !localizationConstants.SUPPORTED_COUNTRIES.includes(country)) {
+      throw new AppError('Unsupported country', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (city && country && !localizationConstants.SUPPORTED_CITIES[country]?.includes(city)) {
+      throw new AppError('Unsupported city', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (phone && !/^\+?[1-9]\d{1,14}$/.test(phone)) {
+      throw new AppError('Invalid phone number', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new AppError('Invalid email', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (businessHours && (!businessHours.open || !businessHours.close)) {
+      throw new AppError('Invalid business hours', 400, merchantConstants.ERROR_CODES[3]);
+    }
+    if (status && !['active', 'inactive'].includes(status)) {
+      throw new AppError('Invalid status', 400, merchantConstants.ERROR_CODES[3]);
+    }
 
-  logger.info('Branch profiles synced successfully', { merchantId, branchCount: updatedBranches.length });
-  return updatedBranches;
-});
+    const allowedSettings = await getAllowedSettings(branch.merchant_id);
+    const updatedFields = {
+      name: name || branch.name,
+      address: address || branch.address,
+      city: city || branch.city,
+      country: country || branch.country,
+      phone: phone || branch.phone,
+      email: email || branch.email,
+      business_hours: businessHours || branch.business_hours,
+      services: allowedSettings.services,
+      tasks: allowedSettings.tasks,
+      bookings_enabled: allowedSettings.bookings,
+      delivery_enabled: allowedSettings.delivery,
+      pickup_enabled: allowedSettings.pickup,
+      ui: allowedSettings.ui,
+      type_specific_settings: allowedSettings.typeSpecificSettings,
+      status: status || branch.status,
+      updated_at: new Date(),
+    };
+
+    await branch.update(updatedFields, { transaction });
+    await transaction.commit();
+    logger.info('Branch updated', { branchId });
+    return branch;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error updating branch', { error: error.message, branchId });
+    throw error;
+  }
+}
+
+async function deleteBranch(branchId) {
+  const transaction = await sequelize.transaction();
+  try {
+    const branch = await MerchantBranch.findByPk(branchId, {
+      include: [{ model: Merchant, as: 'merchant', include: [{ model: User, as: 'user' }] }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    await branch.destroy({ transaction });
+    await transaction.commit();
+    logger.info('Branch deleted', { branchId });
+    return { branchId };
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error deleting branch', { error: error.message, branchId });
+    throw error;
+  }
+}
+
+async function listBranches(merchantId) {
+  try {
+    const merchant = await Merchant.findByPk(merchantId);
+    if (!merchant) {
+      throw new AppError('Merchant not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    const branches = await MerchantBranch.findAll({
+      where: { merchant_id: merchantId },
+      attributes: [
+        'id',
+        'name',
+        'address',
+        'city',
+        'country',
+        'phone',
+        'email',
+        'business_hours',
+        'services',
+        'tasks',
+        'bookings_enabled',
+        'delivery_enabled',
+        'pickup_enabled',
+        'ui',
+        'type_specific_settings',
+        'status',
+        'created_at',
+        'updated_at',
+      ],
+    });
+
+    logger.info('Branches retrieved', { merchantId, branchCount: branches.length });
+    return branches;
+  } catch (error) {
+    logger.error('Error listing branches', { error: error.message, merchantId });
+    throw error;
+  }
+}
+
+async function updateBranchSettings(branchId, settings) {
+  const transaction = await sequelize.transaction();
+  try {
+    const branch = await MerchantBranch.findByPk(branchId, {
+      include: [{ model: Merchant, as: 'merchant', include: [{ model: User, as: 'user' }] }],
+      transaction,
+    });
+    if (!branch) {
+      throw new AppError('Branch not found', 404, merchantConstants.ERROR_CODES[0]);
+    }
+
+    const allowedSettings = await getAllowedSettings(branch.merchant_id);
+    const { services, tasks, bookingsEnabled, deliveryEnabled, pickupEnabled, ui, typeSpecificSettings } = settings;
+
+    if (services && services.some(s => !allowedSettings.services.includes(s))) {
+      throw new AppError('Invalid services for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+    if (tasks && tasks.some(t => !allowedSettings.tasks.includes(t))) {
+      throw new AppError('Invalid tasks for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+    if (bookingsEnabled !== undefined && bookingsEnabled && !allowedSettings.bookings) {
+      throw new AppError('Bookings not enabled for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+    if (deliveryEnabled !== undefined && deliveryEnabled && !allowedSettings.delivery) {
+      throw new AppError('Delivery not enabled for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+    if (pickupEnabled !== undefined && pickupEnabled && !allowedSettings.pickup) {
+      throw new AppError('Pickup not enabled for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+    if (ui && ui !== allowedSettings.ui) {
+      throw new AppError('Invalid UI for merchant types', 400, merchantConstants.ERROR_CODES[0]);
+    }
+
+    const updatedFields = {
+      services: services || branch.services,
+      tasks: tasks || branch.tasks,
+      bookings_enabled: bookingsEnabled !== undefined ? bookingsEnabled : branch.bookings_enabled,
+      delivery_enabled: deliveryEnabled !== undefined ? deliveryEnabled : branch.delivery_enabled,
+      pickup_enabled: pickupEnabled !== undefined ? pickupEnabled : branch.pickup_enabled,
+      ui: ui || branch.ui,
+      type_specific_settings: typeSpecificSettings || branch.type_specific_settings,
+      updated_at: new Date(),
+    };
+
+    await branch.update(updatedFields, { transaction });
+    await transaction.commit();
+    logger.info('Branch settings updated', { branchId });
+    return branch;
+  } catch (error) {
+    await transaction.rollback();
+    logger.error('Error updating branch settings', { error: error.message, branchId });
+    throw error;
+  }
+}
 
 module.exports = {
-  updateBranchDetails,
-  configureBranchSettings,
-  manageBranchMedia,
-  syncBranchProfiles,
+  createBranch,
+  updateBranch,
+  deleteBranch,
+  listBranches,
+  updateBranchSettings,
 };

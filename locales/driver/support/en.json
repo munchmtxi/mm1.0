@@ -1,0 +1,8 @@
+{
+  "support": {
+    "ticket_created": "Support ticket {{ticket_number}} created successfully",
+    "ticket_status": "Support ticket {{ticket_number}} status retrieved successfully",
+    "cancellation_policies": "Cancellation policies retrieved successfully",
+    "ticket_escalated": "Support ticket {{ticket_number}} escalated successfully"
+  }
+}

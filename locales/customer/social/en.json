@@ -1,38 +1,31 @@
 {
-  "error": {
-    "invalid_customer": "Invalid customer account",
-    "invalid_friend": "Invalid friend account",
-    "invalid_action": "Invalid action specified",
-    "pending_request": "Pending friend request exists",
-    "not_friend": "User is not a friend",
-    "invalid_permissions": "Invalid permissions provided",
-    "invalid_chat": "Invalid or inactive chat",
-    "not_chat_member": "Not a member of the chat",
-    "social_action_failed": "Social action failed",
-    "invalid_post": "Invalid post content or settings",
-    "invalid_reaction": "Invalid reaction type",
-    "invalid_story": "Invalid story media",
-    "chat_limit_exceeded": "Chat message or participant limit exceeded",
-    "unauthorized": "Unauthorized access",
-    "already_reacted": "Already reacted to post",
-    "invalid_invite": "Invalid or duplicate invite",
-    "max_friends_exceeded": "Maximum friends limit exceeded",
-    "invalid_bill_split": "Invalid bill split configuration",
-    "invalid_service": "Invalid or unauthorized service"
+  "post": {
+    "created": "Post created successfully",
+    "reacted": "Reaction added to post"
   },
-  "notification": {
-    "friend_request": "{userName} sent you a friend request",
-    "friend_accepted": "{userName} accepted your friend request",
-    "permissions_updated": "{userName} updated your permissions",
-    "chat_joined": "{userName} joined {chatName}",
-    "chat_message": "{userName} sent a message in {chatName}",
-    "post_created": "{userName} created a new {serviceType} post",
-    "post_reacted": "{userName} reacted {reaction} to your post",
-    "story_shared": "{userName} shared a new {serviceType} story",
-    "booking_invite": "{userName} invited you to a booking (ID: {serviceId})",
-    "order_invite": "{userName} invited you to an order (ID: {serviceId})",
-    "ride_invite": "{userName} invited you to a ride (ID: {serviceId})",
-    "event_invite": "{userName} invited you to an event (ID: {serviceId})",
-    "bill_split_initiated": "{userName} initiated a bill split for {serviceType} (ID: {serviceId})"
+  "story": {
+    "created": "Story shared successfully"
+  },
+  "invite": {
+    "sent": "Invite sent successfully"
+  },
+  "friend": {
+    "add": "Friend request sent successfully",
+    "remove": "Friend removed successfully",
+    "accept": "Friend request accepted successfully",
+    "reject": "Friend request rejected successfully"
+  },
+  "permissions": {
+    "updated": "Friend permissions updated successfully"
+  },
+  "group_chat": {
+    "message_sent": "Message sent to group chat",
+    "joined": "Joined group chat successfully"
+  },
+  "live_stream": {
+    "created": "Live stream created successfully"
+  },
+  "recommendations": {
+    "received": "Social recommendations received successfully"
   }
 }

@@ -1,46 +1,81 @@
 'use strict';
 
-/**
- * orderService.js
- * Manages order processing, dietary preferences, status updates, and wallet payments for Munch merchant service.
- * Last Updated: May 21, 2025
- */
-
-const { Op } = require('sequelize');
+const { Op, sequelize } = require('sequelize');
+const { Order, OrderItems, Customer, MenuInventory, MerchantBranch, Wallet, Payment } = sequelize.models;
+const munchConstants = require('@constants/common/munchConstants');
+const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
-const socketService = require('@services/common/socketService');
-const notificationService = require('@services/common/notificationService');
-const pointService = require('@services/common/pointService');
-const auditService = require('@services/common/auditService');
-const walletService = require('@services/common/walletService');
-const { formatMessage } = require('@utils/localization/localization');
-const merchantConstants = require('@constants/merchant/merchantConstants');
-const customerConstants = require('@constants/customer/customerConstants');
-const { Order, OrderItems, Customer, MenuInventory, MerchantBranch, Notification, AuditLog, ProductAuditLog, ProductActivityLog } = require('@models');
+const { handleServiceError } = require('@utils/errorHandling');
+const { formatDate, getCurrentTimestamp } = require('@utils/dateTimeUtils');
 
-/**
- * Handles dine-in/takeaway/delivery orders.
- * @param {number} orderId - Order ID.
- * @param {Array} items - Order items with quantities and customizations.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Processed order.
- */
-async function processOrder(orderId, items, io) {
+async function processOrder(orderId, items) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!orderId || !items?.length) throw new Error('Order ID and items required');
+    if (!orderId || !items?.length) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidInput'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId, itemsCount: items?.length }
+      );
+    }
 
-    const order = await Order.findByPk(orderId, { include: [{ model: MerchantBranch, as: 'branch' }, { model: Customer, as: 'customer' }] });
-    if (!order) throw new Error('Order not found');
-    if (order.status !== 'pending') throw new Error('Order already processed');
+    const order = await Order.findByPk(orderId, {
+      include: [
+        { model: MerchantBranch, as: 'branch' },
+        { model: Customer, as: 'customer' },
+        { model: MenuInventory, as: 'orderedItems', through: { attributes: [] } },
+      ],
+      transaction,
+    });
+    if (!order) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.orderNotFound'),
+        404,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId }
+      );
+    }
+    if (order.status !== munchConstants.ORDER_CONSTANTS.ORDER_STATUSES[0]) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.orderAlreadyProcessed'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId, currentStatus: order.status }
+      );
+    }
 
     let totalAmount = 0;
     const orderItems = [];
     for (const item of items) {
-      const menuItem = await MenuInventory.findByPk(item.menu_item_id);
-      if (!menuItem || menuItem.availability_status !== 'in-stock') throw new Error(`Item ${item.menu_item_id} unavailable`);
+      const menuItem = await MenuInventory.findByPk(item.menu_item_id, {
+        include: [{ model: sequelize.models.ProductDiscount, as: 'discounts' }],
+        transaction,
+      });
+      if (!menuItem || menuItem.availability_status !== 'in-stock') {
+        throw new AppError(
+          formatMessage('merchant', 'munch', 'en', 'errors.itemUnavailable', { itemId: item.menu_item_id }),
+          400,
+          munchConstants.ERROR_CODES[0],
+          null,
+          { menuItemId: item.menu_item_id }
+        );
+      }
 
       const quantity = item.quantity || 1;
-      if (menuItem.quantity < quantity) throw new Error(`Insufficient stock for ${menuItem.name}`);
+      if (menuItem.quantity < quantity) {
+        throw new AppError(
+          formatMessage('merchant', 'munch', 'en', 'errors.insufficientStock', { name: menuItem.name }),
+          400,
+          munchConstants.ERROR_CODES[0],
+          null,
+          { menuItemId: item.menu_item_id, availableQuantity: menuItem.quantity }
+        );
+      }
 
       const itemPrice = menuItem.calculateFinalPrice() * quantity;
       totalAmount += itemPrice;
@@ -49,205 +84,232 @@ async function processOrder(orderId, items, io) {
         order_id: orderId,
         menu_item_id: item.menu_item_id,
         quantity,
-        customization: item.customization || null,
+        customization: item.customizations || null,
       });
 
-      await menuItem.update({ quantity: menuItem.quantity - quantity });
-
-      await ProductAuditLog.create({
-        menu_item_id: item.menu_item_id,
-        user_id: 'system',
-        action: 'update',
-        changes: { quantity: menuItem.quantity },
-      });
-
-      await ProductActivityLog.create({
-        productId: item.menu_item_id,
-        merchantBranchId: order.branch_id,
-        actorId: 'system',
-        actorType: 'system',
-        actionType: 'stock_adjusted',
-        previousState: { quantity: menuItem.quantity + quantity },
-        newState: { quantity: menuItem.quantity },
-      });
+      await menuItem.update({ quantity: menuItem.quantity - quantity }, { transaction });
     }
 
-    await OrderItems.bulkCreate(orderItems);
-    await order.update({ total_amount: totalAmount, status: 'confirmed' });
+    await OrderItems.bulkCreate(orderItems, { transaction });
+    await order.update(
+      {
+        total_amount: totalAmount,
+        status: munchConstants.ORDER_CONSTANTS.ORDER_STATUSES[1],
+        items: orderItems,
+        updated_at: getCurrentTimestamp(),
+      },
+      { transaction }
+    );
 
-    await auditService.logAction({
-      userId: order.customer_id,
-      role: 'customer',
-      action: 'process_order',
-      details: { orderId, totalAmount, items: orderItems.map(i => i.menu_item_id) },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'order:processed', { orderId, status: 'confirmed', totalAmount }, `order:${orderId}`);
-
-    await notificationService.sendNotification({
-      userId: order.customer_id,
-      notificationType: 'order_confirmation',
-      messageKey: 'order.confirmed',
-      messageParams: { orderNumber: order.order_number, amount: totalAmount },
-      role: 'customer',
-      module: 'order',
-      languageCode: order.customer?.preferred_language || 'en',
-    });
-
-    return order;
+    await transaction.commit();
+    logger.logApiEvent('Order processed', { orderId, totalAmount, timestamp: getCurrentTimestamp() });
+    return { orderId, status: order.status, totalAmount };
   } catch (error) {
-    logger.error('Error processing order', { error: error.message });
-    throw error;
+    await transaction.rollback();
+    logger.logErrorEvent('Error processing order', { orderId, error: error.message });
+    throw handleServiceError('processOrder', error, munchConstants.ERROR_CODES[0]);
   }
 }
 
-/**
- * Filters orders by dietary preferences.
- * @param {number} customerId - Customer ID.
- * @param {Array} items - Order items.
- * @returns {Promise<Array>} Filtered items.
- */
 async function applyDietaryPreferences(customerId, items) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!customerId || !items?.length) throw new Error('Customer ID and items required');
+    if (!customerId || !items?.length) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidInput'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { customerId, itemsCount: items?.length }
+      );
+    }
 
-    const customer = await Customer.findByPk(customerId);
-    if (!customer) throw new Error('Customer not found');
+    const customer = await Customer.findByPk(customerId, { transaction });
+    if (!customer) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.customerNotFound'),
+        404,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { customerId }
+      );
+    }
 
-    const preferences = customer.dietary_preferences || [];
-    if (!preferences.length) return items;
+    const preferences = customer.preferences?.dietary || [];
+    if (!preferences.length) {
+      await transaction.commit();
+      logger.logApiEvent('No dietary preferences applied', { customerId, timestamp: getCurrentTimestamp() });
+      return items;
+    }
 
     const filteredItems = [];
     for (const item of items) {
-      const menuItem = await MenuInventory.findByPk(item.menu_item_id);
+      const menuItem = await MenuInventory.findByPk(item.menu_item_id, { transaction });
       if (!menuItem) continue;
 
       const itemTags = menuItem.tags || [];
-      const isCompliant = preferences.every(pref => itemTags.includes(pref) || pref === 'none');
+      const isCompliant = preferences.every((pref) =>
+        munchConstants.ORDER_CONSTANTS.ORDER_SETTINGS.ALLOWED_DIETARY_FILTERS.includes(pref) &&
+        (itemTags.includes(pref) || pref === 'none')
+      );
       if (isCompliant) filteredItems.push(item);
     }
 
-    await auditService.logAction({
-      userId: customerId,
-      role: 'customer',
-      action: 'apply_dietary_preferences',
-      details: { customerId, filteredItems: filteredItems.map(i => i.menu_item_id) },
-      ipAddress: '127.0.0.1',
-    });
-
+    await transaction.commit();
+    logger.logApiEvent('Dietary preferences applied', { customerId, filteredItemsCount: filteredItems.length, timestamp: getCurrentTimestamp() });
     return filteredItems;
   } catch (error) {
-    logger.error('Error applying dietary preferences', { error: error.message });
-    throw error;
+    await transaction.rollback();
+    logger.logErrorEvent('Error applying dietary preferences', { customerId, error: error.message });
+    throw handleServiceError('applyDietaryPreferences', error, munchConstants.ERROR_CODES[0]);
   }
 }
 
-/**
- * Updates order progress.
- * @param {number} orderId - Order ID.
- * @param {string} status - New status.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Updated order.
- */
-async function updateOrderStatus(orderId, status, io) {
+async function updateOrderStatus(orderId, status) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!orderId || !status) throw new Error('Order ID and status required');
-
-    const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'completed', 'cancelled'];
-    if (!validStatuses.includes(status)) throw new Error('Invalid status');
-
-    const order = await Order.findByPk(orderId, { include: [{ model: Customer, as: 'customer' }, { model: MerchantBranch, as: 'branch' }] });
-    if (!order) throw new Error('Order not found');
-
-    await order.update({ status });
-
-    await auditService.logAction({
-      userId: 'system',
-      role: 'merchant',
-      action: 'update_order_status',
-      details: { orderId, status },
-      ipAddress: '127.0.0.1',
-    });
-
-    socketService.emit(io, 'order:statusUpdated', { orderId, status }, `order:${orderId}`);
-
-    await notificationService.sendNotification({
-      userId: order.customer_id,
-      notificationType: 'order_status_update',
-      messageKey: `order.status.${status}`,
-      messageParams: { orderNumber: order.order_number },
-      role: 'customer',
-      module: 'order',
-      languageCode: order.customer?.preferred_language || 'en',
-    });
-
-    if (status === 'completed') {
-      await pointService.awardPoints({
-        userId: order.customer_id,
-        role: 'customer',
-        action: 'order_completed',
-        languageCode: order.customer?.preferred_language || 'en',
-      });
+    if (!orderId || !status) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidInput'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId, status }
+      );
     }
 
-    return order;
+    if (!munchConstants.ORDER_CONSTANTS.ORDER_STATUSES.includes(status)) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidStatus'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { status }
+      );
+    }
+
+    const order = await Order.findByPk(orderId, {
+      include: [{ model: Customer, as: 'customer' }, { model: MerchantBranch, as: 'branch' }],
+      transaction,
+    });
+    if (!order) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.orderNotFound'),
+        404,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId }
+      );
+    }
+
+    await order.update({ status, updated_at: getCurrentTimestamp() }, { transaction });
+
+    await transaction.commit();
+    logger.logApiEvent('Order status updated', { orderId, status, timestamp: getCurrentTimestamp() });
+    return { orderId, status };
   } catch (error) {
-    logger.error('Error updating order status', { error: error.message });
-    throw error;
+    await transaction.rollback();
+    logger.logErrorEvent('Error updating order status', { orderId, status, error: error.message });
+    throw handleServiceError('updateOrderStatus', error, munchConstants.ERROR_CODES[0]);
   }
 }
 
-/**
- * Processes wallet payments for an order.
- * @param {number} orderId - Order ID.
- * @param {number} walletId - Wallet ID.
- * @param {Object} io - Socket.IO instance.
- * @returns {Promise<Object>} Payment result.
- */
-async function payOrderWithWallet(orderId, walletId, io) {
+async function payOrderWithWallet(orderId, walletId) {
+  const transaction = await sequelize.transaction();
+
   try {
-    if (!orderId || !walletId) throw new Error('Order ID and wallet ID required');
+    if (!orderId || !walletId) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidInput'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId, walletId }
+      );
+    }
 
-    const order = await Order.findByPk(orderId, { include: [{ model: Customer, as: 'customer' }, { model: MerchantBranch, as: 'branch' }] });
-    if (!order) throw new Error('Order not found');
-    if (order.payment_status === 'paid') throw new Error('Order already paid');
-
-    const paymentResult = await walletService.debitWallet({
-      walletId,
-      userId: order.customer_id,
-      amount: order.total_amount,
-      currency: customerConstants.CUSTOMER_SETTINGS.DEFAULT_CURRENCY,
-      transactionType: 'order_payment',
-      description: `Payment for order ${order.order_number}`,
+    const order = await Order.findByPk(orderId, {
+      include: [
+        { model: Customer, as: 'customer' },
+        { model: MerchantBranch, as: 'branch' },
+      ],
+      transaction,
     });
+    if (!order) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.orderNotFound'),
+        404,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId }
+      );
+    }
+    if (order.payment_status === 'paid') {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.orderAlreadyPaid'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { orderId }
+      );
+    }
 
-    await order.update({ payment_status: 'paid' });
+    const wallet = await Wallet.findByPk(walletId, { transaction });
+    if (!wallet || wallet.user_id !== order.customer_id) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.invalidWallet'),
+        400,
+        munchConstants.ERROR_CODES[0],
+        null,
+        { walletId, customerId: order.customer_id }
+      );
+    }
+    if (wallet.balance < order.total_amount) {
+      throw new AppError(
+        formatMessage('merchant', 'munch', 'en', 'errors.walletInsufficientFunds'),
+        400,
+        munchConstants.ERROR_CODES[12],
+        null,
+        { walletId, balance: wallet.balance, required: order.total_amount }
+      );
+    }
 
-    await auditService.logAction({
-      userId: order.customer_id,
-      role: 'customer',
-      action: 'pay_order_with_wallet',
-      details: { orderId, walletId, amount: order.total_amount },
-      ipAddress: '127.0.0.1',
-    });
+    await wallet.update(
+      { balance: wallet.balance - order.total_amount },
+      { transaction }
+    );
 
-    socketService.emit(io, 'order:paymentProcessed', { orderId, paymentStatus: 'paid' }, `order:${orderId}`);
+    await Payment.create(
+      {
+        order_id: orderId,
+        customer_id: order.customer_id,
+        merchant_id: order.merchant_id,
+        amount: order.total_amount,
+        payment_method: munchConstants.WALLET_CONSTANTS.PAYMENT_METHODS[0], // 'wallet'
+        status: munchConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], // 'completed'
+        currency: order.currency,
+        transaction_id: `WALLET-${orderId}-${Date.now()}`,
+        provider: 'internal_wallet',
+        created_at: getCurrentTimestamp(),
+        updated_at: getCurrentTimestamp(),
+      },
+      { transaction }
+    );
 
-    await notificationService.sendNotification({
-      userId: order.customer_id,
-      notificationType: 'payment_confirmation',
-      messageKey: 'order.payment_confirmed',
-      messageParams: { orderNumber: order.order_number, amount: order.total_amount },
-      role: 'customer',
-      module: 'order',
-      languageCode: order.customer?.preferred_language || 'en',
-    });
+    await order.update(
+      { payment_status: munchConstants.WALLET_CONSTANTS.PAYMENT_STATUSES[1], updated_at: getCurrentTimestamp() },
+      { transaction }
+    );
 
-    return paymentResult;
+    await transaction.commit();
+    logger.logApiEvent('Wallet payment processed', { orderId, walletId, amount: order.total_amount, timestamp: getCurrentTimestamp() });
+    return { orderId, paymentStatus: 'paid', amount: order.total_amount };
   } catch (error) {
-    logger.error('Error processing wallet payment', { error: error.message });
-    throw error;
+    await transaction.rollback();
+    logger.logErrorEvent('Error processing wallet payment', { orderId, walletId, error: error.message });
+    throw handleServiceError('payOrderWithWallet', error, munchConstants.ERROR_CODES[0]);
   }
 }
 

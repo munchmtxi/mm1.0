@@ -11,7 +11,7 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  * /api/customer/mevents:
  *   post:
  *     summary: Create a new event
- *     description: Creates an event with optional participants, sends notifications, logs audit, emits socket event, and awards gamification points automatically.
+ *     description: Creates an event with optional participants, menu items, and tables, sends notifications, logs audit, emits socket event, and awards gamification points.
  *     tags:
  *       - Customer Events
  *     security:
@@ -51,6 +51,18 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  *                   type: integer
  *                 description: Participant user IDs
  *                 example: [456, 567]
+ *               selectedMenuItems:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Menu item IDs
+ *                 example: [101, 102]
+ *               selectedTables:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Table IDs
+ *                 example: [201, 202]
  *     responses:
  *       201:
  *         description: Event created successfully
@@ -85,16 +97,14 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  *       403:
  *         description: Forbidden
  *       404:
- *         description: Customer or participant not found
+ *         description: Customer, participant, menu item, or table not found
  *       429:
  *         description: Max participants exceeded
-
-/**
- * @swagger
+ *
  * /api/customer/mevents/bookingservices:
  *   post:
  *     summary: Manage group bookings for an event
- *     description: Adds services to an event, processes payments, sends notifications, logs audit, emits socket event, and awards gamification points.
+ *     description: Adds services (bookings, orders, rides, in-dining orders, parking bookings) to an event, processes payments, sends notifications, logs audit, emits socket event, and awards gamification points.
  *     tags:
  *       - Customer Events
  *     security:
@@ -136,6 +146,11 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  *                     items:
  *                       type: integer
  *                     example: [303]
+ *                   parkingBookings:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [404]
  *     responses:
  *       200:
  *         description: Transaction processed successfully
@@ -176,9 +191,7 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  *         description: Event or service not found
  *       429:
  *         description: Max services exceeded
-
-/**
- * @swagger
+ *
  * /api/customer/mevents/groupchat:
  *   post:
  *     summary: Facilitate group chat for an event
@@ -245,6 +258,130 @@ const eventValidator = require('@validators/customer/mevents/eventValidator');
  *         description: Forbidden
  *       404:
  *         description: Event or participant not found
+ *
+ * /api/customer/mevents/{eventId}:
+ *   patch:
+ *     summary: Amend an existing event
+ *     description: Updates an event's details, participants, menu items, tables, or services, processes payments, sends notifications, logs audit, emits socket event, and awards gamification points.
+ *     tags:
+ *       - Customer Events
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the event to amend
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 description: Updated event title
+ *                 example: Updated Birthday Party
+ *               description:
+ *                 type: string
+ *                 description: Updated event description
+ *                 example: Updated celebration details
+ *               occasion:
+ *                 type: string
+ *                 enum: [birthday, anniversary, other]
+ *                 description: Updated event type
+ *                 example: anniversary
+ *               paymentType:
+ *                 type: string
+ *                 enum: [solo, split]
+ *                 description: Updated payment method
+ *                 example: split
+ *               participantIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Updated participant user IDs
+ *                 example: [456, 567, 789]
+ *               selectedMenuItems:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Updated menu item IDs
+ *                 example: [103, 104]
+ *               selectedTables:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Updated table IDs
+ *                 example: [203, 204]
+ *               services:
+ *                 type: object
+ *                 properties:
+ *                   bookings:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [789]
+ *                   orders:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [101]
+ *                   rides:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [202]
+ *                   inDiningOrders:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [303]
+ *                   parkingBookings:
+ *                     type: array
+ *                     items:
+ *                       type: integer
+ *                     example: [404]
+ *     responses:
+ *       200:
+ *         description: Event amended successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: Event amended successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     eventId:
+ *                       type: integer
+ *                       example: 123
+ *                     gamificationError:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         message:
+ *                           type: string
+ *                           example: Failed to award points
+ *       400:
+ *         description: Invalid request parameters or amendment failure
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Event, participant, menu item, table, or service not found
+ *       429:
+ *         description: Max participants or services exceeded
  * components:
  *   securitySchemes:
  *     bearerAuth:
@@ -281,6 +418,16 @@ router.post(
   eventMiddleware.validateEventAccess,
   eventMiddleware.validateParticipantAccess,
   eventController.facilitateGroupChat
+);
+
+router.patch(
+  '/:eventId',
+  eventMiddleware.authenticate,
+  eventMiddleware.restrictTo('customer'),
+  eventMiddleware.checkPermissions('manage_event'),
+  eventValidator.validateAmendEvent,
+  eventMiddleware.validateEventAccess,
+  eventController.amendEvent
 );
 
 module.exports = router;

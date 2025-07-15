@@ -1,317 +1,132 @@
-/**
- * adminCoreConstants.js
- *
- * Defines core constants for the Admin Role System, covering admin roles, permissions,
- * user management, financial operations, and platform configuration. Supports admin
- * oversight, wallet operations, and global localization for regions (Malawi, Tanzania,
- * Kenya, Mozambique, Nigeria, South Africa, India, Brazil). Aligns with driverConstants.js,
- * staffConstants.js, customerConstants.js, and merchantConstants.js.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
-  // Admin Roles
   ADMIN_ROLES: {
-    SUPER_ADMIN: 'super_admin', // Full platform access
-    REGIONAL_ADMIN: 'regional_admin', // Region-specific oversight
-    FINANCIAL_ADMIN: 'financial_admin', // Wallet, payouts, taxes
-    COMPLIANCE_ADMIN: 'compliance_admin', // Regulatory and audit oversight
-    SUPPORT_ADMIN: 'support_admin', // Customer and user support
-    ANALYTICS_ADMIN: 'analytics_admin', // Platform analytics and reporting
-    SECURITY_ADMIN: 'security_admin', // Security and authentication management
+    super_admin: 'super_admin',
+    regional_admin: 'regional_admin',
+    financial_admin: 'financial_admin',
+    compliance_admin: 'compliance_admin',
+    support_admin: 'support_admin',
+    analytics_admin: 'analytics_admin',
+    security_admin: 'security_admin'
   },
-
-  // Admin Statuses
-  ADMIN_STATUSES: {
-    ACTIVE: 'active',
-    INACTIVE: 'inactive',
-    PENDING_VERIFICATION: 'pending_verification',
-    SUSPENDED: 'suspended',
-    TERMINATED: 'terminated'
-  },
-
-  // Admin Configuration
+  ADMIN_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'terminated'],
   ADMIN_SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: [
-      'USD', 'EUR', 'GBP', 'CAD', 'AUD', // Global
-      'MWK', // Malawi Kwacha
-      'TZS', // Tanzanian Shilling
-      'KES', // Kenyan Shilling
-      'MZN', // Mozambican Metical
-      'NGN', // Nigerian Naira
-      'ZAR', // South African Rand
-      'INR', // Indian Rupee
-      'BRL' // Brazilian Real
-    ],
-    DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: [
-      'en', 'es', 'fr', 'de', 'it', // Global
-      'sw', // Swahili (Kenya, Tanzania)
-      'ny', // Chichewa (Malawi)
-      'pt', // Portuguese (Mozambique, Brazil)
-      'hi', // Hindi (India)
-      'yo', // Yoruba (Nigeria)
-      'zu' // Zulu (South Africa)
-    ],
-    SUPPORTED_CITIES: {
-      US: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami'],
-      UK: ['London', 'Manchester', 'Birmingham', 'Glasgow'],
-      CA: ['Toronto', 'Vancouver', 'Montreal'],
-      AU: ['Sydney', 'Melbourne', 'Brisbane'],
-      MW: ['Lilongwe', 'Blantyre', 'Mzuzu'],
-      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha'],
-      KE: ['Nairobi', 'Mombasa', 'Kisumu'],
-      MZ: ['Maputo', 'Beira', 'Nampula'],
-      NG: ['Lagos', 'Abuja', 'Kano'],
-      ZA: ['Johannesburg', 'Cape Town', 'Durban'],
-      IN: ['Mumbai', 'Delhi', 'Bangalore'],
-      BR: ['São Paulo', 'Rio de Janeiro', 'Brasília']
-    },
-    DEFAULT_TIMEZONE: 'UTC',
-    SUPPORTED_MAP_PROVIDERS: {
-      US: 'google_maps',
-      CN: 'baidu_maps',
-      EU: 'openstreetmap',
-      MW: 'google_maps',
-      TZ: 'google_maps',
-      KE: 'google_maps',
-      MZ: 'google_maps',
-      NG: 'google_maps',
-      ZA: 'google_maps',
-      IN: 'google_maps',
-      BR: 'google_maps'
-    },
-    MAX_ADMINS_PER_REGION: 20,
-    MAX_LOGIN_SESSIONS_PER_ADMIN: 3,
-    SESSION_TIMEOUT_MINUTES: 30,
-    DEFAULT_PROFILE_FIELDS: {
-      REQUIRED: ['full_name', 'email', 'phone_number', 'role', 'region'],
-      OPTIONAL: ['profile_picture', 'preferred_language', 'emergency_contact']
-    },
-    PRIVACY_SETTINGS: {
-      DATA_VISIBILITY: ['internal', 'anonymized', 'none'],
-      LOG_ACCESS: ['audit_only', 'team', 'none']
-    }
+    MAX_ADMINS_PER_REGION: 50,
+    MAX_LOGIN_SESSIONS_PER_ADMIN: 5,
+    SESSION_TIMEOUT_MINUTES: 60,
+    TWO_FACTOR_AUTH: { ENABLED: true, METHODS: ['sms', 'email', 'authenticator_app', 'biometric'] },
+    PROFILE_FIELDS: { REQUIRED: ['full_name', 'email', 'phone_number', 'role', 'region'], OPTIONAL: ['preferred_language', 'emergency_contact'] },
+    PRIVACY_SETTINGS: { DATA_VISIBILITY: ['internal', 'anonymized'], LOG_ACCESS: ['audit_only', 'team'] }
   },
-
-  // Permissions by Admin Role
   ADMIN_PERMISSIONS: {
     super_admin: {
-      manageUsers: ['read', 'write', 'delete', 'suspend'], // All user types
-      manageFinancials: ['read', 'write', 'approve'], // Wallet, payouts, taxes
-      manageCompliance: ['read', 'write', 'audit'], // Certifications, regulations
-      manageSupport: ['read', 'write', 'escalate'], // Tickets, disputes
-      manageAnalytics: ['read', 'write', 'export'], // Platform-wide analytics
-      managePlatformSettings: ['read', 'write', 'deploy'], // Rules, pricing, payments
-      manageSecurity: ['read', 'write', 'configure'], // Authentication, encryption
-      manageBackups: ['read', 'write', 'restore'], // Data backups
-      manageLogs: ['read', 'write', 'archive'] // Audit and system logs
+      manageUsers: ['read', 'write', 'delete', 'suspend'],
+      manageFinancials: ['read', 'write', 'approve'],
+      manageCompliance: ['read', 'write', 'audit'],
+      manageSupport: ['read', 'write', 'escalate'],
+      manageAnalytics: ['read', 'write', 'export'],
+      managePlatformSettings: ['read', 'write', 'deploy'],
+      manageSecurity: ['read', 'write', 'configure'],
+      manageBackups: ['read', 'write', 'restore'],
+      manageLogs: ['read', 'write', 'archive']
     },
     regional_admin: {
-      manageUsers: ['read', 'write', 'suspend'], // Region-specific
+      manageUsers: ['read', 'write', 'suspend'],
       manageFinancials: ['read'],
       manageCompliance: ['read', 'write'],
-      manageSupport: ['read', 'payment'],
+      manageSupport: ['read', 'write', 'payment'],
       manageAnalytics: ['read'],
-      managePaymentSettings: ['read'],
-      manageLogs: ['read'] // Audit logs only
+      managePlatformSettings: ['read'],
+      manageLogs: ['read']
     },
     financial_admin: {
-      manageFinancials: ['read', 'write', 'approve'], // Wallet, payouts, taxes
-      manageUsers: ['read'], // Revenue data
-      manageAnalytics: ['read', 'export'], // Financial data
-      manageCompliance: ['read', 'write'], // Tax regulations
-      manageLogs: ['read'] // Financial audit logs
+      manageFinancials: ['read', 'write', 'approve'],
+      manageUsers: ['read'],
+      manageAnalytics: ['read', 'export'],
+      manageCompliance: ['read', 'write'],
+      manageLogs: ['read']
     },
     compliance_admin: {
-      manageCompliance: ['read', 'write', 'audit'], // Payments
-      manageUsers: ['payment'], // Payment compliance data
-      manageAnalytics: ['read'], // Payment analytics
-      manageLogs: ['Payments'] // Payment compliance
+      manageCompliance: ['read', 'write', 'audit'],
+      manageUsers: ['read'],
+      manageAnalytics: ['read'],
+      manageLogs: ['read', 'write']
     },
     support_admin: {
-      manageSupport: ['read', 'write', 'escalate'], // Pay, disputes
-      manageUsers: ['read'], // Payment data for support
-      manageAnalytics: ['read'], // Support metrics
-      manageLogs: ['read', 'support'] // Payment-related logs
+      manageSupport: ['read', 'write', 'escalate'],
+      manageUsers: ['read'],
+      manageAnalytics: ['read'],
+      manageLogs: ['read']
     },
     analytics_admin: {
-      manageAnalytics: ['read', 'write', 'export'], // Platform analytics
-      manageUsers: ['read'], // User activity data
-      manageLogs: ['read'] // Analytics-related logs
+      manageAnalytics: ['read', 'write', 'export'],
+      manageUsers: ['read'],
+      manageLogs: ['read']
     },
     security_admin: {
-      manageSecurity: ['read', 'write', 'configure'], // Authentication, encryption
-      manageUsers: ['read'], // Security data
-      manageLogs: ['read', 'write', 'archive'] // Security audit logs
+      manageSecurity: ['read', 'write', 'configure'],
+      manageUsers: ['read'],
+      manageLogs: ['read', 'write', 'archive']
     }
   },
-
-  // User Management
   USER_MANAGEMENT: {
-    USER_TYPES: ['customer', 'merchant', 'driver', 'staff', 'admin'],
-    USER_STATUSES: {
-      ACTIVE: 'active',
-      INACTIVE: 'inactive',
-      PENDING_VERIFICATION: 'pending'],
-      SUSPENDED: ['pending', 'suspended',
-      BANNED: 'banned'
-    },
-    ONBOARDING_STEPS: ['profile_creation', 'document_verification', 'wallet_setup', 'training', 'compliance_check'],
+    USER_TYPES: ['customer', 'driver', 'merchant'],
+    USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'banned'],
+    ONBOARDING_STEPS: ['profile_creation', 'document_verification', 'compliance_check'],
     VERIFICATION_METHODS: ['email', 'sms', 'document_upload', 'biometric'],
     SUSPENSION_REASONS: ['policy_violation', 'fraud', 'non_compliance', 'inactivity'],
-    MAX_USERS_PER_REGION: 1000,
-    MAX_DOCUMENT_UPLOADS: 5,
-    DOCUMENT_TYPES: [
-        'drivers_license',
-        'vehicle_insurance',
-        'food_safety',
-        'business_license',
-        ['health_permit'],
-        'halal_certification',
-        'identity_proof']
-    },
-    ANALYTICS_PERFORMANCE: {
-      USER_GROWTH: 'user_growth',
-      VERIFICATION_RATE: 'verification_rate',
-      SUSPENSION_RATE: 'suspension_rate',
-      ONBOARDING_COMPLETION: 'onboarding_completion'
-    }
+    DOCUMENT_TYPES: ['drivers_license', 'business_license', 'health_permit', 'halal_certification'],
+    MAX_USERS_PER_REGION: 5000,
+    MAX_DOCUMENT_UPLOADS: 10
   },
-
-  // Wallet and Financial Management
   WALLET_CONSTANTS: {
     WALLET_TYPES: ['customer', 'driver', 'merchant', 'staff', 'admin'],
-    PAYMENT_METHODS: [
-      'credit_card',
-      'debit_card',
-      'digital_wallet',
-      'bank_transfer',
-      'mobile_money'
-    ],
-    PAYMENT_STATUSES: [
-      'pending',
-      'completed',
-      'failed',
-      'refunded',
-      'rejected',
-      'disputed'
-    ],
-    TRANSACTION_TYPES: [
-      'deposit',
-      'payment',
-      'refund',
-      'withdrawal',
-      'cashback',
-      'tip',
-      'salary',
-      'bonus',
-      'gamification_reward',
-      'payout',
-      'fee'
-    ],
+    PAYMENT_METHODS: ['credit_card', 'debit_card', 'digital_wallet', 'bank_transfer', 'mobile_money', 'crypto'],
+    PAYMENT_STATUSES: ['pending', 'completed', 'failed', 'refunded', 'rejected', 'disputed'],
+    TRANSACTION_TYPES: ['deposit', 'payment', 'refund', 'withdrawal', 'payout', 'fee'],
     WALLET_SETTINGS: {
-      MIN_DEPOSIT_AMOUNT: 5, // In default currency
-      MAX_DEPOSIT_AMOUNT: 5000,
-      MIN_WITHDRAWAL_AMOUNT: 10,
-      MAX_WITHDRAWAL_AMOUNT: 10000,
-      MIN_PAYOUT_AMOUNT: 10,
-      MAX_PAYOUT_AMOUNT: 5000,
-      TRANSACTION_LIMIT_PER_DAY: 100,
-      MAX_PAYMENT_METHODS: 5,
-      MAX_WALLET_BALANCE: 50000
+      MIN_DEPOSIT_AMOUNT: 5,
+      MAX_DEPOSIT_AMOUNT: 10000,
+      MIN_WITHDRAWAL_AMOUNT: 5,
+      MAX_WITHDRAWAL_AMOUNT: 15000,
+      MIN_PAYOUT_AMOUNT: 5,
+      MAX_PAYOUT_AMOUNT: 10000,
+      TRANSACTION_LIMIT_PER_DAY: 200,
+      MAX_WALLET_BALANCE: 100000
     },
     PAYOUT_SETTINGS: {
-      SUPPORTED_PAYOUT_METHODS: ['bank_transfer', 'wallet_transfer', 'mobile_money'],
-      MAX_PAYOUT_FREQUENCY_DAYS: 30,
-      PAYOUT_PROCESSING_TIME_HOURS: 48,
-      MIN_PAYOUT_PROCESSING_FEE: 0.5 // In default currency
-    },
-    TAX_SETTINGS: {
-      DEFAULT_TAX_RATE_PERCENTAGE: 10,
-      SUPPORTED_TAX_REGIONS: [
-        'US', 'EU', 'CA', 'AU', 'UK',
-        'MW', 'TZ', 'KE', 'MZ', 'NG', 'ZA', 'IN', 'BR'
-      ],
-      TAX_EXEMPTION_TYPES: ['non_profit', 'small_business', 'individual']
-    },
-    FRAUD_DETECTION: {
-      MAX_SUSPICIOUS_TRANSACTIONS_PER_DAY: 5,
-      TRANSACTION_VELOCITY_LIMIT: 10, // Transactions per hour
-      IP_BLOCK_DURATION_HOURS: 24
-    },
-    FINANCIAL_ANALYTICS: {
-      REPORT_PERIODS: ['daily', 'weekly', 'monthly', 'yearly'],
-      TRANSACTION_CATEGORIES: [
-        'deposit', 'payment', 'refund', 'withdrawal', 'cashback',
-        'tip', 'salary', 'bonus', 'gamification_reward', 'payout', 'fee'
-      ],
-      METRICS: [
-        'revenue',
-        'transaction_volume',
-        'fraud_rate',
-        'payout_success_rate'
-      ]
+      SUPPORTED_PAYOUT_METHODS: ['bank_transfer', 'wallet_transfer', 'mobile_money', 'crypto'],
+      MAX_PAYOUT_FREQUENCY_DAYS: 7,
+      PAYOUT_PROCESSING_TIME_HOURS: 24,
+      CRYPTO_WALLETS: ['BTC', 'ETH', 'USDT']
     }
   },
-
-  // Platform Configuration
   PLATFORM_CONSTANTS: {
     PRICING_MODELS: ['fixed', 'dynamic', 'subscription', 'hybrid'],
-    RATE_LIMITS: {
-      API_CALLS_PER_MINUTE: 100,
-      USER_ACTIONS_PER_HOUR: 500,
-      ADMIN_ACTIONS_PER_HOUR: 1000
-    },
-    LOCALIZATION_DEFAULTS: {
-      CURRENCY: 'USD',
-      TIME_FORMAT: '24h',
-      DATE_FORMAT: 'YYYY-MM-DD',
-      MAP_PROVIDER: 'google_maps'
-    },
-    BACKUP_SETTINGS: {
-      BACKUP_FREQUENCY_HOURS: 24,
-      DATA_RETENTION_DAYS: 365,
-      MAX_BACKUP_SIZE_MB: 10000,
-      RESTORE_TIMEOUT_MINUTES: 60
-    },
-    SYSTEM_HEALTH: {
-      MIN_UPTIME_PERCENTAGE: 99.9,
-      MAX_DOWNTIME_MINUTES_PER_MONTH: 43,
-      HEALTH_CHECK_INTERVAL_SECONDS: 60
-    },
-    FEATURE_FLAGS: ['new_ui', 'advanced_analytics', 'beta_features'],
-    DEPLOYMENT_SETTINGS: {
-      ROLLBACK_WINDOW_HOURS: 24,
-      MAX_CONCURRENT_DEPLOYS: 3,
-      DEPLOYMENT_NOTIFICATION_METHODS: ['email', 'sms']
-    },
-    ANALYTICS_METRICS: [
-      'configuration_change_rate',
-      'feature_adoption',
-      'system_uptime'
-    ]
+    RATE_LIMITS: { API_CALLS_PER_MINUTE: 200, USER_ACTIONS_PER_HOUR: 1000, ADMIN_ACTIONS_PER_HOUR: 2000 },
+    BACKUP_SETTINGS: { BACKUP_FREQUENCY_HOURS: 12, DATA_RETENTION_DAYS: 730, MAX_BACKUP_SIZE_MB: 20000 },
+    SYSTEM_HEALTH: { MIN_UPTIME_PERCENTAGE: 99.95, MAX_DOWNTIME_MINUTES_PER_MONTH: 20, HEALTH_CHECK_INTERVAL_SECONDS: 30 }
   },
-
-  // Error Codes
-  ERROR_CODES: {
-    INVALID_ADMIN: 'ERR_INVALID_ADMIN',
-    ADMIN_NOT_FOUND: 'ERR_ADMIN_NOT_FOUND',
-    PERMISSION_DENIED: 'ERR_PERMISSION_DENIED',
-    USER_SUSPENSION_FAILED: 'ERR_USER_SUSPENSION_FAILED',
-    WALLET_OPERATION_FAILED: 'ERR_WALLET_OPERATION_FAILED',
-    PAYMENT_FAILED: 'ERR_PAYMENT_FAILED',
-    CONFIGURATION_UPDATE_FAILED: 'ERR_CONFIGURATION_UPDATE_FAILED'
+  ANALYTICS_CONSTANTS: {
+    METRICS: ['user_activity', 'financial_performance', 'support_ticket_resolution', 'platform_health', 'cross_vertical_usage', 'parking_usage'],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730,
+    AI_ANALYTICS_ENABLED: true
   },
-
-  // Success Messages
-  SUCCESS_MESSAGES: {
-    ADMIN_CREATED: 'Admin created successfully',
-    USER_SUSPENDED: 'User suspended successfully',
-    USER_ONBOARDED: 'User onboarded successfully',
-    FINANCIAL_REPORT_GENERATED: 'Financial report generated successfully',
-    PLATFORM_CONFIG_UPDATED: 'Platform configuration updated successfully'
-  }
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['user_update', 'financial_update', 'compliance_alert', 'support_ticket', 'platform_announcement', 'security_alert', 'analytics_report'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    MAX_PER_HOUR: 20,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
+  },
+  ERROR_CODES: [
+    'INVALID_ADMIN', 'ADMIN_NOT_FOUND', 'PERMISSION_DENIED', 'USER_SUSPENSION_FAILED',
+    'WALLET_OPERATION_FAILED', 'PAYMENT_FAILED', 'CONFIGURATION_UPDATE_FAILED'
+  ],
+  SUCCESS_MESSAGES: [
+    'admin_created', 'user_suspended', 'user_onboarded', 'financial_report_generated',
+    'platform_config_updated'
+  ]
 };

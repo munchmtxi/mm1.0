@@ -3,17 +3,23 @@
 const express = require('express');
 const router = express.Router();
 const bookingController = require('@controllers/customer/mtables/bookingController');
-const bookingMiddleware = require('@middleware/customer/mtables/bookingMiddleware');
 const bookingValidator = require('@validators/customer/mtables/bookingValidator');
+const bookingsMiddleware = require('@middleware/customer/mtables/bookingsMiddleware');
+const { validate } = require('@middleware/common/validationMiddleware');
 
 /**
  * @swagger
- * /api/customer/mtables/bookings:
+ * tags:
+ *   name: Bookings
+ *   description: Customer table booking management
+ */
+
+/**
+ * @swagger
+ * /customer/mtables/bookings:
  *   post:
- *     summary: Create a reservation
- *     description: Creates a table reservation, processes deposit, sends notifications, logs audit, emits socket event, and awards points.
- *     tags:
- *       - Customer Bookings
+ *     summary: Create a new table reservation
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -23,162 +29,116 @@ const bookingValidator = require('@validators/customer/mtables/bookingValidator'
  *           schema:
  *             type: object
  *             required:
+ *               - customerId
  *               - tableId
  *               - branchId
  *               - date
  *               - time
  *               - partySize
  *             properties:
- *               tableId: { type: integer, example: 123 }
- *               branchId: { type: integer, example: 456 }
- *               date: { type: string, example: "2025-12-31" }
+ *               customerId: { type: integer, example: 1 }
+ *               tableId: { type: integer, example: 101 }
+ *               branchId: { type: integer, example: 201 }
+ *               date: { type: string, format: date, example: "2025-07-01" }
  *               time: { type: string, example: "18:00" }
  *               partySize: { type: integer, example: 4 }
- *               dietaryPreferences: { type: array, items: { type: string, example: vegetarian } }
- *               specialRequests: { type: string, example: "Window seat" }
- *               seatingPreference: { type: string, example: window }
- *               paymentMethodId: { type: integer, example: 789 }
- *               depositAmount: { type: number, example: 50.00 }
+ *               dietaryPreferences: { type: array, items: { type: string, enum: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE', 'NUT_FREE', 'DAIRY_FREE', 'HALAL', 'KOSHER', 'LOW_CARB', 'ORGANIC'] }, example: ['VEGETARIAN', 'GLUTEN_FREE'] }
+ *               specialRequests: { type: string, example: "Window seat preferred" }
+ *               seatingPreference: { type: string, enum: ['NO_PREFERENCE', 'INDOOR', 'OUTDOOR', 'ROOFTOP', 'BALCONY', 'WINDOW', 'BOOTH', 'HIGH_TOP', 'BAR', 'LOUNGE', 'PRIVATE', 'COMMUNAL'], example: "WINDOW" }
  *     responses:
- *       200:
- *         description: Booking created
+ *       201:
+ *         description: Reservation created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Booking created }
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId: { type: integer, example: 123 }
- *                     reference: { type: string, example: BK-123456-ABCDEF }
- *                     gamificationError: { type: object, nullable: true }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data: { type: object }
+ *       400:
+ *         description: Invalid input
  */
 router.post(
   '/',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateCreateReservation,
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.createReservation),
   bookingController.createReservation
 );
 
 /**
  * @swagger
- * /api/customer/mtables/bookings/{bookingId}/update:
- *   post:
- *     summary: Update a reservation
- *     description: Updates a reservation, sends notifications, logs audit, and emits socket event.
- *     tags:
- *       - Customer Bookings
+ * /customer/mtables/bookings:
+ *   put:
+ *     summary: Update an existing reservation
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: bookingId
- *         required: true
- *         schema: { type: integer }
- *         description: Booking ID
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - bookingId
  *             properties:
- *               date: { type: string, example: "2025-12-31" }
- *               time: { type: string, example: "18:00" }
- *               partySize: { type: integer, example: 4 }
- *               dietaryPreferences: { type: array, items: { type: string, example: vegetarian } }
- *               specialRequests: { type: string, example: "Window seat" }
- *               seatingPreference: { type: string, example: window }
+ *               bookingId: { type: integer, example: 301 }
+ *               date: { type: string, format: date, example: "2025-07-01" }
+ *               time: { type: string, example: "19:00" }
+ *               partySize: { type: integer, example: 5 }
+ *               dietaryPreferences: { type: array, items: { type: string, enum: ['VEGETARIAN', 'VEGAN', 'GLUTEN_FREE', 'NUT_FREE', 'DAIRY_FREE', 'HALAL', 'KOSHER', 'LOW_CARB', 'ORGANIC'] }, example: ['VEGAN'] }
+ *               specialRequests: { type: string, example: "Allergy information updated" }
+ *               seatingPreference: { type: string, enum: ['NO_PREFERENCE', 'INDOOR', 'OUTDOOR', 'ROOFTOP', 'BALCONY', 'WINDOW', 'BOOTH', 'HIGH_TOP', 'BAR', 'LOUNGE', 'PRIVATE', 'COMMUNAL'], example: "BOOTH" }
  *     responses:
  *       200:
- *         description: Booking updated
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Booking updated }
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId: { type: integer, example: 123 }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *         description: Reservation updated successfully
+ *       400:
+ *         description: Invalid input or booking not found
  */
-router.post(
-  '/:bookingId/update',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateUpdateReservation,
-  bookingMiddleware.checkBookingAccess,
+router.put(
+  '/',
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.updateReservation),
   bookingController.updateReservation
 );
 
 /**
  * @swagger
- * /api/customer/mtables/bookings/{bookingId}/cancel:
- *   post:
+ * /customer/mtables/bookings/{bookingId}:
+ *   delete:
  *     summary: Cancel a reservation
- *     description: Cancels a reservation, processes refund if needed, sends notifications, logs audit, and emits socket event.
- *     tags:
- *       - Customer Bookings
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: bookingId
  *         required: true
- *         schema: { type: integer }
- *         description: Booking ID
+ *         schema:
+ *           type: integer
+ *           example: 301
  *     responses:
  *       200:
- *         description: Booking cancelled
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Booking cancelled }
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId: { type: integer, example: 123 }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *         description: Reservation cancelled successfully
+ *       400:
+ *         description: Booking not found or cancellation window expired
  */
-router.post(
-  '/:bookingId/cancel',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateBookingId,
-  bookingMiddleware.checkBookingAccess,
+router.delete(
+  '/:bookingId',
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.cancelBooking),
   bookingController.cancelBooking
 );
 
 /**
  * @swagger
- * /api/customer/mtables/bookings/{bookingId}/check-in:
+ * /customer/mtables/bookings/check-in:
  *   post:
- *     summary: Process check-in
- *     description: Processes check-in for a booking, sends notifications, logs audit, emits socket event, and awards points.
- *     tags:
- *       - Customer Bookings
+ *     summary: Process check-in for a reservation
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: bookingId
- *         required: true
- *         schema: { type: integer }
- *         description: Booking ID
  *     requestBody:
  *       required: true
  *       content:
@@ -186,91 +146,62 @@ router.post(
  *           schema:
  *             type: object
  *             required:
+ *               - bookingId
  *               - method
  *             properties:
- *               qrCode: { type: string, example: ABC123 }
- *               method: { type: string, example: qr_code }
- *               coordinates: { type: object, properties: { lat: { type: number }, lng: { type: number } } }
+ *               bookingId: { type: integer, example: 301 }
+ *               qrCode: { type: string, example: "ABC123" }
+ *               method: { type: string, enum: ['QR_CODE', 'MANUAL', 'NFC'], example: "QR_CODE" }
+ *               coordinates: { type: object, properties: { latitude: { type: number }, longitude: { type: number } }, example: { latitude: 40.7128, longitude: -74.0060 } }
  *     responses:
  *       200:
- *         description: Check-in confirmed
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Check-in confirmed }
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId: { type: integer, example: 123 }
- *                     gamificationError: { type: object, nullable: true }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *         description: Check-in processed successfully
+ *       400:
+ *         description: Invalid input or check-in failed
  */
 router.post(
-  '/:bookingId/check-in',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateCheckIn,
-  bookingMiddleware.checkBookingAccess,
+  '/check-in',
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.processCheckIn),
   bookingController.processCheckIn
 );
 
 /**
  * @swagger
- * /api/customer/mtables/bookings/history:
+ * /customer/mtables/bookings/history:
  *   get:
- *     summary: Get booking history
- *     description: Retrieves booking history for a customer.
- *     tags:
- *       - Customer Bookings
+ *     summary: Retrieve booking history for a customer
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: customerId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           example: 1
  *     responses:
  *       200:
- *         description: Booking history retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Booking history retrieved }
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       bookingId: { type: integer, example: 123 }
- *                       reference: { type: string, example: BK-123456-ABCDEF }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *         description: Booking history retrieved successfully
+ *       400:
+ *         description: Invalid customer ID
  */
 router.get(
   '/history',
-  bookingMiddleware.verifyCustomer,
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.getBookingHistory),
   bookingController.getBookingHistory
 );
 
 /**
  * @swagger
- * /api/customer/mtables/bookings/{bookingId}/feedback:
+ * /customer/mtables/bookings/feedback:
  *   post:
- *     summary: Submit booking feedback
- *     description: Submits feedback for a booking, sends notifications, logs audit, emits socket event, and awards points.
- *     tags:
- *       - Customer Bookings
+ *     summary: Submit feedback for a booking
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: bookingId
- *         required: true
- *         schema: { type: integer }
- *         description: Booking ID
  *     requestBody:
  *       required: true
  *       content:
@@ -278,145 +209,23 @@ router.get(
  *           schema:
  *             type: object
  *             required:
+ *               - bookingId
  *               - rating
  *             properties:
- *               rating: { type: integer, example: 5 }
- *               comment: { type: string, example: Great experience! }
+ *               bookingId: { type: integer, example: 301 }
+ *               rating: { type: integer, minimum: 1, maximum: 5, example: 4 }
+ *               comment: { type: string, example: "Great experience!" }
  *     responses:
- *       200:
- *         description: Feedback submitted
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Feedback submitted }
- *                 data:
- *                   type: object
- *                   properties:
- *                     feedbackId: { type: integer, example: 456 }
- *                     gamificationError: { type: object, nullable: true }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
+ *       201:
+ *         description: Feedback submitted successfully
+ *       400:
+ *         description: Invalid input or booking not found
  */
 router.post(
-  '/:bookingId/feedback',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateSubmitFeedback,
-  bookingMiddleware.checkBookingAccess,
+  '/feedback',
+  bookingsMiddleware.authenticateCustomer,
+  validate(bookingValidator.submitBookingFeedback),
   bookingController.submitBookingFeedback
-);
-
-/**
- * @swagger
- * /api/customer/mtables/bookings/{bookingId}/party-members:
- *   post:
- *     summary: Add a party member to a booking
- *     description: Adds a friend to a booking, sends notifications, logs audit, and emits socket event.
- *     tags:
- *       - Customer Bookings
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: bookingId
- *         required: true
- *         schema: { type: integer }
- *         description: Booking ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - friendCustomerId
- *               - inviteMethod
- *             properties:
- *               friendCustomerId: { type: integer, example: 789 }
- *               inviteMethod: { type: string, example: app }
- *     responses:
- *       200:
- *         description: Party member added
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Party member added }
- *                 data:
- *                   type: object
- *                   properties:
- *                     bookingId: { type: integer, example: 123 }
- *                     friendCustomerId: { type: integer, example: 789 }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
- */
-router.post(
-  '/:bookingId/party-members',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateAddPartyMember,
-  bookingMiddleware.checkBookingAccess,
-  bookingController.addPartyMember
-);
-
-/**
- * @swagger
- * /api/customer/mtables/bookings/search:
- *   post:
- *     summary: Search available tables
- *     description: Searches for available tables based on location, date, time, and preferences, logs audit, emits socket event, and awards points.
- *     tags:
- *       - Customer Bookings
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - coordinates
- *               - radius
- *               - date
- *               - time
- *               - partySize
- *             properties:
- *               coordinates: { type: object, properties: { lat: { type: number }, lng: { type: number } } }
- *               radius: { type: number, example: 5000 }
- *               date: { type: string, example: "2025-12-31" }
- *               time: { type: string, example: "18:00" }
- *               partySize: { type: integer, example: 4 }
- *               seatingPreference: { type: string, example: window }
- *     responses:
- *       200:
- *         description: Tables retrieved
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status: { type: string, example: success }
- *                 message: { type: string, example: Tables retrieved }
- *                 data:
- *                   type: object
- *                   properties:
- *                     tables: { type: array, items: { type: object, properties: { id: { type: integer }, branchId: { type: integer } } } }
- *                     gamificationError: { type: object, nullable: true }
- *       400: { description: Invalid request }
- *       401: { description: Unauthorized }
- *       403: { description: Forbidden }
- */
-router.post(
-  '/search',
-  bookingMiddleware.verifyCustomer,
-  bookingValidator.validateSearchAvailableTables,
-  bookingController.searchAvailableTables
 );
 
 module.exports = router;

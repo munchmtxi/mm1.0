@@ -1,39 +1,20 @@
 'use strict';
 
-/**
- * schedulingService.js
- * Manages staff scheduling for munch (staff role). Plans shifts, updates assignments,
- * notifies changes, and awards scheduling points.
- * Last Updated: May 26, 2025
- */
-
-const { Shift, Staff, Notification, TimeWindow } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const staffRolesConstants = require('@constants/staff/staffRolesConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
+const { Shift, Staff, TimeWindow } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
 
-/**
- * Plans shift schedules for a restaurant.
- * @param {number} restaurantId - Branch ID.
- * @param {Object} schedule - Shift schedule details.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Created shift.
- */
-async function createShiftSchedule(restaurantId, schedule, ipAddress) {
+async function createShiftSchedule(restaurantId, schedule, ipAddress, notificationService, socketService, auditService, pointService) {
   try {
     const { staffId, startTime, endTime, shiftType } = schedule;
     const staff = await Staff.findByPk(staffId);
     if (!staff || staff.branch_id !== restaurantId) {
-      throw new AppError('Invalid staff or branch', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
+      throw new AppError('Invalid staff or branch', 404, staffConstants.STAFF_ERROR_CODES.INVALID_BRANCH);
     }
 
-    if (!staffRolesConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES[shiftType]) {
+    if (!staffConstants.STAFF_SHIFT_SETTINGS.SHIFT_TYPES.includes(shiftType)) {
       throw new AppError('Invalid shift type', 400, staffConstants.STAFF_ERROR_CODES.ERROR);
     }
 
@@ -53,22 +34,37 @@ async function createShiftSchedule(restaurantId, schedule, ipAddress) {
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, shiftId: shift.id, action: 'create_shift' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('scheduling.shift_created', { shiftId: shift.id });
+    const message = formatMessage('scheduling.shift_created', { shiftId: shift.id });
     await notificationService.sendNotification({
       userId: staffId,
       notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
     socketService.emit(`munch:scheduling:${staffId}`, 'scheduling:shift_created', { staffId, shiftId: shift.id });
+
+    const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
+    if (action) {
+      await pointService.awardPoints({
+        userId: staffId,
+        role: staff.position,
+        subRole: staff.position,
+        action: action.action,
+        languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+      });
+      socketService.emit(`munch:staff:${staffId}`, 'points:awarded', {
+        action: action.action,
+        points: action.points,
+      });
+    }
 
     return shift;
   } catch (error) {
@@ -77,14 +73,7 @@ async function createShiftSchedule(restaurantId, schedule, ipAddress) {
   }
 }
 
-/**
- * Adjusts shift assignments.
- * @param {number} scheduleId - Shift ID.
- * @param {Object} updates - Shift updates.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Updated shift.
- */
-async function updateShift(scheduleId, updates, ipAddress) {
+async function updateShift(scheduleId, updates, ipAddress, notificationService, socketService, auditService, pointService) {
   try {
     const shift = await Shift.findByPk(scheduleId);
     if (!shift) {
@@ -95,13 +84,37 @@ async function updateShift(scheduleId, updates, ipAddress) {
 
     await auditService.logAction({
       userId: shift.staff_id,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(shift.position) ? shift.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { shiftId: scheduleId, updates, action: 'update_shift' },
       ipAddress,
     });
 
+    const message = formatMessage('scheduling.shift_updated', { staffId: shift.staff_id });
+    await notificationService.sendNotification({
+      userId: shift.staff_id,
+      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
+      message,
+      role: staffConstants.STAFF_TYPES.includes(shift.position) ? shift.position : 'staff',
+      module: 'munch',
+    });
+
     socketService.emit(`munch:scheduling:${shift.staff_id}`, 'scheduling:shift_updated', { shiftId: scheduleId, updates });
+
+    const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
+    if (action) {
+      await pointService.awardPoints({
+        userId: shift.staff_id,
+        role: shift.position,
+        subRole: shift.position,
+        action: action.action,
+        languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+      });
+      socketService.emit(`munch:staff:${shift.staff_id}`, 'points:awarded', {
+        action: action.action,
+        points: action.points,
+      });
+    }
 
     return shift;
   } catch (error) {
@@ -110,31 +123,25 @@ async function updateShift(scheduleId, updates, ipAddress) {
   }
 }
 
-/**
- * Alerts staff of schedule updates.
- * @param {number} staffId - Staff ID.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<void>}
- */
-async function notifyShiftChange(staffId, ipAddress) {
+async function notifyShiftChange(staffId, ipAddress, notificationService, socketService, auditService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
       throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    const message = localization.formatMessage('scheduling.shift_updated', { staffId });
+    const message = formatMessage('scheduling.shift_updated', { staffId });
     await notificationService.sendNotification({
       userId: staffId,
       notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SHIFT_UPDATE,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, action: 'notify_shift_change' },
       ipAddress,
@@ -147,40 +154,8 @@ async function notifyShiftChange(staffId, ipAddress) {
   }
 }
 
-/**
- * Awards scheduling points.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<void>}
- */
-async function awardSchedulingPoints(staffId) {
-  try {
-    const staff = await Staff.findByPk(staffId);
-    if (!staff) {
-      throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
-    }
-
-    const action = staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.TASK_COMPLETION.action;
-    await pointService.awardPoints({
-      userId: staffId,
-      role: 'staff',
-      subRole: staff.position,
-      action,
-      languageCode: 'en',
-    });
-
-    socketService.emit(`munch:staff:${staffId}`, 'points:awarded', {
-      action,
-      points: staffRolesConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.TASK_COMPLETION.points,
-    });
-  } catch (error) {
-    logger.error('Scheduling points award failed', { error: error.message, staffId });
-    throw new AppError(`Points award failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
-  }
-}
-
 module.exports = {
   createShiftSchedule,
   updateShift,
-  notifyShiftChange,
-  awardSchedulingPoints,
+  notifyShiftChange
 };

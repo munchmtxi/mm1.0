@@ -1,7 +1,0 @@
-{
-  "staff": {
-    "task_allocated": "New {taskType} task assigned, due {dueDate}.",
-    "task_delayed": "Task {taskType} is delayed, was due {dueDate}.",
-    "task_points_awarded": "Awarded {points} points for task completion."
-  }
-}

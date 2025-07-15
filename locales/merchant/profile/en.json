@@ -1,13 +1,38 @@
 {
   "profile": {
-    "created": "Your merchant profile has been created successfully, {name}.",
-    "updated": "Your merchant profile has been updated successfully, {name}.",
-    "country_updated": "Your country settings have been updated to {country}.",
-    "media_uploaded": "Media ({mediaType}) uploaded successfully.",
-    "wallet_settings_updated": "Your wallet settings have been updated successfully.",
-    "payment_method_added": "Payment method ({methodType}) added to your wallet.",
-    "withdrawal_processed": "Withdrawal of {amount} {currency} processed successfully.",
-    "business_updated": "Your business profile has been updated successfully for merchant ({merchantId}).",
-    "localization_updated": "Your localization settings have been updated to {language}."
+    "branch": {
+      "updated": "Branch {branchId} details updated successfully.",
+      "settings_updated": "Branch {branchId} settings configured successfully.",
+      "synced": "Merchant {merchantId} branches synchronized successfully."
+    },
+    "media": {
+      "uploaded": "Media uploaded for branch {branchId}.",
+      "menu_uploaded": "Menu photos uploaded for branch {restaurantId}.",
+      "promo_uploaded": "Promotional media uploaded for branch {restaurantId}.",
+      "metadata_updated": "Media metadata updated for media {mediaId}.",
+      "deleted": "Media {mediaId} deleted successfully."
+    },
+    "merchant": {
+      "business_updated": "Business details updated for merchant {merchantId}.",
+      "country_updated": "Country settings updated to {country} for merchant {merchantId}.",
+      "localization_updated": "Localization settings updated to {language} for merchant {merchantId}.",
+      "points_awarded": "{points} points awarded for profile completion."
+    },
+    "errors": {
+      "branchNotFound": "Branch not found.",
+      "merchantNotFound": "Merchant not found.",
+      "mediaNotFound": "Media not found.",
+      "invalidOperatingHours": "Operating hours must include open and close times.",
+      "invalidPhone": "Invalid contact phone number format.",
+      "unsupportedLocation": "Unsupported location.",
+      "invalidCurrency": "Unsupported currency.",
+      "invalidLanguage": "Unsupported language.",
+      "invalidMediaType": "Invalid media type.",
+      "invalidFileData": "Invalid file data.",
+      "invalidMetadata": "Invalid metadata provided.",
+      "unsupportedCountry": "Unsupported country.",
+      "invalidBusinessType": "Invalid business type.",
+      "invalidBusinessTypeDetails": "Invalid business type details."
+    }
   }
 }

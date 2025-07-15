@@ -1,31 +1,14 @@
 'use strict';
 
-/**
- * Driver Ride Service
- * Manages driver-side taxi ride operations, including accepting rides, retrieving details, updating status,
- * communicating with passengers, and awarding gamification points. Integrates with common services.
- */
-
 const { Ride, Customer, Driver, sequelize } = require('@models');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const locationService = require('@services/common/locationService');
-const auditService = require('@services/common/auditService');
-const notificationService = require('@services/common/notificationService');
-const driverConstants = require('@constants/driver/driverConstants');
+const driverConstants = require('@constants/driverConstants');
 const rideConstants = require('@constants/common/rideConstants');
-const { formatMessage } = require('@utils/localization/localization');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 const { Op } = require('sequelize');
 
-/**
- * Accepts a ride request.
- * @param {number} rideId - Ride ID.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Updated ride object.
- */
-async function acceptRide(rideId, driverId) {
+async function acceptRide(rideId, driverId, auditService, notificationService, socketService, pointService) {
   const ride = await Ride.findByPk(rideId, { include: [{ model: Customer, as: 'customer' }] });
   if (!ride) throw new AppError('Ride not found', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
   if (ride.status !== rideConstants.RIDE_STATUSES.PENDING) {
@@ -65,6 +48,13 @@ async function acceptRide(rideId, driverId) {
       priority: 'HIGH',
     });
 
+    await pointService.awardPoints({
+      userId: driver.user_id,
+      role: 'driver',
+      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'ride_completion').action,
+      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    });
+
     socketService.emit(null, 'ride:accepted', { rideId, driverId, customerId: ride.customerId });
 
     await transaction.commit();
@@ -76,16 +66,26 @@ async function acceptRide(rideId, driverId) {
   }
 }
 
-/**
- * Retrieves ride information.
- * @param {number} rideId - Ride ID.
- * @returns {Promise<Object>} Ride details.
- */
-async function getRideDetails(rideId) {
+async function getRideDetails(rideId, auditService, pointService) {
   const ride = await Ride.findByPk(rideId, {
     include: [{ model: Customer, as: 'customer', attributes: ['user_id', 'full_name', 'phone_number'] }],
   });
   if (!ride) throw new AppError('Ride not found', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
+
+  await auditService.logAction({
+    userId: 'system',
+    role: 'driver',
+    action: 'GET_RIDE_DETAILS',
+    details: { rideId },
+    ipAddress: 'unknown',
+  });
+
+  await pointService.awardPoints({
+    userId: 'system',
+    role: 'driver',
+    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'ride_details_access').action,
+    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+  });
 
   logger.info('Ride details retrieved', { rideId });
   return {
@@ -99,14 +99,7 @@ async function getRideDetails(rideId) {
   };
 }
 
-/**
- * Updates ride progress.
- * @param {number} rideId - Ride ID.
- * @param {string} status - New status.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function updateRideStatus(rideId, status, driverId) {
+async function updateRideStatus(rideId, status, driverId, auditService, notificationService, socketService, pointService) {
   const validStatuses = Object.values(rideConstants.RIDE_STATUSES);
   if (!validStatuses.includes(status)) {
     throw new AppError('Invalid status', 400, rideConstants.ERROR_CODES.INVALID_RIDE);
@@ -143,6 +136,15 @@ async function updateRideStatus(rideId, status, driverId) {
       priority: 'MEDIUM',
     });
 
+    if (status === rideConstants.RIDE_STATUSES.COMPLETED) {
+      await pointService.awardPoints({
+        userId: driver.user_id,
+        role: 'driver',
+        action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'ride_completion').action,
+        languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+      });
+    }
+
     socketService.emit(null, 'ride:status_updated', { rideId, status, driverId });
 
     await transaction.commit();
@@ -153,14 +155,7 @@ async function updateRideStatus(rideId, status, driverId) {
   }
 }
 
-/**
- * Sends/receives messages between driver and passenger.
- * @param {number} rideId - Ride ID.
- * @param {string} message - Message content.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<void>}
- */
-async function communicateWithPassenger(rideId, message, driverId) {
+async function communicateWithPassenger(rideId, message, driverId, auditService, notificationService, socketService) {
   const ride = await Ride.findByPk(rideId);
   if (!ride) throw new AppError('Ride not found', 404, rideConstants.ERROR_CODES.RIDE_NOT_FOUND);
   if (ride.driverId !== driverId) {
@@ -199,41 +194,9 @@ async function communicateWithPassenger(rideId, message, driverId) {
   logger.info('Message sent to passenger', { rideId, driverId });
 }
 
-/**
- * Awards gamification points for ride completion.
- * @param {number} driverId - Driver ID.
- * @returns {Promise<Object>} Points awarded record.
- */
-async function awardRidePoints(driverId) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
-
-  const completedRides = await Ride.count({
-    where: {
-      driverId,
-      status: rideConstants.RIDE_STATUSES.COMPLETED,
-      updated_at: { [Op.gte]: sequelize.literal('CURRENT_DATE') },
-    },
-  });
-  if (completedRides === 0) {
-    throw new AppError('No completed rides today', 400, rideConstants.ERROR_CODES.NO_COMPLETED_RIDES);
-  }
-
-  const pointsRecord = await pointService.awardPoints({
-    userId: driver.user_id,
-    role: 'driver',
-    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.RIDE_COMPLETION.action,
-    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-  });
-
-  logger.info('Ride points awarded', { driverId, points: pointsRecord.points });
-  return pointsRecord;
-}
-
 module.exports = {
   acceptRide,
   getRideDetails,
   updateRideStatus,
   communicateWithPassenger,
-  awardRidePoints,
 };

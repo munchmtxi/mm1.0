@@ -1,49 +1,65 @@
-/**
- * driverConstants.js
- *
- * Defines constants for the Driver staff role, handling order deliveries for restaurant,
- * dark_kitchen, grocery, caterer, cafe, and bakery merchants. Supports global operations
- * with inclusivity and aligns with merchantConstants.js, etc.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
   STAFF_ROLE: 'driver',
   NAME: 'Driver',
-  DESCRIPTION: 'Handles delivery of orders.',
-  SUPPORTED_MERCHANT_TYPES: ['restaurant', 'dark_kitchen', 'grocery', 'caterer', 'cafe', 'bakery'],
-
+  DESCRIPTION: 'Handles delivery of orders and parking coordination across merchants.',
+  SUPPORTED_MERCHANT_TYPES: ['restaurant', 'dark_kitchen', 'grocery', 'caterer', 'cafe', 'bakery', 'parking_lot'],
   RESPONSIBILITIES: [
-    'Pick up and deliver orders (mtxi)',
-    'Log gamification points for delivery performance',
-    'Verify order accuracy at pickup'
+    'process_deliveries',
+    'verify_orders',
+    'coordinate_pickups',
+    'monitor_parking'
   ],
-
-  PERMISSIONS: ['process_deliveries', 'verify_orders', 'view_wallet', 'request_withdrawal', 'log_gamification'],
-
+  PERMISSIONS: [
+    'process_deliveries',
+    'verify_orders',
+    'view_wallet',
+    'request_withdrawal',
+    'monitor_parking'
+  ],
   TASK_TYPES: {
-    mtxi: ['process_delivery', 'verify_order'],
-    munch: ['delivery_handover']
+    mtxi: ['process_delivery', 'verify_order', 'parking_check'],
+    munch: ['delivery_handover'],
+    mpark: ['parking_check']
   },
-
-  REQUIRED_CERTIFICATIONS: ['drivers_license', 'food_safety_driver'],
-
-  TRAINING_CATEGORIES: ['food_safety', 'driver_training'],
-
-  GAMIFICATION_ACTIONS: [
-    { action: 'delivery_completion', points: 25, walletCredit: 0.60 },
-    { action: 'batch_delivery', points: 15, walletCredit: 0.40 },
-    { action: 'timely_pickup', points: 15, walletCredit: 0.40 },
-    { action: 'task_completion', points: 10, walletCredit: 0.30 },
-    { action: 'performance_improvement', points: 20, walletCredit: 0.60 }
+  SHIFT_SETTINGS: {
+    MIN_SHIFT_HOURS: 2,
+    MAX_SHIFT_HOURS: 14,
+    MAX_SHIFTS_PER_WEEK: 7,
+    AI_SHIFT_SCHEDULING: true
+  },
+  CERTIFICATIONS: {
+    REQUIRED: ['drivers_license', 'food_safety_driver', 'parking_operations'],
+    EXPIRY_DAYS: 365,
+    RENEWAL_NOTIFICATION_DAYS: [30, 15, 7]
+  },
+  TRAINING_MODULES: [
+    'food_safety',
+    'delivery_operations',
+    'customer_interaction',
+    'parking_operations'
   ],
-
-  ANALYTICS_METRICS: ['delivery_performance', 'task_completion_rate'],
-
-  NOTIFICATION_TYPES: ['delivery_assignment', 'shift_update', 'wallet_update', 'profile_updated', 'announcement'],
-
-  ERROR_CODES: ['PERMISSION_DENIED', 'TASK_ASSIGNMENT_FAILED', 'INVALID_DELIVERY_ASSIGNMENT'],
-
-  SUCCESS_MESSAGES: ['Delivery completed', 'Gamification points awarded']
+  ANALYTICS_CONSTANTS: {
+    METRICS: ['delivery_time', 'task_completion_rate', 'order_accuracy', 'parking_compliance'],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['delivery_assignment', 'shift_update', 'wallet_update', 'route_update', 'announcement', 'parking_alert'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp'],
+    MAX_PER_HOUR: 10,
+    RETRY_ATTEMPTS: 3
+  },
+  ERROR_CODES: [
+    'PERMISSION_DENIED',
+    'TASK_ASSIGNMENT_FAILED',
+    'INVALID_DELIVERY_ASSIGNMENT',
+    'INVALID_PARKING'
+  ],
+  SUCCESS_MESSAGES: [
+    'delivery_completed',
+    'order_handed_over',
+    'parking_checked'
+  ]
 };

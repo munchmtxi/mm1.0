@@ -1,42 +1,24 @@
 'use strict';
 
-/**
- * Booking Service for mtables (Admin)
- * Manages booking monitoring, table adjustments, booking finalization, and gamification points.
- * Integrates with notification, socket, audit, point, and localization services.
- *
- * Last Updated: May 27, 2025
- */
-
 const { Op, sequelize } = require('sequelize');
 const {
   Booking,
-  BookingTimeSlot,
   BookingBlackoutDate,
   Customer,
   MerchantBranch,
   Table,
 } = require('@models');
-const mtablesConstants = require('@constants/common/mtablesConstants');
+const mtablesConstants = require('@constants/admin/mtablesConstants');
 const adminServiceConstants = require('@constants/admin/adminServiceConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const auditService = require('@services/common/auditService');
-const pointService = require('@services/common/pointService');
 const { formatMessage } = require('@utils/localizationService');
 const logger = require('@utils/logger');
 const { AppError } = require('@utils/AppError');
 
-/**
- * Tracks real-time booking statuses for a restaurant.
- * @param {number} restaurantId - Merchant branch ID.
- * @returns {Promise<Object>} Booking status summary.
- */
 async function monitorBookings(restaurantId) {
   try {
     if (!restaurantId) {
       throw new AppError(
-        'Restaurant ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -45,7 +27,7 @@ async function monitorBookings(restaurantId) {
     const branch = await MerchantBranch.findByPk(restaurantId);
     if (!branch) {
       throw new AppError(
-        'Restaurant not found',
+        formatMessage('error.restaurant_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -55,7 +37,7 @@ async function monitorBookings(restaurantId) {
       where: {
         branch_id: restaurantId,
         booking_date: {
-          [Op.gte]: new Date(), // Future or current bookings
+          [Op.gte]: new Date(),
         },
         status: {
           [Op.in]: [
@@ -92,23 +74,6 @@ async function monitorBookings(restaurantId) {
       })),
     };
 
-    // Emit socket event
-    await socketService.emit(null, 'bookings:status_updated', {
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      restaurantId,
-      summary,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: branch.merchant_id.toString(),
-      role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { restaurantId, summary },
-      ipAddress: 'unknown',
-    });
-
     logger.info('Bookings monitored', { restaurantId, totalActiveBookings: summary.totalActiveBookings });
     return summary;
   } catch (error) {
@@ -117,17 +82,11 @@ async function monitorBookings(restaurantId) {
   }
 }
 
-/**
- * Handles table reassignments for a booking.
- * @param {number} bookingId - Booking ID.
- * @param {Object} reassignment - { tableId: number, reason: string }
- * @returns {Promise<Object>} Updated booking details.
- */
-async function manageTableAdjustments(bookingId, reassignment) {
+async function manageTableAdjustments(bookingId, reassignment, { pointService }) {
   try {
     if (!bookingId || !reassignment?.tableId) {
       throw new AppError(
-        'Booking ID and table ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -141,7 +100,7 @@ async function manageTableAdjustments(bookingId, reassignment) {
     });
     if (!booking) {
       throw new AppError(
-        'Booking not found',
+        formatMessage('error.booking_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -150,7 +109,7 @@ async function manageTableAdjustments(bookingId, reassignment) {
     const newTable = await Table.findByPk(reassignment.tableId);
     if (!newTable || newTable.branch_id !== booking.branch_id) {
       throw new AppError(
-        'Invalid or incompatible table',
+        formatMessage('error.invalid_table'),
         400,
         mtablesConstants.ERROR_CODES.TABLE_NOT_AVAILABLE
       );
@@ -158,19 +117,17 @@ async function manageTableAdjustments(bookingId, reassignment) {
 
     if (newTable.status !== mtablesConstants.TABLE_STATUSES.AVAILABLE) {
       throw new AppError(
-        'Table not available',
+        formatMessage('error.table_not_available'),
         400,
         mtablesConstants.ERROR_CODES.TABLE_NOT_AVAILABLE
       );
     }
 
-    // Update table statuses
     if (booking.table) {
       await booking.table.update({ status: mtablesConstants.TABLE_STATUSES.AVAILABLE });
     }
     await newTable.update({ status: mtablesConstants.TABLE_STATUSES.RESERVED });
 
-    // Update booking
     await booking.update({
       table_id: newTable.id,
       party_notes: reassignment.reason
@@ -179,31 +136,11 @@ async function manageTableAdjustments(bookingId, reassignment) {
       booking_modified_at: new Date(),
     });
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: booking.customer_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'booking.table_reassigned',
-      messageParams: { tableNumber: newTable.table_number, reason: reassignment.reason || 'N/A' },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'booking:table_reassigned', {
-      userId: booking.customer_id.toString(),
-      role: 'customer',
-      bookingId,
-      newTable: { id: newTable.id, tableNumber: newTable.table_number },
-    });
-
-    // Log audit action
-    await auditService.logAction({
+    await pointService.awardPoints({
       userId: booking.merchant_id.toString(),
       role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { bookingId, newTableId: newTable.id, reason: reassignment.reason },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.tableStatusUpdated,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.STAFF_ACTIONS.TASK_COMPLETION.points,
     });
 
     logger.info('Table reassigned', { bookingId, newTableId: newTable.id });
@@ -218,16 +155,11 @@ async function manageTableAdjustments(bookingId, reassignment) {
   }
 }
 
-/**
- * Finalizes completed bookings.
- * @param {number} bookingId - Booking ID.
- * @returns {Promise<Object>} Finalized booking details.
- */
-async function closeBookings(bookingId) {
+async function closeBookings(bookingId, { pointService }) {
   try {
     if (!bookingId) {
       throw new AppError(
-        'Booking ID required',
+        formatMessage('error.invalid_booking_details'),
         400,
         mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
       );
@@ -237,12 +169,12 @@ async function closeBookings(bookingId) {
       include: [
         { model: MerchantBranch, as: 'branch' },
         { model: Table, as: 'table' },
-        { model: Customer, as: 'customer' },
+        { model: Customer, as: 'customer', include: [{ model: sequelize.models.User, as: 'user' }] },
       ],
     });
     if (!booking) {
       throw new AppError(
-        'Booking not found',
+        formatMessage('error.booking_not_found'),
         404,
         mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
       );
@@ -250,25 +182,22 @@ async function closeBookings(bookingId) {
 
     if (booking.status === adminServiceConstants.MTABLES_CONSTANTS.BOOKING_STATUSES.COMPLETED) {
       throw new AppError(
-        'Booking already completed',
+        formatMessage('error.booking_already_completed'),
         400,
-        mtablesConstants.ERROR_CODES.BOOKING_FAILED
+        mtablesConstants.ERROR_CODES.BOOKING_UPDATE_FAILED
       );
     }
 
-    // Update booking status
     await booking.update({
       status: adminServiceConstants.MTABLES_CONSTANTS.BOOKING_STATUSES.COMPLETED,
       departed_at: new Date(),
       booking_modified_at: new Date(),
     });
 
-    // Update table status
     if (booking.table) {
       await booking.table.update({ status: mtablesConstants.TABLE_STATUSES.AVAILABLE });
     }
 
-    // Check for associated in-dining orders
     const inDiningOrder = await sequelize.models.InDiningOrder.findOne({
       where: { table_id: booking.table_id, customer_id: booking.customer_id },
     });
@@ -276,30 +205,21 @@ async function closeBookings(bookingId) {
       await inDiningOrder.update({ status: 'closed' });
     }
 
-    // Send notification
-    await notificationService.sendNotification({
-      userId: booking.customer_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_UPDATED,
-      messageKey: 'booking.completed',
-      messageParams: { bookingId, date: booking.format_date() },
+    const actionConfig = mtablesConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.CHECK_IN;
+    await pointService.awardPoints({
+      userId: booking.customer.user_id.toString(),
       role: 'customer',
-      module: 'mtables',
+      action: actionConfig.action,
+      points: actionConfig.points,
+      metadata: { bookingId, branchId: booking.branch_id },
+      expiresAt: new Date(Date.now() + mtablesConstants.GAMIFICATION_CONSTANTS.POINT_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
     });
 
-    // Emit socket event
-    await socketService.emit(null, 'booking:completed', {
-      userId: booking.customer_id.toString(),
-      role: 'customer',
-      bookingId,
-    });
-
-    // Log audit action
-    await auditService.logAction({
+    await pointService.awardPoints({
       userId: booking.merchant_id.toString(),
       role: 'merchant',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_UPDATED,
-      details: { bookingId, status: 'completed' },
-      ipAddress: 'unknown',
+      action: mtablesConstants.POINT_AWARD_ACTIONS.checkInProcessed,
+      points: mtablesConstants.GAMIFICATION_CONSTANTS.STAFF_ACTIONS.CHECK_IN_LOG.points,
     });
 
     logger.info('Booking closed', { bookingId });
@@ -314,106 +234,8 @@ async function closeBookings(bookingId) {
   }
 }
 
-/**
- * Awards gamification points for a booking.
- * @param {number} customerId - Customer ID.
- * @param {number} bookingId - Booking ID.
- * @returns {Promise<Object>} Points awarded details.
- */
-async function awardBookingPoints(customerId, bookingId) {
-  try {
-    if (!customerId || !bookingId) {
-      throw new AppError(
-        'Customer ID and booking ID required',
-        400,
-        mtablesConstants.ERROR_CODES.INVALID_BOOKING_DETAILS
-      );
-    }
-
-    const customer = await Customer.findByPk(customerId, {
-      include: [{ model: sequelize.models.User, as: 'user' }],
-    });
-    if (!customer) {
-      throw new AppError(
-        'Customer not found',
-        404,
-        mtablesConstants.ERROR_CODES.INVALID_CUSTOMER_ID
-      );
-    }
-
-    const booking = await Booking.findByPk(bookingId, {
-      include: [{ model: MerchantBranch, as: 'branch' }],
-    });
-    if (!booking) {
-      throw new AppError(
-        'Booking not found',
-        404,
-        mtablesConstants.ERROR_CODES.BOOKING_NOT_FOUND
-      );
-    }
-
-    const actionConfig = mtablesConstants.GAMIFICATION_ACTIONS.BOOKING_CREATED;
-    if (!actionConfig || !actionConfig.roles.includes('customer')) {
-      throw new AppError(
-        'Invalid gamification action',
-        400,
-        mtablesConstants.ERROR_CODES.GAMIFICATION_POINTS_FAILED
-      );
-    }
-
-    // Award points
-    const pointsAwarded = await pointService.awardPoints({
-      userId: customer.user_id,
-      role: 'customer',
-      action: actionConfig.action,
-      points: actionConfig.points,
-      metadata: { bookingId, branchId: booking.branch_id },
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year expiry
-    });
-
-    // Send notification
-    await notificationService.sendNotification({
-      userId: customer.user_id.toString(),
-      type: mtablesConstants.NOTIFICATION_TYPES.BOOKING_CONFIRMATION,
-      messageKey: 'gamification.points_awarded',
-      messageParams: { points: actionConfig.points, action: actionConfig.name },
-      role: 'customer',
-      module: 'mtables',
-    });
-
-    // Emit socket event
-    await socketService.emit(null, 'gamification:points_awarded', {
-      userId: customer.user_id.toString(),
-      role: 'customer',
-      points: actionConfig.points,
-      bookingId,
-    });
-
-    // Log audit action
-    await auditService.logAction({
-      userId: customer.user_id.toString(),
-      role: 'customer',
-      action: mtablesConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.BOOKING_CREATED,
-      details: { bookingId, points: actionConfig.points },
-      ipAddress: 'unknown',
-    });
-
-    logger.info('Points awarded', { customerId, bookingId, points: actionConfig.points });
-    return {
-      customerId,
-      bookingId,
-      points: actionConfig.points,
-      walletCredit: actionConfig.walletCredit,
-    };
-  } catch (error) {
-    logger.logErrorEvent(`awardBookingPoints failed: ${error.message}`, { customerId, bookingId });
-    throw error;
-  }
-}
-
 module.exports = {
   monitorBookings,
   manageTableAdjustments,
   closeBookings,
-  awardBookingPoints,
 };

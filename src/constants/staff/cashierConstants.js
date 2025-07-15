@@ -1,45 +1,65 @@
-/**
- * cashierConstants.js
- *
- * Defines constants for the Cashier staff role, processing sales and customer inquiries for
- * grocery and cafe merchants. Supports global operations with inclusivity and aligns with
- * merchantConstants.js, etc.
- *
- * Last Updated: May 27, 2025
- */
+'use strict';
 
 module.exports = {
   STAFF_ROLE: 'cashier',
   NAME: 'Cashier',
-  DESCRIPTION: 'Processes sales and customer inquiries.',
+  DESCRIPTION: 'Processes sales, customer inquiries, and refunds for grocery and cafe merchants.',
   SUPPORTED_MERCHANT_TYPES: ['grocery', 'cafe'],
-
   RESPONSIBILITIES: [
-    'Process checkouts and handle inquiries (munch)',
-    'Log gamification points for checkout speed'
+    'process_checkouts',
+    'handle_inquiries',
+    'resolve_disputes',
+    'process_refunds',
+    'monitor_transactions'
   ],
-
-  PERMISSIONS: ['process_checkout', 'handle_inquiries', 'view_wallet', 'request_withdrawal', 'log_gamification'],
-
+  PERMISSIONS: [
+    'process_checkout',
+    'handle_inquiries',
+    'view_wallet',
+    'request_withdrawal',
+    'process_refunds',
+    'view_transactions'
+  ],
   TASK_TYPES: {
-    munch: ['process_checkout', 'resolve_dispute']
+    munch: ['process_checkout', 'resolve_dispute', 'process_refund', 'monitor_transaction']
   },
-
-  REQUIRED_CERTIFICATIONS: ['financial_compliance'],
-
-  TRAINING_CATEGORIES: ['customer_service', 'financial'],
-
-  GAMIFICATION_ACTIONS: [
-    { action: 'checkout_processing', points: 10, walletCredit: 0.30 },
-    { action: 'task_completion', points: 10, walletCredit: 0.30 },
-    { action: 'performance_improvement', points: 20, walletCredit: 0.60 }
+  SHIFT_SETTINGS: {
+    MIN_SHIFT_HOURS: 2,
+    MAX_SHIFT_HOURS: 14,
+    MAX_SHIFTS_PER_WEEK: 7,
+    AI_SHIFT_SCHEDULING: true
+  },
+  CERTIFICATIONS: {
+    REQUIRED: ['financial_compliance', 'payment_processing'],
+    EXPIRY_DAYS: 365,
+    RENEWAL_NOTIFICATION_DAYS: [30, 15, 7]
+  },
+  TRAINING_MODULES: [
+    'customer_service',
+    'payment_processing',
+    'financial_compliance',
+    'refund_management'
   ],
-
-  ANALYTICS_METRICS: ['checkout_speed', 'customer_satisfaction'],
-
-  NOTIFICATION_TYPES: ['task_assignment', 'shift_update', 'wallet_update', 'profile_updated', 'announcement'],
-
-  ERROR_CODES: ['PERMISSION_DENIED', 'TASK_ASSIGNMENT_FAILED', 'INVALID_BRANCH'],
-
-  SUCCESS_MESSAGES: ['Task completed', 'Gamification points awarded']
+  ANALYTICS_CONSTANTS: {
+    METRICS: ['checkout_speed', 'customer_satisfaction', 'transaction_accuracy', 'refund_processing_time'],
+    REPORT_FORMATS: ['csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730
+  },
+  NOTIFICATION_CONSTANTS: {
+    TYPES: ['task_assignment', 'shift_update', 'wallet_update', 'payment_update', 'announcement', 'refund_alert'],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp'],
+    MAX_PER_HOUR: 10,
+    RETRY_ATTEMPTS: 3
+  },
+  ERROR_CODES: [
+    'PERMISSION_DENIED',
+    'TASK_ASSIGNMENT_FAILED',
+    'INVALID_BRANCH',
+    'INVALID_REFUND'
+  ],
+  SUCCESS_MESSAGES: [
+    'task_completed',
+    'checkout_processed',
+    'refund_processed'
+  ]
 };

@@ -1,24 +1,50 @@
 {
-  "ride_booked": "Ride {reference} has been successfully booked.",
-  "ride_updated": "Ride {rideId} has been updated.",
-  "ride_cancelled": "Ride {rideId} has been cancelled.",
-  "ride_check_in": "Ride {rideId} check-in confirmed.",
-  "feedback_submitted": "Feedback for ride {rideId} submitted.",
-  "friend_invite": "You have been invited to join ride {rideId}.",
-  "bill_split_processed": "Bill split for ride {rideId} processed.",
-  "subscription_enrolled": "Subscription {subscriptionId} for {plan} plan ({service}) enrolled.",
-  "subscription_updated": "Subscription {subscriptionId} updated.",
-  "subscription_upgrade": "Subscription {subscriptionId} upgraded to {plan} ({service}).",
-  "subscription_pause": "Subscription {subscriptionId} paused ({service}).",
-  "subscription_cancelled": "Subscription {subscriptionId} cancelled ({service}).",
-  "tip_sent": "Tip {tipId} of {amount} sent for {service} service.",
-  "tip_received": "Received tip {tipId} of {amount} for {service} service.",
-  "tip_cancelled": "Tip {tipId} cancelled.",
-  "tip_status_updated": "Tip {tipId} status updated to {status}.",
-  "support.ticket.created": "Support ticket {ticketId} created for {service} service.",
-  "support.ticket.escalated": "Support ticket {ticketId} escalated.",
-  "support.ticket.closed": "Support ticket {ticketId} closed.",
-  "promotion.redeemed": "Promotion {promotionId} redeemed for {service} service.",
-  "promotion.cancelled": "Promotion {promotionId} redemption cancelled.",
-  "gamification.reward": "Awarded {points} points and {amount} credit for {service}."
+  "ride": {
+    "error": {
+      "unauthorized": "Unauthorized access",
+      "invalid_ride_id": "Invalid ride ID",
+      "invalid_location": "Invalid location data",
+      "invalid_ride_type": "Invalid ride type",
+      "invalid_scheduled_time": "Invalid scheduled time",
+      "invalid_friends": "Invalid friends list",
+      "invalid_rating": "Rating must be between 1 and 5",
+      "invalid_status": "Invalid status"
+    },
+    "success": {
+      "ride_requested": "Ride requested successfully, reference: {reference}",
+      "ride_completed": "Ride completed successfully",
+      "ride_cancelled": "Ride cancelled successfully",
+      "friends_added": "Friends added to ride successfully",
+      "feedback_submitted": "Feedback submitted successfully",
+      "ride_history_retrieved": "Ride history retrieved successfully"
+    }
+  },
+  "subscription": {
+    "error": {
+      "unauthorized": "Unauthorized access",
+      "invalid_plan_id": "Invalid plan ID",
+      "invalid_service_type": "Invalid service type",
+      "invalid_subscription_id": "Invalid subscription ID",
+      "invalid_action": "Invalid action"
+    },
+    "success": {
+      "subscription_enrolled": "Subscribed to {plan} successfully",
+      "subscription_updated": "Subscription updated to {plan} successfully",
+      "subscription_canceled": "Subscription cancelled successfully",
+      "subscription_tiers_tracked": "Subscription tiers retrieved successfully",
+      "subscription_history_retrieved": "Subscription history retrieved successfully"
+    }
+  },
+  "location": {
+    "error": {
+      "unauthorized": "Unauthorized access",
+      "invalid_coordinates": "Invalid coordinates",
+      "invalid_country_code": "Invalid country code"
+    },
+    "success": {
+      "location_updated": "Driver location updated successfully",
+      "driver_tracked": "Driver location retrieved successfully",
+      "nearby_drivers_retrieved": "Nearby drivers retrieved successfully"
+    }
+  }
 }

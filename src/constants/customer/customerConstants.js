@@ -1,338 +1,275 @@
-/**
- * customerConstants.js
- *
- * Defines constants for the Customer Role System, covering interactions with mtables (table bookings),
- * munch (food orders), mtxi (ride requests), and mevents (event services). Supports expanded merchant
- * types (restaurant, dark_kitchen, butcher, grocery, caterer, cafe, bakery), global operations
- * (Malawi, Tanzania, Kenya, Mozambique, Nigeria, South Africa, India, Brazil) with inclusivity
- * (e.g., halal filters), and aligns with merchantConstants.js, staffConstants.js, driverConstants.js,
- * and admin constants.
- *
- * Last Updated: June 01, 2025
- */
-
 'use strict';
 
 module.exports = {
   // Customer Statuses
-  CUSTOMER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended'],
+  CUSTOMER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'banned'],
 
   // Customer Configuration
   CUSTOMER_SETTINGS: {
-    DEFAULT_CURRENCY: 'USD',
-    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'NGN', 'ZAR', 'INR', 'BRL'],
+    MAX_FRIENDS_PER_CUSTOMER: 200,
+    MAX_ACTIVE_BOOKINGS: 7,
+    MAX_ACTIVE_ORDERS: 15,
+    MAX_ACTIVE_RIDES: 3,
+    MAX_ACTIVE_PARKING_BOOKINGS: 3,
+    MAX_ACTIVE_EVENTS: 5,
+    MAX_LOGIN_SESSIONS: 5,
+    SESSION_TIMEOUT_MINUTES: 60,
     DEFAULT_LANGUAGE: 'en',
-    SUPPORTED_LANGUAGES: ['en', 'es', 'fr', 'de', 'it', 'sw', 'ny', 'pt', 'hi', 'yo', 'zu'],
-    SUPPORTED_CITIES: {
-      US: ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami'],
-      UK: ['London', 'Manchester', 'Birmingham', 'Glasgow'],
-      CA: ['Toronto', 'Vancouver', 'Montreal'],
-      AU: ['Sydney', 'Melbourne', 'Brisbane'],
-      MW: ['Lilongwe', 'Blantyre', 'Mzuzu'],
-      TZ: ['Dar es Salaam', 'Dodoma', 'Arusha'],
-      KE: ['Nairobi', 'Mombasa', 'Kisumu'],
-      MZ: ['Maputo', 'Beira', 'Nampula'],
-      NG: ['Lagos', 'Abuja', 'Kano'],
-      ZA: ['Johannesburg', 'Cape Town', 'Durban'],
-      IN: ['Mumbai', 'Delhi', 'Bangalore'],
-      BR: ['São Paulo', 'Rio de Janeiro', 'Brasília']
-    },
-    DEFAULT_TIMEZONE: 'UTC',
-    MAX_FRIENDS_PER_CUSTOMER: 100,
-    MAX_ACTIVE_BOOKINGS: 5,
-    MAX_ACTIVE_ORDERS: 10,
-    MAX_ACTIVE_RIDES: 2,
-    MAX_LOGIN_SESSIONS: 3,
-    SESSION_TIMEOUT_MINUTES: 30
+    SUPPORTED_LANGUAGES: ['en', 'es', 'fr', 'de', 'it', 'sw', 'ny', 'pt', 'hi', 'zu', 'xh', 'am', 'ti'],
+    DIETARY_PREFERENCES: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic']
   },
 
   // Service Access: mtables (Table Bookings)
   MTABLES_CONSTANTS: {
-    SUPPORTED_MERCHANT_TYPES: ['restaurant', 'cafe'],
-    BOOKING_STATUSES: ['pending', 'confirmed', 'checked_in', 'completed', 'cancelled'],
-    CHECK_IN_METHODS: ['qr_code', 'manual'],
+    SUPPORTED_MERCHANT_TYPES: ['restaurant', 'cafe', 'caterer'],
+    BOOKING_STATUSES: ['pending', 'confirmed', 'checked_in', 'completed', 'cancelled', 'no_show'],
+    CHECK_IN_METHODS: ['qr_code', 'manual', 'nfc'],
     BOOKING_POLICIES: {
-      MIN_BOOKING_HOURS: 1,
-      MAX_BOOKING_HOURS: 4,
-      CANCELLATION_WINDOW_HOURS: 24,
-      EXTENSION_LIMIT_MINUTES: 120,
-      MIN_DEPOSIT_PERCENTAGE: 10
+      MIN_BOOKING_HOURS: 0.5,
+      MAX_BOOKING_HOURS: 6,
+      CANCELLATION_WINDOW_HOURS: 12,
+      EXTENSION_LIMIT_MINUTES: 180,
+      MIN_DEPOSIT_PERCENTAGE: 5
     },
     PRE_ORDER_SETTINGS: {
-      MAX_GROUP_SIZE: 20,
-      MIN_PRE_ORDER_LEAD_TIME_MINUTES: 30,
-      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal']
+      MAX_GROUP_SIZE: 30,
+      MIN_PRE_ORDER_LEAD_TIME_MINUTES: 15,
+      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic']
     },
     TABLE_MANAGEMENT: {
       MIN_TABLE_CAPACITY: 1,
-      MAX_TABLE_CAPACITY: 20
+      MAX_TABLE_CAPACITY: 30,
+      SEATING_PREFERENCES: ['indoor', 'outdoor', 'rooftop', 'balcony', 'window', 'booth', 'high_top']
     }
   },
 
   // Service Access: munch (Food Orders)
   MUNCH_CONSTANTS: {
     SUPPORTED_MERCHANT_TYPES: ['restaurant', 'dark_kitchen', 'butcher', 'grocery', 'caterer', 'cafe', 'bakery'],
-    ORDER_TYPES: ['dine_in', 'takeaway', 'delivery'],
-    ORDER_STATUSES: ['pending', 'preparing', 'ready', 'in_delivery', 'delivered', 'cancelled'],
+    ORDER_TYPES: ['dine_in', 'takeaway', 'delivery', 'pre_order'],
+    ORDER_STATUSES: ['pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'cancelled', 'refunded'],
     ORDER_SETTINGS: {
-      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal'],
-      MAX_ORDER_ITEMS: 50,
-      MIN_ORDER_AMOUNT: 5
+      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic'],
+      MAX_ORDER_ITEMS: 100,
+      MIN_ORDER_AMOUNT: 2,
+      AI_RECOMMENDATIONS: ['personalized_menu', 'dietary_suggestions', 'trending_items'],
+      SOCIAL_SHARING: ['share_order', 'post_review', 'invite_friends']
     },
     DELIVERY_SETTINGS: {
-      MAX_DELIVERY_RADIUS_KM: 20,
-      MIN_DELIVERY_TIME_MINUTES: 15,
-      MAX_DELIVERY_TIME_MINUTES: 90
+      MAX_DELIVERY_RADIUS_KM: 25,
+      MIN_DELIVERY_TIME_MINUTES: 10,
+      MAX_DELIVERY_TIME_MINUTES: 120,
+      EVENT_DELIVERY_WINDOW_MINUTES: 20,
+      AI_ROUTE_OPTIMIZATION: true,
+      REAL_TIME_TRACKING: true
     }
   },
 
   // Service Access: mtxi (Ride Requests)
   MTXI_CONSTANTS: {
-    RIDE_STATUSES: ['requested', 'accepted', 'in_progress', 'completed', 'cancelled'],
-    RIDE_TYPES: ['standard', 'shared'],
+    RIDE_STATUSES: ['requested', 'accepted', 'in_progress', 'completed', 'cancelled', 'delayed'],
+    RIDE_TYPES: ['standard', 'shared', 'premium', 'scheduled'],
     RIDE_SETTINGS: {
       MAX_PASSENGERS: 4,
-      MIN_RIDE_DISTANCE_KM: 1,
-      MAX_RIDE_DISTANCE_KM: 50,
+      MIN_RIDE_DISTANCE_KM: 0.5,
+      MAX_RIDE_DISTANCE_KM: 150,
       CANCELLATION_WINDOW_MINUTES: 5
     },
     SHARED_RIDE_SETTINGS: {
-      MAX_FRIENDS_PER_RIDE: 3
+      MAX_FRIENDS_PER_RIDE: 4,
+      MAX_STOPS: 5,
+      AI_ROUTE_OPTIMIZATION: true
     }
   },
 
   // Service Access: mevents (Event Services)
   MEVENTS_CONSTANTS: {
-    SUPPORTED_MERCHANT_TYPES: ['caterer', 'restaurant'],
-    EVENT_TYPES: ['birthday', 'dinner', 'party', 'custom'],
-    EVENT_STATUSES: ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'],
+    SUPPORTED_MERCHANT_TYPES: ['caterer', 'restaurant', 'venue', 'entertainment', 'decor'],
+    EVENT_TYPES: ['birthday', 'anniversary', 'corporate', 'social', 'wedding', 'conference', 'custom'],
+    EVENT_STATUSES: ['draft', 'confirmed', 'active', 'completed', 'cancelled'],
     EVENT_SETTINGS: {
-      MAX_PARTICIPANTS: 100,
-      MIN_LEAD_TIME_DAYS: 1,
-      MAX_BOOKINGS_PER_EVENT: 5,
-      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal']
+      MAX_PARTICIPANTS: 500,
+      MIN_LEAD_TIME_DAYS: 0.5,
+      MAX_BOOKINGS_PER_EVENT: 10,
+      ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic'],
+      AI_PLANNING_TOOLS: ['budget_optimizer', 'vendor_recommendations', 'schedule_generator', 'venue_suggestions'],
+      SOCIAL_SHARING: ['event_invite', 'post_event', 'live_updates', 'tag_friends']
     }
+  },
+
+  // Service Access: mpark (Parking Services)
+  MPARK_CONSTANTS: {
+    SUPPORTED_MERCHANT_TYPES: ['parking_lot'],
+    PARKING_STATUSES: ['pending', 'confirmed', 'occupied', 'completed', 'cancelled', 'no_show'],
+    PARKING_TYPES: ['standard', 'accessible', 'ev_charging', 'oversized', 'premium', 'private', 'motorbike'],
+    PARKING_SETTINGS: {
+      MIN_BOOKING_MINUTES: 15,
+      MAX_BOOKING_DAYS: 365,
+      CANCELLATION_WINDOW_HOURS: 1,
+      EXTENSION_LIMIT_MINUTES: 120,
+      MAX_ACTIVE_PARKING_BOOKINGS: 3
+    },
+    CHECK_IN_METHODS: ['qr_code', 'license_plate', 'manual', 'nfc']
   },
 
   // Wallet and Financial Management
   WALLET_CONSTANTS: {
     WALLET_TYPE: 'customer',
-    PAYMENT_METHODS: ['credit_card', 'debit_card', 'digital_wallet', 'bank_transfer', 'mobile_money'],
+    PAYMENT_METHODS: ['credit_card', 'debit_card', 'digital_wallet', 'bank_transfer', 'mobile_money', 'crypto'],
     PAYMENT_STATUSES: ['pending', 'completed', 'failed', 'refunded'],
-    TRANSACTION_TYPES: ['deposit', 'payment', 'refund', 'withdrawal', 'cashback', 'tip'],
+    TRANSACTION_TYPES: [
+      'deposit', 'ride_payment', 'order_payment', 'event_payment', 'parking_payment', 'booking_payment', 'refund', 'withdrawal', 'tip', 'social_bill_split'
+    ],
     WALLET_SETTINGS: {
       MIN_DEPOSIT_AMOUNT: 5,
-      MAX_DEPOSIT_AMOUNT: 5000,
+      MAX_DEPOSIT_AMOUNT: 10000,
       MIN_WITHDRAWAL_AMOUNT: 10,
-      MAX_WITHDRAWAL_AMOUNT: 10000,
-      MAX_PAYMENT_METHODS: 5,
-      TRANSACTION_LIMIT_PER_DAY: 50
+      MAX_WITHDRAWAL_AMOUNT: 20000,
+      MAX_PAYMENT_METHODS: 10,
+      TRANSACTION_LIMIT_PER_DAY: 100,
+      AUTO_TOP_UP_MIN: 5,
+      AUTO_TOP_UP_MAX: 1000,
+      CRYPTO_WALLETS: ['BTC', 'ETH', 'USDT']
     },
     FINANCIAL_ANALYTICS: {
-      REPORT_PERIODS: ['weekly', 'monthly', 'yearly'],
-      TRANSACTION_CATEGORIES: ['deposit', 'payment', 'refund', 'withdrawal', 'cashback', 'tip']
+      REPORT_PERIODS: ['daily', 'weekly', 'monthly', 'yearly'],
+      TRANSACTION_CATEGORIES: [
+        'deposit', 'ride_payment', 'order_payment', 'event_payment', 'parking_payment', 'booking_payment', 'refund', 'withdrawal', 'tip', 'social_bill_split'
+      ],
+      METRICS: ['transaction_volume', 'average_transaction_amount', 'success_rate', 'refund_rate']
     },
     SECURITY_SETTINGS: {
-      MFA_METHODS: ['sms', 'email', 'auth_app'],
+      MFA_METHODS: ['sms', 'email', 'auth_app', 'biometric'],
       TOKENIZATION_PROVIDER: 'stripe',
       MAX_LOGIN_ATTEMPTS: 5,
-      LOCKOUT_DURATION_MINUTES: 30
+      LOCKOUT_DURATION_MINUTES: 15
     }
   },
 
   // Social Features
   SOCIAL_CONSTANTS: {
-    FRIEND_PERMISSIONS: ['view_profile', 'view_bookings', 'view_orders', 'view_rides', 'split_payment', 'send_invites'],
+    FRIEND_PERMISSIONS: ['view_profile', 'view_bookings', 'view_orders', 'view_rides', 'view_events', 'view_parking', 'split_payment', 'send_invites', 'share_posts'],
     GROUP_CHAT_SETTINGS: {
-      MAX_PARTICIPANTS: 50,
-      MAX_MESSAGES_PER_HOUR: 100
-    },
-    EVENT_SETTINGS: {
       MAX_PARTICIPANTS: 100,
-      MIN_LEAD_TIME_DAYS: 1,
-      MAX_BOOKINGS_PER_EVENT: 5
-    }
-  },
-
-  // Promotions and Loyalty
-  PROMOTION_CONSTANTS: {
-    PROMOTION_TYPES: ['discount', 'loyalty', 'referral', 'cashback'],
-    LOYALTY_TIERS: [
-      { name: 'Bronze', minPoints: 0, discount: 5, cashback: 2 },
-      { name: 'Silver', minPoints: 500, discount: 10, cashback: 5 },
-      { name: 'Gold', minPoints: 1000, discount: 15, cashback: 10 }
-    ],
-    REFERRAL_SETTINGS: {
-      REFERRAL_BONUS_POINTS: 100,
-      MAX_REFERRALS_PER_CUSTOMER: 50,
-      REFERRAL_WALLET_CREDIT: 5
+      MAX_MESSAGES_PER_HOUR: 200,
+      SUPPORTED_PLATFORMS: ['in_app', 'whatsapp', 'telegram']
     },
-    DISCOUNT_SETTINGS: {
-      MAX_DISCOUNT_PERCENTAGE: 50,
-      MIN_DISCOUNT_AMOUNT: 1
-    },
-    CASHBACK_SETTINGS: {
-      MAX_CASHBACK_PERCENTAGE: 20,
-      MIN_CASHBACK_AMOUNT: 1
-    }
+    BILL_SPLIT_TYPES: ['equal', 'custom', 'itemized', 'percentage', 'sponsor_contribution'],
+    MAX_SPLIT_PARTICIPANTS: 50,
+    SOCIAL_SHARING: ['facebook', 'instagram', 'whatsapp', 'x', 'telegram']
   },
 
   // Subscriptions
   SUBSCRIPTION_CONSTANTS: {
     SUBSCRIPTION_PLANS: [
-      { name: 'Basic', benefits: ['priority_bookings', 'free_delivery'], durationDays: 30 },
-      { name: 'Premium', benefits: ['priority_bookings', 'free_delivery', 'exclusive_discounts', 'unlimited_rides'], durationDays: 30 }
+      { name: 'Basic', benefits: ['priority_bookings', 'free_delivery', 'loyalty_points'], durationDays: 30, price: 'dynamic' },
+      { name: 'Premium', benefits: ['priority_bookings', 'free_delivery', 'exclusive_discounts', 'unlimited_rides', 'priority_parking', 'early_access_events'], durationDays: 30, price: 'dynamic' },
+      { name: 'Elite', benefits: ['priority_bookings', 'free_delivery', 'exclusive_discounts', 'unlimited_rides', 'priority_parking', 'early_access_events', 'dedicated_support', 'crypto_rewards'], durationDays: 30, price: 'dynamic' }
     ],
-    MAX_ACTIVE_SUBSCRIPTIONS: 1,
-    SUBSCRIPTION_STATUSES: ['active', 'paused', 'cancelled']
+    MAX_ACTIVE_SUBSCRIPTIONS: 2,
+    SUBSCRIPTION_STATUSES: ['active', 'paused', 'cancelled', 'expired']
   },
 
   // Analytics
   ANALYTICS_CONSTANTS: {
-    METRICS: ['order_frequency', 'booking_frequency', 'ride_frequency', 'spending_trends', 'wallet_usage', 'loyalty_points'],
-    REPORT_FORMATS: ['pdf', 'csv', 'json'],
-    DATA_RETENTION_DAYS: 365,
-    RECOMMENDATION_CATEGORIES: ['restaurants', 'menu_items', 'ride_times', 'booking_times', 'events'],
-    AUDIT_TYPES: {
-      TRACK_BEHAVIOR: 'analytics:track_behavior',
-      ANALYZE_SPENDING: 'analytics:analyze_spending',
-      PROVIDE_RECOMMENDATIONS: 'analytics:provide_recommendations',
-      AWARD_POINTS: 'analytics:award_points',
-      BOOKING_CREATED: 'booking:created',
-      BOOKING_UPDATED: 'booking:updated',
-      BOOKING_CANCELLED: 'booking:cancelled',
-      CHECK_IN_PROCESSED: 'check_in:processed',
-      FEEDBACK_SUBMITTED: 'feedback:submitted',
-      PARTY_MEMBER_ADDED: 'party_member:added',
-      TABLE_SEARCHED: 'table:searched',
-      PAYMENT_PROCESSED: 'payment:processed',
-      REFUND_PROCESSED: 'payment:refunded',
-      PAYMENT_REQUEST_SENT: 'payment_request:sent'
-    }
-  },
-
-  // Gamification Metrics
-  GAMIFICATION_CONSTANTS: {
-    CUSTOMER_ACTIONS: [
-      { action: 'booking_created', points: 25 },
-      { action: 'check_in', points: 10 },
-      { action: 'feedback_submitted', points: 5 },
-      { action: 'table_searched', points: 5 },
-      { action: 'payment', points: 15 },
-      { action: 'extra_order', points: 10, walletCredit: 0.30 },
-      { action: 'pre_order', points: 50, walletCredit: 1.00 },
-      { action: 'group_coordinator', points: 100, walletCredit: 2.00 },
-      { action: 'early_bird_pre_order', points: 30, walletCredit: 0.75 },
-      { action: 'order_frequency', points: 30, walletCredit: 0.75 },
-      { action: 'payment_streak', points: 30, walletCredit: 0.75 },
-      { action: 'wallet_usage', points: 15, walletCredit: 0.40 },
-      { action: 'loyalty_tier', points: 500, walletCredit: 10.00 },
-      { action: 'referral', points: 100, walletCredit: 2.00 },
-      { action: 'review', points: 25, walletCredit: 0.60 },
-      { action: 'tipping', points: 15, walletCredit: 0.40 },
-      { action: 'profile_completion', points: 100, walletCredit: 2.00 },
-      { action: 'event_planning', points: 100, walletCredit: 2.00 },
-      { action: 'split_payment', points: 20, walletCredit: 0.50 },
-      { action: 'subscription_loyalty', points: 200, walletCredit: 5.00 }
-    ],
-    POINT_EXPIRY_DAYS: 365,
-    MAX_POINTS_PER_DAY: 1000
+    METRICS: ['order_frequency', 'booking_frequency', 'ride_frequency', 'event_frequency', 'parking_frequency', 'spending_trends', 'wallet_usage', 'social_engagement'],
+    REPORT_FORMATS: ['pdf', 'csv', 'json', 'dashboard'],
+    DATA_RETENTION_DAYS: 730,
+    RECOMMENDATION_CATEGORIES: ['restaurants', 'menu_items', 'ride_times', 'booking_times', 'parking_times', 'events', 'vendors'],
+    AUDIT_TYPES: [
+      'track_behavior', 'analyze_spending', 'provide_recommendations', 'booking_created', 'booking_updated', 'booking_cancelled',
+      'check_in_processed', 'feedback_submitted', 'party_member_added', 'table_searched', 'payment_processed', 'refund_processed',
+      'payment_request_sent', 'parking_booked', 'parking_cancelled', 'event_created', 'event_updated', 'social_post_shared',
+      'TRACK_PARKING_BEHAVIOR'
+    ]
   },
 
   // Support and Dispute Resolution
   SUPPORT_CONSTANTS: {
-    ISSUE_TYPES: ['booking', 'order', 'ride', 'event', 'payment', 'wallet'],
-    DISPUTE_STATUSES: ['open', 'in_progress', 'resolved', 'escalated'],
-    RESOLUTION_TYPES: ['refund', 'compensation', 'replacement', 'apology'],
-    SUPPORT_RESPONSE_TIME_HOURS: 24
+    ISSUE_TYPES: ['booking', 'order', 'ride', 'event', 'parking', 'payment', 'wallet', 'social_media'],
+    DISPUTE_STATUSES: ['open', 'in_progress', 'resolved', 'escalated', 'closed'],
+    RESOLUTION_TYPES: ['refund', 'compensation', 'replacement', 'apology', 'account_credit'],
+    SUPPORT_RESPONSE_TIME_HOURS: 12,
+    SUPPORT_CHANNELS: ['in_app_chat', 'email', 'phone', 'whatsapp', 'telegram'],
+    AI_CHATBOT: true
   },
 
   // Notifications
   NOTIFICATION_CONSTANTS: {
-    NOTIFICATION_TYPES: {
-      booking_confirmation: 'booking_confirmation',
-      check_in_confirmation: 'check_in_confirmation',
-      feedback_confirmation: 'feedback_confirmation',
-      payment_confirmation: 'payment_confirmation',
-      payment_request: 'payment_request',
-      booking_invitation: 'booking_invitation',
-      order_update: 'order_update',
-      ride_update: 'ride_update',
-      event_update: 'event_update',
-      wallet_update: 'wallet_update',
-      friend_request: 'friend_request',
-      event_invite: 'event_invite',
-      promotion: 'promotion',
-      support_response: 'support_response'
-    },
-    DELIVERY_METHODS: ['push', 'email', 'sms'],
-    MAX_NOTIFICATIONS_PER_HOUR: 10,
-    RETRY_ATTEMPTS: 3,
-    RETRY_INTERVAL_SECONDS: 60
+    NOTIFICATION_TYPES: [
+      'booking_confirmation', 'check_in_confirmation', 'feedback_confirmation', 'payment_confirmation', 'payment_request',
+      'booking_invitation', 'order_update', 'ride_update', 'event_update', 'wallet_update', 'friend_request', 'event_invite',
+      'support_response', 'parking_confirmation', 'parking_cancellation', 'parking_upcoming', 'event_live_update', 'social_media_post', 'parking_behavior_tracked'
+    ],
+    DELIVERY_METHODS: ['push', 'email', 'sms', 'whatsapp', 'telegram'],
+    PRIORITY_LEVELS: ['low', 'medium', 'high', 'urgent'],
+    MAX_NOTIFICATIONS_PER_HOUR: 20,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30
   },
 
   // Accessibility and Inclusivity
   ACCESSIBILITY_CONSTANTS: {
-    SUPPORTED_ACCESSIBILITY_FEATURES: ['screen_reader', 'adjustable_fonts', 'high_contrast', 'voice_commands'],
-    FONT_SIZE_RANGE: { min: 12, max: 24 },
-    ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal']
+    SUPPORTED_ACCESSIBILITY_FEATURES: ['screen_reader', 'adjustable_fonts', 'high_contrast', 'voice_commands', 'braille_support'],
+    FONT_SIZE_RANGE: { min: 10, max: 28 },
+    ALLOWED_DIETARY_FILTERS: ['vegetarian', 'vegan', 'gluten_free', 'nut_free', 'dairy_free', 'halal', 'kosher', 'low_carb', 'organic']
   },
 
   // Cross-Vertical Integration
   CROSS_VERTICAL_CONSTANTS: {
-    SERVICES: ['mtables', 'munch', 'mtxi', 'mevents'],
-    LOYALTY_UNIFICATION: { POINT_CONVERSION_RATE: 1 },
-    UI_CONSISTENCY: { THEME: 'default', COLOR_SCHEME: 'neutral', FONT_FAMILY: 'Roboto' }
+    SERVICES: ['mtables', 'munch', 'mtxi', 'mevents', 'mpark'],
+    UI_CONSISTENCY: { THEME: 'modern', COLOR_SCHEME: 'dynamic', FONT_FAMILY: 'Inter' },
+    SERVICE_INTEGRATIONS: ['munch', 'mtxi', 'mtables', 'mpark', 'external_vendors']
   },
 
   // Operational Resilience
   OPERATIONAL_CONSTANTS: {
-    OFFLINE_CACHE_LIMIT_MB: 50,
-    SYNC_INTERVAL_MINUTES: 5,
-    WEBSOCKET_HEARTBEAT_SECONDS: 30,
-    MAX_OFFLINE_TRANSACTIONS: 50
+    OFFLINE_CACHE_LIMIT_MB: 100,
+    SYNC_INTERVAL_MINUTES: 3,
+    WEBSOCKET_HEARTBEAT_SECONDS: 20,
+    MAX_OFFLINE_TRANSACTIONS: 100
   },
 
   // Security
   SECURITY_CONSTANTS: {
     ENCRYPTION_ALGORITHM: 'AES-256-GCM',
     TOKEN_EXPIRY_MINUTES: 60,
-    PERMISSION_LEVELS: ['read', 'write', 'restricted'],
-    MFA_METHODS: ['sms', 'email', 'auth_app'],
+    PERMISSION_LEVELS: ['read', 'write', 'cancel', 'restricted'],
+    MFA_METHODS: ['sms', 'email', 'auth_app', 'biometric'],
     TOKENIZATION_PROVIDER: 'stripe',
     MAX_LOGIN_ATTEMPTS: 5,
-    LOCKOUT_DURATION_MINUTES: 30,
-    AUDIT_LOG_RETENTION_DAYS: 180
+    LOCKOUT_DURATION_MINUTES: 15,
+    AUDIT_LOG_RETENTION_DAYS: 365
   },
 
   // Compliance
   COMPLIANCE_CONSTANTS: {
     DATA_PROTECTION_STANDARDS: ['GDPR', 'CCPA', 'LGPD', 'PIPA'],
-    AUDIT_FREQUENCY_DAYS: 180,
-    AUDIT_TYPES: {
-      BOOKING_CREATED: 'booking:created',
-      BOOKING_UPDATED: 'booking:updated',
-      BOOKING_CANCELLED: 'booking:cancelled',
-      CHECK_IN_PROCESSED: 'check_in:processed',
-      FEEDBACK_SUBMITTED: 'feedback:submitted',
-      PARTY_MEMBER_ADDED: 'party_member:added',
-      TABLE_SEARCHED: 'table:searched',
-      PAYMENT_PROCESSED: 'payment:processed',
-      REFUND_PROCESSED: 'payment:refunded',
-      PAYMENT_REQUEST_SENT: 'payment_request:sent'
-    }
+    AUDIT_FREQUENCY_DAYS: 90,
+    AUDIT_TYPES: [
+      'booking_created', 'booking_updated', 'booking_cancelled', 'check_in_processed', 'feedback_submitted',
+      'party_member_added', 'table_searched', 'payment_processed', 'refund_processed', 'payment_request_sent',
+      'parking_booked', 'parking_cancelled', 'event_created', 'event_updated', 'social_post_shared',
+      'PROFILE_UPDATED', 'COUNTRY_SET', 'LANGUAGE_SET', 'DIETARY_PREFERENCES_SET', 'DEFAULT_ADDRESS_SET',
+      'ACCESSIBILITY_UPDATED', 'PRIVACY_UPDATED', 'PROFILE_VIEWED' // Added
+    ]
   },
 
   // Error Codes
   ERROR_CODES: [
-    'INVALID_CUSTOMER', 'CUSTOMER_NOT_FOUND', 'PERMISSION_DENIED', 'WALLET_INSUFFICIENT_FUNDS',
-    'PAYMENT_FAILED', 'BOOKING_FAILED', 'ORDER_FAILED', 'RIDE_FAILED', 'EVENT_FAILED',
-    'OFFLINE_MODE_UNAVAILABLE', 'INVALID_DIETARY_FILTER'
+    'INVALID_CUSTOMER', 'CUSTOMER_NOT_FOUND', 'PERMISSION_DENIED', 'WALLET_INSUFFICIENT_FUNDS', 'PAYMENT_FAILED',
+    'BOOKING_FAILED', 'ORDER_FAILED', 'RIDE_FAILED', 'EVENT_FAILED', 'PARKING_FAILED', 'OFFLINE_MODE_UNAVAILABLE',
+    'INVALID_DIETARY_FILTER', 'MAX_FRIENDS_EXCEEDED', 'INVALID_BILL_SPLIT',
+    'INVALID_PROFILE_DATA', 'INVALID_COUNTRY', 'INVALID_LANGUAGE', 'INVALID_DIETARY_PREFERENCES', 'INVALID_ADDRESS_ID',
+    'INVALID_FONT_SIZE', 'INVALID_PERMISSIONS', 'INVALID_PRIVACY_SETTINGS', 'PROFILE_UPDATE_FAILED', 'PROFILE_RETRIEVAL_FAILED',
+    'ACCESSIBILITY_UPDATE_FAILED', 'PRIVACY_UPDATE_FAILED' // Added
   ],
 
   // Success Messages
   SUCCESS_MESSAGES: [
-    'Customer registered', 'Booking confirmed', 'Order placed', 'Ride requested', 'Event created',
-    'Payment completed', 'Wallet funded', 'Gamification points awarded', 'Support ticket resolved'
+    'customer_registered', 'booking_confirmed', 'order_placed', 'ride_requested', 'event_created', 'parking_booked',
+    'payment_completed', 'wallet_funded', 'support_ticket_resolved', 'bill_split_completed', 'social_post_shared',
+    'profile_updated', 'country_set', 'language_set', 'dietary_preferences_set', 'default_address_set',
+    'accessibility_updated', 'privacy_updated' // Added
   ]
 };

@@ -1,32 +1,14 @@
 'use strict';
 
-/**
- * paymentService.js
- * Handles payment processing for munch staff. Includes salary, bonus, withdrawal processing,
- * audit logging, and error handling.
- * Last Updated: May 26, 2025
- */
-
-const { Payment, Wallet, WalletTransaction, AuditLog, SupportTicket, Staff, Tip } = require('@models');
-const staffConstants = require('@constants/staff/staffSystemConstants');
-const merchantConstants = require('@constants/merchant/merchantConstants');
-const notificationService = require('@services/common/notificationService');
-const socketService = require('@services/common/socketService');
-const pointService = require('@services/common/pointService');
-const localization = require('@services/common/localization');
-const auditService = require('@services/common/auditService');
-const securityService = require('@services/common/securityService');
+const { Payment, Wallet, WalletTransaction, AuditLog, SupportTicket, Staff } = require('@models');
+const staffConstants = require('@constants/staff/staffConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
+const { formatMessage } = require('@utils/localization');
 const { AppError } = require('@utils/errors');
 const logger = require('@utils/logger');
+const { Op, fn, col } = require('sequelize');
 
-/**
- * Executes salary payments to staff wallet.
- * @param {number} staffId - Staff ID.
- * @param {number} amount - Payment amount.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Payment record.
- */
-async function processSalaryPayment(staffId, amount, ipAddress) {
+async function processSalaryPayment(staffId, amount, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -38,39 +20,39 @@ async function processSalaryPayment(staffId, amount, ipAddress) {
     const payment = await Payment.create({
       staff_id: staffId,
       amount,
-      payment_method: 'wallet_transfer',
-      status: 'completed',
+      payment_method: paymentConstants.PAYMENT_METHODS.includes('bank_transfer') ? 'bank_transfer' : 'wallet_transfer',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
       merchant_id: staff.merchant_id,
       currency: staff.wallet.currency,
     });
 
     await Wallet.update(
-      { balance: sequelize.literal(`balance + ${amount}`) },
+      { balance: fn('balance +', amount) },
       { where: { id: staff.wallet.id } }
     );
 
     await WalletTransaction.create({
       wallet_id: staff.wallet.id,
-      type: merchantConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.SALARY,
+      type: paymentConstants.TRANSACTION_TYPES.includes('salary') ? 'salary' : 'payment',
       amount,
       currency: staff.wallet.currency,
-      status: 'completed',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, amount, paymentId: payment.id, action: 'salary_payment' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('payment.salary_processed', { amount });
+    const message = formatMessage('payment.salary_processed', { amount });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -79,18 +61,11 @@ async function processSalaryPayment(staffId, amount, ipAddress) {
     return payment;
   } catch (error) {
     logger.error('Salary payment processing failed', { error: error.message, staffId, amount });
-    throw new AppError(`Salary payment failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Salary payment failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Disburses bonuses to staff wallet.
- * @param {number} staffId - Staff ID.
- * @param {number} amount - Bonus amount.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Payment record.
- */
-async function processBonusPayment(staffId, amount, ipAddress) {
+async function processBonusPayment(staffId, amount, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
@@ -102,39 +77,39 @@ async function processBonusPayment(staffId, amount, ipAddress) {
     const payment = await Payment.create({
       staff_id: staffId,
       amount,
-      payment_method: 'wallet_transfer',
-      status: 'completed',
+      payment_method: paymentConstants.PAYMENT_METHODS.includes('bank_transfer') ? 'bank_transfer' : 'wallet_transfer',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
       merchant_id: staff.merchant_id,
       currency: staff.wallet.currency,
     });
 
     await Wallet.update(
-      { balance: sequelize.literal(`balance + ${amount}`) },
+      { balance: fn('balance +', amount) },
       { where: { id: staff.wallet.id } }
     );
 
     await WalletTransaction.create({
       wallet_id: staff.wallet.id,
-      type: merchantConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.BONUS,
+      type: paymentConstants.TRANSACTION_TYPES.includes('bonus') ? 'bonus' : 'payment',
       amount,
       currency: staff.wallet.currency,
-      status: 'completed',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, amount, paymentId: payment.id, action: 'bonus_payment' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('payment.bonus_processed', { amount });
+    const message = formatMessage('payment.bonus_processed', { amount });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -143,26 +118,23 @@ async function processBonusPayment(staffId, amount, ipAddress) {
     return payment;
   } catch (error) {
     logger.error('Bonus payment processing failed', { error: error.message, staffId, amount });
-    throw new AppError(`Bonus payment failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Bonus payment failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Processes approved withdrawals.
- * @param {number} staffId - Staff ID.
- * @param {number} amount - Withdrawal amount.
- * @param {string} ipAddress - Request IP address.
- * @returns {Promise<Object>} Payout record.
- */
-async function confirmWithdrawal(staffId, amount, ipAddress) {
+async function confirmWithdrawal(staffId, amount, ipAddress, securityService, notificationService, auditService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId, { include: [{ model: Wallet, as: 'wallet' }] });
     if (!staff || !staff.wallet) {
       throw new AppError('Wallet not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
+    const withdrawalLimit = paymentConstants.FINANCIAL_LIMITS.find(limit => limit.type === 'WITHDRAWAL');
     if (amount > staff.wallet.balance) {
-      throw new AppError('Insufficient balance', 400, staffConstants.STAFF_ERROR_CODES.INSUFFICIENT_BALANCE);
+      throw new AppError('Insufficient balance', 400, paymentConstants.ERROR_CODES.includes('INSUFFICIENT_FUNDS') ? 'INSUFFICIENT_FUNDS' : 'INVALID_BALANCE');
+    }
+    if (amount < withdrawalLimit.min || amount > withdrawalLimit.max) {
+      throw new Error(`Withdrawal amount must be between ${withdrawalLimit.min} and ${withdrawalLimit.max}`);
     }
 
     await securityService.verifyMFA(staff.user_id);
@@ -172,37 +144,37 @@ async function confirmWithdrawal(staffId, amount, ipAddress) {
       staff_id: staffId,
       amount,
       currency: staff.wallet.currency,
-      method: 'bank_transfer',
-      status: 'completed',
+      method: paymentConstants.PAYMENT_METHODS.includes('bank_transfer') ? 'bank_transfer' : 'default',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
     });
 
     await Wallet.update(
-      { balance: sequelize.literal(`balance - ${amount}`) },
+      { balance: fn('balance -', amount) },
       { where: { id: staff.wallet.id } }
     );
 
     await WalletTransaction.create({
       wallet_id: staff.wallet.id,
-      type: merchantConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.WITHDRAWAL,
+      type: paymentConstants.TRANSACTION_TYPES.includes('withdrawal') ? 'withdrawal' : 'payment',
       amount,
       currency: staff.wallet.currency,
-      status: 'completed',
+      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, amount, payoutId: payout.id, action: 'confirm_withdrawal' },
       ipAddress,
     });
 
-    const message = localization.formatMessage('payment.withdrawal_confirmed', { amount });
+    const message = formatMessage('payment.withdrawal_confirmed', { amount });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WITHDRAWAL_PROCESSED,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -211,16 +183,11 @@ async function confirmWithdrawal(staffId, amount, ipAddress) {
     return payout;
   } catch (error) {
     logger.error('Withdrawal confirmation failed', { error: error.message, staffId, amount });
-    throw new AppError(`Withdrawal confirmation failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Withdrawal confirmation failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Records payment transactions for audit.
- * @param {number} staffId - Staff ID.
- * @returns {Promise<Array>} Audit logs.
- */
-async function logPaymentAudit(staffId) {
+async function logPaymentAudit(staffId, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -238,17 +205,11 @@ async function logPaymentAudit(staffId) {
     return logs;
   } catch (error) {
     logger.error('Payment audit logging failed', { error: error.message, staffId });
-    throw new AppError(`Audit logging failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Audit logging failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
-/**
- * Resolves payment errors by creating support tickets.
- * @param {number} staffId - Staff ID.
- * @param {Object} errorDetails - Error details (paymentId, description).
- * @returns {Promise<Object>} Support ticket record.
- */
-async function handlePaymentErrors(staffId, errorDetails) {
+async function handlePaymentErrors(staffId, errorDetails, auditService, notificationService, socketService) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -261,23 +222,23 @@ async function handlePaymentErrors(staffId, errorDetails) {
       issue_type: 'PAYMENT_ISSUE',
       description: errorDetails.description,
       status: 'open',
-      priority: 'high',
+      priority: paymentConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.HIGH,
       ticket_number: `TCKT-${Date.now()}`,
     });
 
     await auditService.logAction({
       userId: staffId,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
       details: { staffId, ticketId: ticket.id, action: 'handle_payment_error' },
     });
 
-    const message = localization.formatMessage('payment.error_reported', { ticketId: ticket.id });
+    const message = formatMessage('payment.error_reported', { ticketId: ticket.id });
     await notificationService.sendNotification({
       userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.WALLET_UPDATE,
+      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.PAYMENT_CONFIRMATION,
       message,
-      role: 'staff',
+      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
       module: 'munch',
     });
 
@@ -286,7 +247,7 @@ async function handlePaymentErrors(staffId, errorDetails) {
     return ticket;
   } catch (error) {
     logger.error('Payment error handling failed', { error: error.message, staffId });
-    throw new AppError(`Error handling failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw new AppError(`Error handling failed: ${error.message}`, 500, paymentConstants.ERROR_CODES.includes('TRANSACTION_FAILED') ? 'TRANSACTION_FAILED' : 'INVALID_BALANCE');
   }
 }
 
@@ -295,5 +256,5 @@ module.exports = {
   processBonusPayment,
   confirmWithdrawal,
   logPaymentAudit,
-  handlePaymentErrors,
+  handlePaymentErrors
 };

@@ -1,30 +1,40 @@
-/**
- * notificationConstants.js
- *
- * Defines shared notification constants for all roles across services.
- * Aligns with customerConstants.js, rideConstants.js, and paymentConstants.js.
- *
- * Last Updated: May 27, 2025
- */
-
 'use strict';
 
 module.exports = {
   NOTIFICATION_TYPES: [
-    'booking_confirmation', 'order_update', 'ride_update', 'payment_confirmation',
-    'wallet_update', 'friend_request', 'event_invite', 'promotion', 'support_response',
-    'ride_request', 'delivery_request', 'tip_received', 'safety_alert', 'high_demand',
-    'ride_accepted', 'ride_completed', 'withdrawal_processed', 'deposit_confirmed',
-    'transaction_failed', 'cashback_successful'
+    'BOOKING_CONFIRMATION', // mtables, mpark
+    'ORDER_UPDATE', // munch
+    'RIDE_UPDATE', // mtxi
+    'EVENT_UPDATE', // mevents
+    'PARKING_CONFIRMATION', // mpark
+    'PARKING_CANCELLATION', // mpark
+    'PARKING_UPCOMING', // mpark
+    'PARKING_CHECK_IN', // mpark
+    'PAYMENT_CONFIRMATION',
+    'WALLET_UPDATE',
+    'FRIEND_REQUEST',
+    'EVENT_INVITE', // mevents
+    'SUPPORT_RESPONSE',
+    'MERCHANT_BOOKING_UPDATE', // mtables, mpark
+    'GROUP_CHAT_MESSAGE', // all services
+    'SOCIAL_MEDIA_POST', // all services
+    'EVENT_LIVE_UPDATE' // mevents
   ],
-  DELIVERY_METHODS: ['push', 'sms', 'email'],
-  PRIORITY_LEVELS: ['low', 'medium', 'high'],
+  DELIVERY_METHODS: ['PUSH', 'SMS', 'EMAIL', 'WHATSAPP', 'TELEGRAM'],
+  PRIORITY_LEVELS: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
   NOTIFICATION_SETTINGS: {
-    MAX_NOTIFICATIONS_PER_HOUR: 10,
-    RETRY_ATTEMPTS: 3,
-    RETRY_INTERVAL_SECONDS: 60,
-    DATA_RETENTION_DAYS: 90
+    MAX_NOTIFICATIONS_PER_HOUR: 20,
+    RETRY_ATTEMPTS: 5,
+    RETRY_INTERVAL_SECONDS: 30,
+    DATA_RETENTION_DAYS: 180,
+    AI_PERSONALIZATION: true,
+    BATCH_NOTIFICATION_LIMIT: 10
   },
-  ERROR_CODES: ['NOTIFICATION_DELIVERY_FAILED', 'INVALID_NOTIFICATION_TYPE', 'RATE_LIMIT_EXCEEDED'],
-  SUCCESS_MESSAGES: ['Notification sent']
+  ERROR_CODES: [
+    'NOTIFICATION_DELIVERY_FAILED',
+    'INVALID_NOTIFICATION_TYPE',
+    'RATE_LIMIT_EXCEEDED',
+    'INVALID_DELIVERY_METHOD'
+  ],
+  SUCCESS_MESSAGES: ['NOTIFICATION_SENT', 'NOTIFICATION_BATCH_SENT']
 };

@@ -1,0 +1,28 @@
+{
+  "wallet": {
+    "created": "Wallet {walletId} created successfully",
+    "payment_received": "Received payment of {amount} {currency}",
+    "payout_disbursed": "Payout of {amount} {currency} disbursed successfully",
+    "balance_retrieved": "Wallet balance: {balance} {currency}",
+    "history_retrieved": "Retrieved {count} transaction(s)"
+  },
+  "tax": {
+    "calculated": "Tax obligation of {amount} {currency} calculated for {period} period",
+    "report_generated": "Tax report generated for {period} period with obligation of {amount} {currency}",
+    "settings_updated": "Tax settings updated with filing frequency {filingFrequency}",
+    "compliance_verified": "Tax compliance verified for {country}",
+    "compliance_issue": "Tax compliance issues detected for {country}"
+  },
+  "payout": {
+    "settings_updated": "Payout settings updated to {schedule} schedule and {method} method",
+    "received": "Received payout of {amount} {currency}",
+    "method_verified": "Payout method {method} verified successfully",
+    "history_retrieved": "Retrieved {count} payout transaction(s)"
+  },
+  "analytics": {
+    "transactions_tracked": "Tracked {count} transactions for {period} period",
+    "report_generated": "Financial report generated for {period} period with revenue of {revenue} {currency}",
+    "trends_analyzed": "Financial trends analyzed with average revenue of {averageRevenue}",
+    "goals_recommended": "Financial goals recommended with monthly target of {monthlyTarget} {currency}"
+  }
+}

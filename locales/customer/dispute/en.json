@@ -1,7 +1,9 @@
+
 {
   "dispute": {
     "created": "Dispute created for service {reference}. Issue: {issue}.",
-    "resolved": "Dispute resolved with {resolutionType}: {resolution}."
+    "resolved": "Dispute resolved with {resolutionType}: {resolution}.",
+    "closed": "Dispute {disputeId} closed."
   },
   "errors": {
     "invalid_customer": "Customer not found.",
@@ -12,10 +14,15 @@
     "dispute_not_found": "Dispute not found.",
     "dispute_already_resolved": "Dispute already resolved.",
     "dispute_creation_failed": "Failed to create dispute.",
-    "dispute_resolution_failed": "Failed to resolve dispute."
+    "dispute_resolution_failed": "Failed to resolve dispute.",
+    "dispute_cancellation_failed": "Failed to cancel dispute.",
+    "parking_disputes_not_found": "No parking disputes found."
   },
   "success": {
     "dispute_created": "Dispute created successfully.",
-    "dispute_resolved": "Dispute resolved successfully."
+    "dispute_resolved": "Dispute resolved successfully.",
+    "dispute_closed": "Dispute closed successfully.",
+    "dispute_status_retrieved": "Dispute status retrieved successfully.",
+    "parking_disputes_retrieved": "Parking disputes retrieved successfully."
   }
 }

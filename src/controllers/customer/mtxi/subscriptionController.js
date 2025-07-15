@@ -1,256 +1,251 @@
 'use strict';
 
-const subscriptionService = require('@services/customer/mtxi/subscriptionService');
-const walletService = require('@services/common/walletService');
-const notificationService = require('@services/common/notificationService');
+const subscriptionService = require('@services/subscriptionService');
 const pointService = require('@services/common/pointService');
+const notificationService = require('@services/common/notificationService');
 const auditService = require('@services/common/auditService');
-const customerConstants = require('@constants/customer/customerConstants');
-const paymentConstants = require('@constants/common/paymentConstants');
 const socketService = require('@services/common/socketService');
-const { formatMessage } = require('@utils/localization/localization');
+const customerConstants = require('@constants/customer/customerConstants');
+const customerGamificationConstants = require('@constants/customer/customerGamificationConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
-const { sequelize, Wallet } = require('@models');
-
-async function enrollSubscription(req, res) {
-  const { planId, serviceType, paymentMethodId } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    const wallet = await Wallet.findOne({
-      where: { user_id: req.user.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES.CUSTOMER },
-      transaction,
-    });
-    if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]);
-
-    const plan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS[planId];
-    const paymentAmount = plan.amount || (serviceType === 'mtxi' ? 10 : 15);
-
-    const payment = await walletService.processTransaction(
-      wallet.id,
-      {
-        type: paymentConstants.TRANSACTION_TYPES[0],
-        amount: paymentAmount,
-        currency: wallet.currency,
-        paymentMethodId,
-        status: paymentConstants.TRANSACTION_STATUSES[0],
-      },
-      { transaction }
-    );
-
-    const subscription = await subscriptionService.enrollSubscription(customerId, planId, serviceType, transaction);
-    subscription.payment_id = payment.id;
-    await subscription.save({ transaction });
-
-    try {
-      await pointService.awardPoints({
-        userId: req.user.user_id,
-        role: 'customer',
-        action: customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.SUBSCRIPTION_ENROLLMENT.action,
-        languageCode: customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-      });
-    } catch (error) {
-      gamificationError = error.message;
-    }
-
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.SUBSCRIPTION_ENROLLED,
-      details: { subscriptionId: subscription.id, planId, serviceType, paymentAmount },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await notificationService.sendNotification({
-      userId: req.user.user_id,
-      type: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SUBSCRIPTION_UPDATE,
-      message: formatMessage('subscription_enrolled', { subscriptionId: subscription.id, plan: planId, service: serviceType }),
-    });
-
-    await socketService.emit('subscription:enrolled', { userId: customerId, role: 'customer', subscriptionId: subscription.id });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Subscription enrolled',
-      data: { subscriptionId: subscription.id, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 500, error.code || customerConstants.ERROR_CODES[5]);
-  }
-}
-
-async function manageSubscription(req, res) {
-  const { subscriptionId, action, newPlanId, paymentMethodId } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    let payment;
-    if (action === 'UPGRADE') {
-      const wallet = await Wallet.findOne({
-        where: { user_id: req.user.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES.CUSTOMER },
-        transaction,
-      });
-      if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]);
-
-      const plan = customerConstants.SUBSCRIPTION_CONSTANTS.SUBSCRIPTION_PLANS[newPlanId];
-      const paymentAmount = plan.amount || 15;
-
-      payment = await walletService.processTransaction(
-        wallet.id,
-        {
-          type: paymentConstants.TRANSACTION_TYPES[0],
-          amount: paymentAmount,
-          currency: wallet.currency,
-          paymentMethodId,
-          status: paymentConstants.TRANSACTION_STATUSES[0],
-        },
-        { transaction }
-      );
-    }
-
-    const subscription = await subscriptionService.manageSubscription(customerId, subscriptionId, action, newPlanId, transaction);
-    if (payment) {
-      subscription.payment_id = payment.id;
-      await subscription.save({ transaction });
-    }
-
-    if (action === 'UPGRADE' && newPlanId === 'PREMIUM') {
-      try {
-        await pointService.awardPoints({
-          userId: req.user.user_id,
-          role: 'customer',
-          action: customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.TIER_UPGRADE.action,
-          languageCode: customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-        });
-      } catch (error) {
-        gamificationError = error.message;
-      }
-    }
-
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.SUBSCRIPTION_UPDATED,
-      details: { subscriptionId, action, newPlanId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await notificationService.sendNotification({
-      userId: req.user.user_id,
-      type: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SUBSCRIPTION_UPDATE,
-      message: formatMessage(`subscription_${action.toLowerCase()}`, { subscriptionId, plan: newPlanId || subscription.plan, service: subscription.service_type }),
-    });
-
-    await socketService.emit('subscription:updated', { userId: customerId, role: 'customer', subscriptionId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Subscription updated',
-      data: { subscriptionId, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 500, error.code || customerConstants.ERROR_CODES[5]);
-  }
-}
-
-async function cancelSubscription(req, res) {
-  const { subscriptionId } = req.body;
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-  let gamificationError = null;
-
-  try {
-    const subscription = await subscriptionService.cancelSubscription(customerId, subscriptionId, transaction);
-
-    try {
-      await pointService.awardPoints({
-        userId: req.user.user_id,
-        role: 'customer',
-        action: customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.SUBSCRIPTION_CANCELLATION.action,
-        languageCode: customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
-      });
-    } catch (error) {
-      gamificationError = error.message;
-    }
-
-    await auditService.logAction({
-      userId: customerId.toString(),
-      role: 'customer',
-      action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.SUBSCRIPTION_CANCELLED,
-      details: { subscriptionId },
-      ipAddress: req.ip,
-    }, transaction);
-
-    await notificationService.sendNotification({
-      userId: req.user.user_id,
-      type: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SUBSCRIPTION_UPDATE,
-      message: formatMessage('subscription_cancelled', { subscriptionId, service: subscription.service_type }),
-    });
-
-    await socketService.emit('subscription:cancelled', { userId: customerId, role: 'customer', subscriptionId });
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Subscription cancelled',
-      data: { subscriptionId, gamificationError },
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || customerConstants.ERROR_CODES[5]);
-  }
-}
-
-async function trackSubscriptionTiers(req, res) {
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    const tierDetails = await subscriptionService.trackSubscriptionTiers(customerId, transaction);
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Subscription tiers retrieved',
-      data: tierDetails,
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || customerConstants.ERROR_CODES[5]);
-  }
-}
-
-async function getSubscriptionHistory(req, res) {
-  const customerId = req.user.id;
-  const transaction = await sequelize.transaction();
-
-  try {
-    const subscriptions = await subscriptionService.getSubscriptionHistory(customerId, transaction);
-    await transaction.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Subscription history retrieved',
-      data: subscriptions,
-    });
-  } catch (error) {
-    await transaction.rollback();
-    throw new AppError(error.message, error.statusCode || 400, error.code || customerConstants.ERROR_CODES[5]);
-  }
-}
+const logger = require('@utils/logger');
+const { sequelize } = require('@models');
 
 module.exports = {
-  enrollSubscription,
-  manageSubscription,
-  cancelSubscription,
-  trackSubscriptionTiers,
-  getSubscriptionHistory,
+  async enrollSubscription(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role, io } = req;
+      const { planId, serviceType } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'subscription', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      const subscription = await subscriptionService.enrollSubscription(userId, planId, serviceType, transaction);
+
+      const actionConfig = customerGamificationConstants.GAMIFICATION_ACTIONS.general.find(a => a.action === 'subscription_enrolled');
+      await pointService.awardPoints(userId, 'subscription_enrolled', actionConfig.points, {
+        io,
+        role: 'customer',
+        languageCode,
+        walletId: req.body.walletId,
+      });
+
+      await notificationService.sendNotification({
+        userId,
+        notificationType: customerConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[0],
+        messageKey: 'subscription.enrolled',
+        messageParams: { plan: planId },
+        role: 'customer',
+        module: 'subscription',
+        languageCode,
+      });
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'SUBSCRIPTION_ENROLLED'),
+        details: { subscriptionId: subscription.id, planId },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, 'SUBSCRIPTION_ENROLLED', {
+        userId,
+        role: 'customer',
+        auditAction: 'SUBSCRIPTION_ENROLLED',
+        details: { subscriptionId: subscription.id, planId },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(201).json({
+        success: true,
+        message: formatMessage('customer', 'subscription', languageCode, 'success.subscription_enrolled', { plan: planId }),
+        data: { subscriptionId: subscription.id },
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Enroll subscription failed', { error: error.message, userId: req.userId });
+      next(error);
+    }
+  },
+
+  async manageSubscription(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role, io } = req;
+      const { subscriptionId, action, newPlanId } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'subscription', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      const subscription = await subscriptionService.manageSubscription(userId, subscriptionId, action, newPlanId, transaction);
+
+      const actionConfig = customerGamificationConstants.GAMIFICATION_ACTIONS.general.find(a => a.action === 'subscription_managed');
+      await pointService.awardPoints(userId, 'subscription_managed', actionConfig.points, {
+        io,
+        role: 'customer',
+        languageCode,
+        walletId: req.body.walletId,
+      });
+
+      const auditAction = `SUBSCRIPTION_${action.toUpperCase()}`;
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === auditAction),
+        details: { subscriptionId, action, newPlanId },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, auditAction, {
+        userId,
+        role: 'customer',
+        auditAction,
+        details: { subscriptionId, action, newPlanId },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'subscription', languageCode, `success.subscription_${action.toLowerCase()}`, { plan: subscription.plan }),
+        data: { subscriptionId: subscription.id },
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Manage subscription failed', { error: error.message, userId: req.userId });
+      next(error);
+    }
+  },
+
+  async cancelSubscription(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role, io } = req;
+      const { subscriptionId } = req.body;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'subscription', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      const subscription = await subscriptionService.cancelSubscription(userId, subscriptionId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'SUBSCRIPTION_CANCELED'),
+        details: { subscriptionId },
+        ipAddress: req.ip,
+      });
+
+      await socketService.emit(io, 'SUBSCRIPTION_CANCELED', {
+        userId,
+        role: 'customer',
+        auditAction: 'SUBSCRIPTION_CANCELED',
+        details: { subscriptionId },
+      }, `customer:${userId}`, languageCode);
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'subscription', languageCode, 'success.subscription_canceled'),
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Cancel subscription failed', { error: error.message, userId: req.userId });
+      next(error);
+    }
+  },
+
+  async trackSubscriptionTiers(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role } = req;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'subscription', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      const tierDetails = await subscriptionService.trackSubscriptionTiers(userId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'SUBSCRIPTION_VIEWED'),
+        details: { userId, tier: tierDetails.tier },
+        ipAddress: req.ip,
+      });
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'subscription', languageCode, 'success.subscription_tiers_tracked'),
+        data: tierDetails,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Track subscription tiers failed', { error: error.message, userId: req.userId });
+      next(error);
+    }
+  },
+
+  async getSubscriptionHistory(req, res, next) {
+    const transaction = await sequelize.transaction();
+    try {
+      const { userId, role } = req;
+      const languageCode = req.languageCode || localizationConstants.DEFAULT_LANGUAGE;
+
+      if (role !== 'customer') {
+        throw new AppError(
+          formatMessage('customer', 'subscription', languageCode, 'error.unauthorized'),
+          403,
+          customerGamificationConstants.ERROR_CODES[2]
+        );
+      }
+
+      const subscriptions = await subscriptionService.getSubscriptionHistory(userId, transaction);
+
+      await auditService.logAction({
+        userId,
+        role: 'customer',
+        action: customerConstants.COMPLIANCE_CONSTANTS.AUDIT_TYPES.find(a => a === 'SUBSCRIPTION_HISTORY_VIEWED'),
+        details: { userId },
+        ipAddress: req.ip,
+      });
+
+      await transaction.commit();
+      res.status(200).json({
+        success: true,
+        message: formatMessage('customer', 'subscription', languageCode, 'success.subscription_history_retrieved'),
+        data: subscriptions,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      logger.logErrorEvent('Get subscription history failed', { error: error.message, userId: req.userId });
+      next(error);
+    }
+  },
 };

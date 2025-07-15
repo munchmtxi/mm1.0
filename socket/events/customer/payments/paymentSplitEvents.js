@@ -1,6 +1,10 @@
 'use strict';
 
+/**
+ * Socket event constants for split payments.
+ */
+
 module.exports = {
-  SPLIT_PAYMENT_PROCESSED: 'payment:split',
-  REFUND_PROCESSED: 'payment:refund',
+  CUSTOMER_PAYMENT_CONFIRMED: 'customer_payment_confirmed',
+  CUSTOMER_PAYMENT_REFUNDED: 'customer_payment_refunded',
 };

@@ -1,11 +1,9 @@
 'use strict';
 
 module.exports = {
-  RIDE_BOOKED: 'ride:booked',
-  RIDE_UPDATED: 'ride:updated',
-  RIDE_CANCELLED: 'ride:cancelled',
-  RIDE_CHECK_IN: 'ride:check_in',
-  FEEDBACK_SUBMITTED: 'feedback:submitted',
-  FRIEND_INVITED: 'friend:invited',
-  BILL_SPLIT_PROCESSED: 'bill_split:processed',
+  RIDE_REQUESTED: 'RIDE_REQUESTED',
+  RIDE_UPDATED: 'RIDE_UPDATED',
+  RIDE_CANCELLED: 'RIDE_CANCELLED',
+  FRIEND_INVITED: 'FRIEND_INVITED',
+  FEEDBACK_SUBMITTED: 'FEEDBACK_SUBMITTED',
 };

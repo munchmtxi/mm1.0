@@ -2,14 +2,15 @@
 
 /**
  * Validation Utility
- * Provides functions to validate admin profile data, localization settings, and accessibility settings.
- * Uses constants from adminCoreConstants and adminSystemConstants for validation rules.
+ * Provides functions to validate admin profile data, localization settings, accessibility settings,
+ * and payment methods. Uses constants from adminCoreConstants, adminSystemConstants, and paymentConstants.
  */
 
 const validator = require('validator');
 const adminCoreConstants = require('@constants/admin/adminCoreConstants');
 const adminSystemConstants = require('@constants/admin/adminSystemConstants');
 const adminEngagementConstants = require('@constants/admin/adminEngagementConstants');
+const paymentConstants = require('@constants/common/paymentConstants');
 
 /**
  * Validates admin data for creation or update.
@@ -26,7 +27,7 @@ async function validateAdminData(data, isCreate) {
       throw new Error('Valid email is required');
     }
     if (!data.password || !validator.isLength(data.password, { min: adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_POLICY.MIN_LENGTH })) {
-      throw new Error(`Password must be at least ${adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_POLICY.MIN_LENGTH} characters`);
+      throw new Error(`Password must be at least ${adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_MINIMUM_LENGTH} characters`);
     }
     if (!data.roleId || !validator.isInt(data.roleId.toString())) {
       throw new Error('Valid role ID is required');
@@ -39,7 +40,7 @@ async function validateAdminData(data, isCreate) {
       throw new Error('Valid email is required');
     }
     if (data.password && !validator.isLength(data.password, { min: adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_POLICY.MIN_LENGTH })) {
-      throw new Error(`Password must be at least ${adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_POLICY.MIN_LENGTH} characters`);
+      throw new Error(`Password must be at least ${adminSystemConstants.SECURITY_CONSTANTS.PASSWORD_MINIMUM_LENGTH} characters`);
     }
   }
 
@@ -64,7 +65,7 @@ async function validateAdminData(data, isCreate) {
  * @param {Object} data - Localization data (countryCode, languageCode).
  * @throws {Error} If validation fails.
  */
-async function validateLocalizationData(data) {
+function validateLocalizationData(data) {
   if (!data.countryCode || !adminCoreConstants.ADMIN_SETTINGS.SUPPORTED_CURRENCIES.includes(data.countryCode)) {
     throw new Error('Country code must be a supported currency code');
   }
@@ -79,7 +80,7 @@ async function validateLocalizationData(data) {
  * @param {Object} settings - Accessibility settings (screenReader, fontSize, highContrast).
  * @throws {Error} If validation fails.
  */
-async function validateAccessibilitySettings(settings) {
+function validateAccessibilitySettings(settings) {
   if (!settings || typeof settings !== 'object') {
     throw new Error('Accessibility settings must be an object');
   }
@@ -100,8 +101,49 @@ async function validateAccessibilitySettings(settings) {
   }
 }
 
+/**
+ * Validates payment method details.
+ * @param {Object} paymentMethod - Payment method details (type, id, [cardNumber, expiry, cvv]).
+ * @throws {Error} If validation fails.
+ */
+async function validatePaymentMethod(paymentMethod) {
+  if (!paymentMethod || typeof paymentMethod !== 'object') {
+    throw new Error('Payment method must be an object');
+  }
+
+  if (!paymentMethod.type || !Object.values(paymentConstants.PAYMENT_METHODS).includes(paymentMethod.type)) {
+    throw new Error('Invalid payment method type');
+  }
+
+  if (!paymentMethod.id || !validator.isInt(paymentMethod.id.toString())) {
+    throw new Error('Valid payment method ID is required');
+  }
+
+  if (['CREDIT_CARD', 'DEBIT_CARD'].includes(paymentMethod.type)) {
+    if (!paymentMethod.cardNumber || !validator.isCreditCard(paymentMethod.cardNumber)) {
+      throw new Error('Valid card number is required');
+    }
+    if (!paymentMethod.expiry || !validator.matches(paymentMethod.expiry, /^(0[1-9]|1[0-2])\/[0-9]{2}$/)) {
+      throw new Error('Expiry date must be in MM/YY format');
+    }
+    if (!paymentMethod.cvv || !validator.isInt(paymentMethod.cvv, { min: 100, max: 9999 })) {
+      throw new Error('Valid CVV is required');
+    }
+  }
+
+  if (paymentMethod.type === 'BANK_TRANSFER') {
+    if (!paymentMethod.accountNumber || !validator.isAlphanumeric(paymentMethod.accountNumber)) {
+      throw new Error('Valid account number is required');
+    }
+    if (!paymentMethod.routingCode || !validator.isAlphanumeric(paymentMethod.routingCode)) {
+      throw new Error('Valid routing code is required');
+    }
+  }
+}
+
 module.exports = {
   validateAdminData,
   validateLocalizationData,
   validateAccessibilitySettings,
+  validatePaymentMethod,
 };

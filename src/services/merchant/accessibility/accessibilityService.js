@@ -1,271 +1,198 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\services\merchant\accessibility\accessibilityService.js
 'use strict';
 
 const { sequelize, User, Merchant, MerchantBranch, AccessibilitySettings } = require('@models');
-const merchantConstants = require('@constants/merchantConstants');
-const customerConstants = require('@constants/customerConstants');
-const notificationService = require('@services/common/notificationService');
-const auditService = require('@services/common/auditService');
-const socketService = require('@services/common/socketService');
-const gamificationService = require('@services/common/gamificationService');
-const { formatMessage } = require('@utils/localization');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const localizationConstants = require('@constants/common/localizationConstants');
 const AppError = require('@utils/AppError');
 const { handleServiceError } = require('@utils/errorHandling');
 const logger = require('@utils/logger');
 
-class AccessibilityService {
-  static async enableScreenReaders(merchantId, ipAddress) {
-    const transaction = await sequelize.transaction();
+async function enableScreenReaders(merchantId, ipAddress, transaction = null) {
+  const t = transaction || await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(merchantId, {
+      attributes: ['id', 'preferred_language'],
+      include: [
+        { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
+        { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'screenReaderEnabled'] },
+      ],
+      transaction: t,
+    });
 
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [
-          { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
-          { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'screenReaderEnabled'] },
-        ],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      let accessibilitySettings = merchant.accessibilitySettings;
-      if (!accessibilitySettings) {
-        accessibilitySettings = await AccessibilitySettings.create({
-          user_id: merchantId,
-          screenReaderEnabled: true,
-          fontSize: customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min,
-          language: merchant.preferred_language,
-        }, { transaction });
-      } else if (accessibilitySettings.screenReaderEnabled) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.screenReaderAlreadyEnabled'), 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
-      } else {
-        await accessibilitySettings.update({ screenReaderEnabled: true }, { transaction });
-      }
-
-      const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.merchant_profile.id }, transaction });
-      for (const branch of branches) {
-        await branch.update({ preferred_language: merchant.preferred_language }, { transaction });
-      }
-
-      const message = formatMessage(merchant.preferred_language, 'accessibility.screenReaderEnabled');
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, action: 'enableScreenReaders' },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`accessibility:screenReaderEnabled:${merchantId}`, { merchantId });
-
-      await transaction.commit();
-      logger.info(`Screen readers enabled for merchant ${merchantId}`);
-      return { merchantId, screenReaderEnabled: true };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('enableScreenReaders', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    if (!merchant || !merchant.merchant_profile) {
+      throw new AppError('Invalid merchant', 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
     }
-  }
 
-  static async adjustFonts(merchantId, fontSize, ipAddress) {
-    const transaction = await sequelize.transaction();
-
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [
-          { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
-          { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'fontSize'] },
-        ],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      if (fontSize < customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min || fontSize > customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.max) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidFontSize'), 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
-      }
-
-      let accessibilitySettings = merchant.accessibilitySettings;
-      if (!accessibilitySettings) {
-        accessibilitySettings = await AccessibilitySettings.create({
-          user_id: merchantId,
-          screenReaderEnabled: false,
-          fontSize,
-          language: merchant.preferred_language,
-        }, { transaction });
-      } else {
-        await accessibilitySettings.update({ fontSize }, { transaction });
-      }
-
-      const message = formatMessage(merchant.preferred_language, 'accessibility.fontAdjusted', { fontSize });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'LOW',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, fontSize },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`accessibility:fontAdjusted:${merchantId}`, { merchantId, fontSize });
-
-      await transaction.commit();
-      logger.info(`Font size adjusted to ${fontSize} for merchant ${merchantId}`);
-      return { merchantId, fontSize };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('adjustFonts', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    let accessibilitySettings = merchant.accessibilitySettings;
+    if (!accessibilitySettings) {
+      accessibilitySettings = await AccessibilitySettings.create({
+        user_id: merchantId,
+        screenReaderEnabled: true,
+        fontSize: merchantConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min,
+        language: merchant.preferred_language,
+      }, { transaction: t });
+    } else if (accessibilitySettings.screenReaderEnabled) {
+      throw new AppError('Screen reader already enabled', 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
+    } else {
+      await accessibilitySettings.update({ screenReaderEnabled: true }, { transaction: t });
     }
-  }
 
-  static async supportMultiLanguage(merchantId, language, ipAddress) {
-    const transaction = await sequelize.transaction();
-
-    try {
-      const merchant = await User.findByPk(merchantId, {
-        attributes: ['id', 'preferred_language'],
-        include: [
-          { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
-          { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'language'] },
-        ],
-        transaction,
-      });
-      if (!merchant || !merchant.merchant_profile) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidMerchant'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      if (!customerConstants.CUSTOMER_SETTINGS.SUPPORTED_LANGUAGES.includes(language)) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidLanguage'), 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
-      }
-
-      let accessibilitySettings = merchant.accessibilitySettings;
-      if (!accessibilitySettings) {
-        accessibilitySettings = await AccessibilitySettings.create({
-          user_id: merchantId,
-          screenReaderEnabled: false,
-          fontSize: customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min,
-          language,
-        }, { transaction });
-      } else if (accessibilitySettings.language === language) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.languageAlreadySet'), 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
-      } else {
-        await accessibilitySettings.update({ language }, { transaction });
-      }
-
-      const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.merchant_profile.id }, transaction });
-      for (const branch of branches) {
-        await branch.update({ preferred_language: language }, { transaction });
-      }
-
-      await merchant.update({ preferred_language: language }, { transaction });
-
-      const message = formatMessage(merchant.preferred_language, 'accessibility.languageSupported', { language });
-      await notificationService.createNotification({
-        userId: merchantId,
-        type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-        message,
-        priority: 'MEDIUM',
-        languageCode: merchant.preferred_language,
-      }, transaction);
-
-      await auditService.logAction({
-        userId: merchantId,
-        role: 'merchant',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { merchantId, language },
-        ipAddress,
-      }, transaction);
-
-      socketService.emit(`accessibility:languageSupported:${merchantId}`, { merchantId, language });
-
-      await transaction.commit();
-      logger.info(`Language set to ${language} for merchant ${merchantId}`);
-      return { merchantId, language };
-    } catch (error) {
-      await transaction.rollback();
-      throw handleServiceError('supportMultiLanguage', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+    const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.merchant_profile.id }, transaction: t });
+    for (const branch of branches) {
+      await branch.update({ preferred_language: merchant.preferred_language }, { transaction: t });
     }
-  }
 
-  static async trackAccessibilityGamification(customerId, ipAddress) {
-    try {
-      const customer = await User.findByPk(customerId, {
-        attributes: ['id', 'preferred_language'],
-        include: [
-          { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'screenReaderEnabled', 'fontSize', 'language'] },
-        ],
-      });
-      if (!customer) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.invalidCustomer'), 404, merchantConstants.ERROR_CODES.MERCHANT_NOT_FOUND);
-      }
-
-      const settings = customer.accessibilitySettings;
-      if (!settings) {
-        throw new AppError(formatMessage('merchant', 'accessibility', 'en', 'accessibility.errors.noAccessibilitySettings'), 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
-      }
-
-      const points = 
-        (settings.screenReaderEnabled ? customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.SCREEN_READER_USAGE.points : 0) +
-        (settings.fontSize !== customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min ? customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.FONT_ADJUSTMENT.points : 0) +
-        (settings.language !== customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE ? customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.LANGUAGE_CHANGE.points : 0);
-
-      if (points > 0) {
-        await gamificationService.awardPoints({
-          userId: customerId,
-          action: customerConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS.ACCESSIBILITY_USAGE.action,
-          points,
-          metadata: {
-            screenReader: settings.screenReaderEnabled,
-            fontSize: settings.fontSize,
-            language: settings.language,
-          },
-        });
-
-        const message = formatMessage(customer.preferred_language, 'accessibility.pointsAwarded', { points });
-        await notificationService.createNotification({
-          userId: customerId,
-          type: merchantConstants.CRM_CONSTANTS.NOTIFICATION_TYPES.PROMOTION,
-          message,
-          priority: 'LOW',
-          languageCode: customer.preferred_language,
-        });
-
-        socketService.emit(`accessibility:gamification:${customerId}`, { customerId, points });
-      }
-
-      await auditService.logAction({
-        userId: customerId,
-        role: 'customer',
-        action: merchantConstants.SECURITY_CONSTANTS.AUDIT_LOG_RETENTION_DAYS,
-        details: { customerId, pointsAwarded: points },
-        ipAddress,
-      });
-
-      logger.info(`Accessibility gamification tracked for customer ${customerId}: ${points} points`);
-      return { customerId, points };
-    } catch (error) {
-      throw handleServiceError('trackAccessibilityGamification', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
-    }
+    if (!transaction) await t.commit();
+    logger.info(`Screen readers enabled for merchant ${merchantId}`);
+    return { merchantId, screenReaderEnabled: true, language: merchant.preferred_language, action: 'screenReaderEnabled' };
+  } catch (error) {
+    if (!transaction) await t.rollback();
+    throw handleServiceError('enableScreenReaders', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
   }
 }
 
-module.exports = AccessibilityService;
+async function adjustFonts(merchantId, fontSize, ipAddress, transaction = null) {
+  const t = transaction || await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(merchantId, {
+      attributes: ['id', 'preferred_language'],
+      include: [
+        { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
+        { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'fontSize'] },
+      ],
+      transaction: t,
+    });
+
+    if (!merchant || !merchant.merchant_profile) {
+      throw new AppError('Invalid merchant', 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    if (fontSize < merchantConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min || fontSize > merchantConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.max) {
+      throw new AppError('Invalid font size', 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    let accessibilitySettings = merchant.accessibilitySettings;
+    const previousFontSize = accessibilitySettings ? accessibilitySettings.fontSize : merchantConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min;
+    if (!accessibilitySettings) {
+      accessibilitySettings = await AccessibilitySettings.create({
+        user_id: merchantId,
+        screenReaderEnabled: false,
+        fontSize,
+        language: merchant.preferred_language,
+      }, { transaction: t });
+    } else {
+      await accessibilitySettings.update({ fontSize }, { transaction: t });
+    }
+
+    if (!transaction) await t.commit();
+    logger.info(`Font size adjusted to ${fontSize} for merchant ${merchantId}`);
+    return { merchantId, fontSize, previousFontSize, language: merchant.preferred_language, action: 'fontAdjusted' };
+  } catch (error) {
+    if (!transaction) await t.rollback();
+    throw handleServiceError('adjustFonts', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+  }
+}
+
+async function supportMultiLanguage(merchantId, language, ipAddress, transaction = null) {
+  const t = transaction || await sequelize.transaction();
+  try {
+    const merchant = await User.findByPk(merchantId, {
+      attributes: ['id', 'preferred_language'],
+      include: [
+        { model: Merchant, as: 'merchant_profile', attributes: ['id'] },
+        { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'language'] },
+      ],
+      transaction: t,
+    });
+
+    if (!merchant || !merchant.merchant_profile) {
+      throw new AppError('Invalid merchant', 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    if (!localizationConstants.SUPPORTED_LANGUAGES.includes(language)) {
+      throw new AppError('Invalid language', 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    let accessibilitySettings = merchant.accessibilitySettings;
+    const previousLanguage = accessibilitySettings ? accessibilitySettings.language : merchant.preferred_language;
+    if (!accessibilitySettings) {
+      accessibilitySettings = await AccessibilitySettings.create({
+        user_id: merchantId,
+        screenReaderEnabled: false,
+        fontSize: merchantConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min,
+        language,
+      }, { transaction: t });
+    } else if (accessibilitySettings.language === language) {
+      throw new AppError('Language already set', 400, merchantConstants.ERROR_CODES.PERMISSION_DENIED);
+    } else {
+      await accessibilitySettings.update({ language }, { transaction: t });
+    }
+
+    const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.merchant_profile.id }, transaction: t });
+    for (const branch of branches) {
+      await branch.update({ preferred_language: language }, { transaction: t });
+    }
+
+    await merchant.update({ preferred_language: language }, { transaction: t });
+
+    if (!transaction) await t.commit();
+    logger.info(`Language set to ${language} for merchant ${merchantId}`);
+    return { merchantId, language, previousLanguage, action: 'languageSupported' };
+  } catch (error) {
+    if (!transaction) await t.rollback();
+    throw handleServiceError('supportMultiLanguage', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+  }
+}
+
+async function calculateAccessibilityPoints(userId, action, metadata = {}) {
+  try {
+    const user = await User.findByPk(userId, {
+      attributes: ['id', 'preferred_language', 'role_id'],
+      include: [
+        { model: AccessibilitySettings, as: 'accessibilitySettings', attributes: ['id', 'screenReaderEnabled', 'fontSize', 'language'] },
+      ],
+    });
+
+    if (!user) {
+      throw new AppError('Invalid user', 404, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    const settings = user.accessibilitySettings;
+    if (!settings) {
+      throw new AppError('No accessibility settings found', 404, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    const actionConfig = merchantConstants.GAMIFICATION_CONSTANTS.GAMIFICATION_ACTIONS.find(a => a.action === action);
+    if (!actionConfig) {
+      throw new AppError('Invalid action', 400, merchantConstants.ERROR_CODES.INVALID_INPUT);
+    }
+
+    let points = actionConfig.points;
+    let multipliers = 1;
+
+    // Apply dynamic multipliers based on action context
+    if (action === 'screenReaderEnabled' && settings.screenReaderEnabled) {
+      multipliers *= actionConfig.multipliers?.screenReader || 1;
+    }
+    if (action === 'fontAdjusted' && metadata.fontSize && metadata.previousFontSize) {
+      const sizeChange = Math.abs(metadata.fontSize - metadata.previousFontSize);
+      multipliers *= actionConfig.multipliers?.fontChange * sizeChange || 1;
+    }
+    if (action === 'languageSupported' && metadata.language && metadata.language !== localizationConstants.DEFAULT_LANGUAGE) {
+      multipliers *= actionConfig.multipliers?.languageChange || 1;
+    }
+
+    // Apply role-based multiplier
+    const role = user.role_id ? 'merchant' : 'user'; // Simplified role check
+    multipliers *= actionConfig.multipliers?.[role] || 1;
+
+    // Cap points to prevent abuse
+    points = Math.min(points * multipliers, merchantConstants.GAMIFICATION_CONSTANTS.GAMIFICATION_SETTINGS.MAX_POINTS_PER_ACTION || 100);
+
+    return { userId, points, language: user.preferred_language, action, metadata, role };
+  } catch (error) {
+    throw handleServiceError('calculateAccessibilityPoints', error, merchantConstants.ERROR_CODES.SYSTEM_ERROR);
+  }
+}
+
+module.exports = { enableScreenReaders, adjustFonts, supportMultiLanguage, calculateAccessibilityPoints };
