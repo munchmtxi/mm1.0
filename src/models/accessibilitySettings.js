@@ -1,18 +1,17 @@
 'use strict';
 
 const { Model, DataTypes } = require('sequelize');
-const customerConstants = require('@constants/customer/customerConstants');
+const accessibilityConstants = require('@constants/accessibilityConstants');
 
 /**
  * AccessibilitySettings Model
- * Stores customer accessibility settings, such as screen reader support, font size, and UI language.
- * Associated with the User model for customer-specific settings.
- * Last Updated: May 18, 2025
+ * Stores user accessibility settings, including theme, screen reader, font size, language, and more.
+ * Associated with the User model for role-agnostic settings.
+ * Last Updated: July 19, 2025
  */
 module.exports = (sequelize) => {
   class AccessibilitySettings extends Model {
     static associate(models) {
-      // Define association with User model
       AccessibilitySettings.belongsTo(models.User, {
         foreignKey: 'user_id',
         as: 'user',
@@ -34,7 +33,7 @@ module.exports = (sequelize) => {
         allowNull: false,
         unique: true,
         references: {
-          model: 'Users',
+          model: 'users',
           key: 'id',
         },
       },
@@ -46,28 +45,70 @@ module.exports = (sequelize) => {
       fontSize: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min,
+        defaultValue: accessibilityConstants.FONT_SIZE_RANGE.min,
         validate: {
           min: {
-            args: [customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min],
-            msg: `Font size must be at least ${customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.min}`,
+            args: [accessibilityConstants.FONT_SIZE_RANGE.min],
+            msg: `Font size must be at least ${accessibilityConstants.FONT_SIZE_RANGE.min}`,
           },
           max: {
-            args: [customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.max],
-            msg: `Font size must not exceed ${customerConstants.ACCESSIBILITY_CONSTANTS.FONT_SIZE_RANGE.max}`,
+            args: [accessibilityConstants.FONT_SIZE_RANGE.max],
+            msg: `Font size must not exceed ${accessibilityConstants.FONT_SIZE_RANGE.max}`,
           },
         },
       },
       language: {
         type: DataTypes.STRING(10),
         allowNull: false,
-        defaultValue: customerConstants.CUSTOMER_SETTINGS.DEFAULT_LANGUAGE,
+        defaultValue: accessibilityConstants.DEFAULT_LANGUAGE,
         validate: {
           isIn: {
-            args: [customerConstants.CUSTOMER_SETTINGS.SUPPORTED_LANGUAGES],
+            args: [accessibilityConstants.SUPPORTED_LANGUAGES],
             msg: 'Invalid language code',
           },
         },
+      },
+      theme: {
+        type: DataTypes.ENUM('light', 'dark', 'system'),
+        allowNull: false,
+        defaultValue: 'system',
+        validate: {
+          isIn: {
+            args: [['light', 'dark', 'system']],
+            msg: 'Invalid theme option',
+          },
+        },
+      },
+      highContrastMode: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      colorBlindMode: {
+        type: DataTypes.ENUM('none', 'protanopia', 'deuteranopia', 'tritanopia'),
+        allowNull: false,
+        defaultValue: 'none',
+        validate: {
+          isIn: {
+            args: [['none', 'protanopia', 'deuteranopia', 'tritanopia']],
+            msg: 'Invalid color blind mode',
+          },
+        },
+      },
+      textToSpeechEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      keyboardNavigationEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      animationReduced: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
       created_at: {
         type: DataTypes.DATE,
@@ -83,7 +124,7 @@ module.exports = (sequelize) => {
     {
       sequelize,
       modelName: 'AccessibilitySettings',
-      tableName: 'AccessibilitySettings',
+      tableName: 'accessibility_settings',
       timestamps: true,
       createdAt: 'created_at',
       updatedAt: 'updated_at',

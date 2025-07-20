@@ -2,9 +2,6 @@
 const { Model, DataTypes } = require('sequelize');
 const libphonenumber = require('google-libphonenumber');
 const bcrypt = require('bcryptjs');
-const authConstants = require('@constants/common/authConstants');
-const adminCoreConstants = require('@constants/admin/adminCoreConstants');
-const staffConstants = require('@constants/staff/staffSystemConstants');
 
 // Utility function for phone number validation
 const validatePhoneNumber = (value) => {
@@ -24,37 +21,14 @@ const validatePhoneNumber = (value) => {
 module.exports = (sequelize) => {
   class User extends Model {
     static associate(models) {
-      // Role association
-      this.belongsTo(models.Role, { foreignKey: 'role_id', as: 'role' });
-      // Admin profile
-      this.hasOne(models.admin, { foreignKey: 'user_id', as: 'admin_profile' });
-      // Customer, Merchant, Staff, Driver profiles
-      this.hasOne(models.Customer, { foreignKey: 'user_id', as: 'customer_profile' });
-      this.hasOne(models.Merchant, { foreignKey: 'user_id', as: 'merchant_profile' });
-      this.hasOne(models.Staff, { foreignKey: 'user_id', as: 'staff_profile' });
-      this.hasOne(models.Driver, { foreignKey: 'user_id', as: 'driver_profile' });
-      // Wallet association
       this.hasOne(models.Wallet, { foreignKey: 'user_id', as: 'wallet' });
-      // User management
       this.belongsTo(models.User, { as: 'managed_by', foreignKey: 'manager_id' });
-      // Notifications
       this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
-      // Payments
-      this.hasMany(models.Payment, { foreignKey: 'customer_id', as: 'customer_payments' });
-      this.hasMany(models.Payment, { foreignKey: 'driver_id', as: 'driver_payments' });
-      // Reports
-      this.hasMany(models.Report, { foreignKey: 'generated_by', as: 'reports' });
-      // Password history
       this.hasMany(models.PasswordHistory, { foreignKey: 'user_id', as: 'password_history' });
-      // Sessions
       this.hasMany(models.Session, { foreignKey: 'user_id', as: 'sessions' });
-      // Audit logs
       this.hasMany(models.AuditLog, { foreignKey: 'user_id', as: 'audit_logs' });
-      // MFA tokens
       this.hasMany(models.mfaTokens, { foreignKey: 'user_id', as: 'mfaTokens' });
-      // Gamification points
       this.hasMany(models.GamificationPoints, { foreignKey: 'user_id', as: 'gamificationPoints' });
-      // Verifications
       this.hasMany(models.Verification, { foreignKey: 'user_id', as: 'verifications' });
     }
 
@@ -108,32 +82,25 @@ module.exports = (sequelize) => {
             const passwordValidator = require('password-validator');
             const schema = new passwordValidator();
             schema
-              .is().min(authConstants.PASSWORD_CONSTANTS.MIN_LENGTH)
-              .is().max(authConstants.PASSWORD_CONSTANTS.MAX_LENGTH)
-              .has().uppercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.UPPERCASE ? 1 : 0)
-              .has().lowercase(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.LOWERCASE ? 1 : 0)
-              .has().digits(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.NUMBER ? 1 : 0)
-              .has().symbols(authConstants.PASSWORD_CONSTANTS.REQUIREMENTS.SPECIAL_CHAR ? 1 : 0);
+              .is().min(8)
+              .is().max(100)
+              .has().uppercase(1)
+              .has().lowercase(1)
+              .has().digits(1)
+              .has().symbols(1);
             if (!schema.validate(value)) {
               throw new Error('Password does not meet complexity requirements');
             }
           },
         },
       },
-      role_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: { model: 'roles', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'RESTRICT',
-      },
       preferred_language: {
         type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
+        defaultValue: 'en',
         validate: {
           isIn: {
-            args: [staffConstants.STAFF_SETTINGS.SUPPORTED_LANGUAGES],
+            args: [['en', 'fr', 'es']],
             msg: 'Invalid language',
           },
         },
@@ -155,19 +122,15 @@ module.exports = (sequelize) => {
         validate: {
           notEmpty: { msg: 'Country is required' },
           isIn: {
-            args: [authConstants.AUTH_SETTINGS.SUPPORTED_COUNTRIES],
+            args: [['US', 'CA', 'UK', 'MW']],
             msg: 'Invalid country',
           },
         },
       },
-      merchant_type: {
-        type: DataTypes.ENUM('restaurant', 'butcher', 'grocery', 'cafe', 'bakery'),
-        allowNull: true,
-      },
       is_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
       status: {
-        type: DataTypes.ENUM(...Object.values(authConstants.USER_STATUSES)),
-        defaultValue: authConstants.USER_STATUSES.ACTIVE,
+        type: DataTypes.ENUM('active', 'inactive', 'suspended'),
+        defaultValue: 'active',
       },
       manager_id: {
         type: DataTypes.INTEGER,
@@ -185,12 +148,12 @@ module.exports = (sequelize) => {
       },
       two_factor_secret: { type: DataTypes.STRING, allowNull: true },
       mfa_method: {
-        type: DataTypes.ENUM(...Object.values(authConstants.MFA_CONSTANTS.MFA_METHODS)),
+        type: DataTypes.ENUM('email', 'sms', 'authenticator'),
         allowNull: true,
       },
       mfa_status: {
-        type: DataTypes.ENUM(...Object.values(authConstants.MFA_CONSTANTS.MFA_STATUSES)),
-        defaultValue: authConstants.MFA_CONSTANTS.MFA_STATUSES.DISABLED,
+        type: DataTypes.ENUM('enabled', 'disabled'),
+        defaultValue: 'disabled',
       },
       mfa_backup_codes: { type: DataTypes.JSONB, allowNull: true, comment: 'Encrypted backup codes for MFA' },
       password_reset_token: { type: DataTypes.STRING, allowNull: true },
@@ -268,7 +231,7 @@ module.exports = (sequelize) => {
       hooks: {
         beforeCreate: async (user) => {
           if (user.password) {
-            const salt = await bcrypt.genSalt(authConstants.PASSWORD_CONSTANTS.SALT_ROUNDS);
+            const salt = await bcrypt.genSalt(10);
             user.password = await bcrypt.hash(user.password, salt);
             user.last_password_change = new Date();
           }
@@ -276,7 +239,7 @@ module.exports = (sequelize) => {
         beforeUpdate: async (user) => {
           if (user.changed('password')) {
             if (!user.password.match(/^\$2[aby]\$/)) {
-              const salt = await bcrypt.genSalt(authConstants.PASSWORD_CONSTANTS.SALT_ROUNDS);
+              const salt = await bcrypt.genSalt(10);
               user.password = await bcrypt.hash(user.password, salt);
               user.last_password_change = new Date();
             }

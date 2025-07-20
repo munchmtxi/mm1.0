@@ -62,7 +62,7 @@ function loadTranslation(role, module, languageCode) {
  * @param {string} module - Module identifier (e.g., 'profile', 'payments/wallet').
  * @param {string} languageCode - ISO 639-1 language code (e.g., 'en', 'es').
  * @param {string} messageKey - Key of the message to format (supports dot notation, e.g., 'profile.welcome_message').
- * @param {Object} [params={}] - Parameters to inject into the message (e.g., { name: 'John' }).
+ * @param {Object} [params={}] - Parameters to inject into the message (e.g., { name: 'John', country: 'US' }).
  * @returns {string} Formatted message.
  */
 function formatMessage(role, module, languageCode, messageKey, params = {}) {
@@ -99,8 +99,21 @@ function formatMessage(role, module, languageCode, messageKey, params = {}) {
     message = message.replace(`{${key}}`, params[key]);
   });
 
-  // Apply date/time formatting based on localization settings
-  if (params.date) {
+  // Apply date/time formatting based on country settings
+  if (params.date && params.country && localizationConstants.COUNTRY_SETTINGS[params.country]) {
+    const countrySettings = localizationConstants.COUNTRY_SETTINGS[params.country];
+    const dateFormatOptions = {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: countrySettings.timeFormat === '12h',
+      timeZone: countrySettings.timeZone,
+    };
+    message = message.replace('{date}', new Date(params.date).toLocaleString(countrySettings.language, dateFormatOptions));
+  } else if (params.date) {
+    // Fallback to default formatting
     const dateFormatOptions = {
       year: 'numeric',
       month: 'long',

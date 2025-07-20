@@ -1,47 +1,43 @@
 'use strict';
 
-const { USER_MANAGEMENT } = require('@constants/admin/adminCoreConstants');
-
 module.exports = {
   AUTH_SETTINGS: {
     DEFAULT_ROLE: 'customer',
     SUPPORTED_ROLES: ['admin', 'customer', 'merchant', 'staff', 'driver'],
     PROTECTED_ROLES: ['admin', 'staff'],
-    KYC_REQUIRED: ['merchant', 'staff', 'driver'],
+    KYC_REQUIRED: ['merchant', 'driver'],
     ONBOARDING_STATUSES: ['pending', 'verified', 'rejected'],
-    SUPPORTED_CURRENCIES: ['MWK', 'USD'],
+    SUPPORTED_CURRENCIES: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'ZAR', 'INR', 'XAF', 'GHS', 'MXN', 'ERN'],
     DEFAULT_CURRENCY: 'USD',
   },
-  USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'terminated', 'banned'],
+  USER_STATUSES: ['active', 'inactive', 'pending_verification', 'suspended', 'banned'],
   RBAC_CONSTANTS: {
-    PERMISSION_LEVELS: ['read', 'write', 'delete', 'approve', 'configure', 'audit', 'escalate', 'restricted'],
+    PERMISSION_LEVELS: ['read', 'write', 'delete', 'approve', 'configure', 'audit', 'cancel', 'accept'],
     ROLE_PERMISSIONS: {
       customer: {
         manageProfile: ['read', 'write'],
-        manageBookings: ['read', 'write', 'cancel'],
-        manageOrders: ['read', 'write', 'cancel'],
-        manageRides: ['read', 'write', 'cancel'],
-        manageParking: ['read', 'write', 'cancel'],
+        manageBookings: ['read', 'write', 'cancel'], // mpark, mtables
+        manageOrders: ['read', 'write', 'cancel'], // munch
+        manageRides: ['read', 'write', 'cancel'], // mtxi
         manageWallet: ['read', 'write'],
         viewAnalytics: ['read'],
         manageSocial: ['read', 'write'],
         manageSupport: ['read', 'write'],
-        manageEvents: ['read', 'write', 'cancel'],
       },
       merchant: {
         manageMerchantProfile: ['read', 'write'],
-        manageBookings: ['read', 'write', 'approve', 'cancel'],
-        manageOrders: ['read', 'write', 'approve'],
-        manageEvents: ['read', 'write', 'approve'],
+        manageBookings: ['read', 'write', 'approve', 'cancel'], // mpark, mtables
+        manageOrders: ['read', 'write', 'approve'], // munch
+        manageEvents: ['read', 'write', 'approve'], // mevents
         viewAnalytics: ['read'],
         managePayouts: ['read', 'write'],
         manageSupport: ['read', 'write', 'escalate'],
       },
       staff: {
         manageTasks: ['read', 'write'],
-        manageBookings: ['read', 'write', 'approve'],
-        manageOrders: ['read', 'write', 'approve'],
-        manageEvents: ['read', 'write', 'approve'],
+        manageBookings: ['read', 'write', 'approve'], // mpark, mtables
+        manageOrders: ['read', 'write', 'approve'], // munch
+        manageEvents: ['read', 'write', 'approve'], // mevents
         viewAnalytics: ['read'],
         manageSupport: ['read', 'write'],
       },
@@ -50,11 +46,11 @@ module.exports = {
         manageConfig: ['read', 'write', 'configure'],
         viewAnalytics: ['read', 'audit'],
         manageSupport: ['read', 'write', 'escalate'],
-        manageAllServices: ['read', 'write', 'approve', 'cancel'],
+        manageAllServices: ['read', 'write', 'approve', 'cancel'], // mpark, mtables, munch, mtxi, mevents
       },
       driver: {
-        manageRides: ['read', 'write', 'accept', 'cancel'],
-        manageDeliveries: ['read', 'write', 'accept'],
+        manageRides: ['read', 'write', 'accept', 'cancel'], // mtxi
+        manageDeliveries: ['read', 'write', 'accept'], // munch, mevents
         viewAnalytics: ['read'],
         manageWallet: ['read', 'write'],
         manageSupport: ['read', 'write'],
@@ -67,7 +63,7 @@ module.exports = {
     MFA_ATTEMPT_LIMIT: 3,
     MFA_LOCKOUT_DURATION_MINUTES: 15,
     MFA_BACKUP_CODES: { COUNT: 10, LENGTH: 12 },
-    MFA_REQUIRED_ROLES: ['admin', 'staff', 'merchant', 'driver'],
+    MFA_REQUIRED_ROLES: ['admin', 'merchant', 'driver'],
   },
   SESSION_CONSTANTS: {
     MAX_SESSIONS_PER_USER: { customer: 5, merchant: 3, staff: 3, admin: 5, driver: 3 },
@@ -78,7 +74,12 @@ module.exports = {
   },
   TOKEN_CONSTANTS: {
     TOKEN_TYPES: { ACCESS: 'access', REFRESH: 'refresh' },
-    TOKEN_EXPIRY: { ACCESS: 15, REFRESH: 10080 }, // 15 min, 7 days
+    TOKEN_EXPIRY: { ACCESS: 60, REFRESH: 10080 }, // 60 min, 7 days
+    JWT: {
+      SECRET: process.env.JWT_SECRET || null,
+      ALGORITHM: process.env.JWT_ALGORITHM || 'HS256',
+      REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || null,
+    },
   },
   AUDIT_LOG_CONSTANTS: {
     LOG_TYPES: {
@@ -87,12 +88,15 @@ module.exports = {
       USER_REGISTRATION: 'USER_REGISTRATION',
       LOGIN: 'LOGIN',
       MFA_ATTEMPT: 'MFA_ATTEMPT',
+      PASSWORD_RESET: 'PASSWORD_RESET',
+      KYC_VERIFICATION: 'KYC_VERIFICATION',
     },
+    RETENTION_DAYS: 365,
   },
   VERIFICATION_CONSTANTS: {
-    VERIFICATION_METHODS: USER_MANAGEMENT.VERIFICATION_METHODS,
+    VERIFICATION_METHODS: ['email', 'phone', 'google', 'document_upload'],
     VERIFICATION_STATUSES: ['pending', 'verified', 'rejected'],
-    VERIFICATION_DOCUMENT_TYPES: USER_MANAGEMENT.DOCUMENT_TYPES,
+    VERIFICATION_DOCUMENT_TYPES: ['drivers_license', 'passport', 'national_id', 'vehicle_insurance', 'business_license'],
   },
   ERROR_CODES: {
     INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
@@ -107,7 +111,6 @@ module.exports = {
     KYC_REQUIRED: 'KYC_REQUIRED',
     INVALID_ROLE: 'INVALID_ROLE',
     DUPLICATE_USER: 'DUPLICATE_USER',
-    INVALID_BUSINESS_TYPE: 'INVALID_BUSINESS_TYPE',
   },
   SUCCESS_MESSAGES: [
     'USER_LOGGED_IN',

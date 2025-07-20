@@ -1,149 +1,130 @@
 'use strict';
-const { Model, DataTypes } = require('sequelize');
-const staffConstants = require('@constants/staff/staffSystemConstants');
+const { Model } = require('sequelize');
 
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   class Staff extends Model {
     static associate(models) {
       this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
-      this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
-      this.belongsTo(models.MerchantBranch, { foreignKey: 'branch_id', as: 'branch' });
-      this.belongsTo(models.Geofence, { foreignKey: 'geofence_id', as: 'geofence' });
-      this.hasOne(models.Wallet, { foreignKey: 'staff_id', as: 'wallet' });
-
-      this.belongsToMany(models.Permission, {
-        through: models.StaffPermissions,
-        foreignKey: 'staff_id',
-        otherKey: 'permission_id',
-        as: 'permissions',
+      this.belongsTo(models.Country, { foreignKey: 'country_id', as: 'country' });
+      this.belongsToMany(models.Role, {
+        through: 'UserRoles',
+        foreignKey: 'user_id',
+        otherKey: 'role_id',
+        as: 'roles'
       });
+      this.hasMany(models.Order, { foreignKey: 'staff_id', as: 'orders' });
+      this.hasMany(models.Booking, { foreignKey: 'assigned_staff_id', as: 'bookings' });
+      this.hasMany(models.InDiningOrder, { foreignKey: 'staff_id', as: 'inDiningOrders' });
+      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
     }
   }
 
-  Staff.init(
-    {
-      id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        autoIncrement: true,
-        primaryKey: true,
-      },
-      user_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        unique: true,
-        references: { model: 'users', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
-      },
-      merchant_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: { model: 'merchants', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
-      },
-      branch_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: 'merchant_branches', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-      },
-
-      // NEW: Staff types array
-      staff_types: {
-        type: DataTypes.ARRAY(DataTypes.STRING),
-        allowNull: false,
-        validate: {
-          notEmpty: { msg: 'Staff types are required' },
-          isValidTypes(value) {
-            const allowed = staffConstants.STAFF_PROFILE_CONSTANTS.ALLOWED_STAFF_TYPES;
-            if (!Array.isArray(value) || !value.every(type => allowed.includes(type))) {
-              throw new Error('One or more staff types are invalid');
-            }
-          },
-        },
-        comment: 'Multiple staff roles (e.g. ["driver", "barista"])',
-      },
-
-      certifications: {
-        type: DataTypes.JSONB,
-        allowNull: true,
-        defaultValue: [],
-        validate: {
-          isValidCertifications(value) {
-            const allowed = staffConstants.STAFF_PROFILE_CONSTANTS.ALLOWED_CERTIFICATIONS;
-            if (value && !value.every(cert => allowed.includes(cert))) {
-              throw new Error('Invalid certifications');
-            }
-          },
-        },
-      },
-
-      assigned_area: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'Specific area within the merchant',
-      },
-
-      work_location: {
-        type: DataTypes.GEOMETRY('POINT'),
-        allowNull: true,
-        comment: 'Current or last known work location',
-      },
-
-      geofence_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: 'geofences', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-      },
-
-      availability_status: {
-        type: DataTypes.ENUM('available', 'busy', 'on_break', 'offline'),
-        allowNull: false,
-        defaultValue: 'offline',
-      },
-
-      performance_metrics: {
-        type: DataTypes.JSONB,
-        allowNull: true,
-        comment: 'Performance data (e.g., tasks completed, ratings)',
-      },
-
-      created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      },
-
-      updated_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-      },
-
-      deleted_at: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
+  Staff.init({
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+      allowNull: false
     },
-    {
-      sequelize,
-      modelName: 'Staff',
-      tableName: 'staff',
-      underscored: true,
-      paranoid: true,
-      indexes: [
-        { unique: true, fields: ['user_id'], name: 'staff_user_id_unique' },
-        { fields: ['merchant_id'], name: 'staff_merchant_id_index' },
-        { fields: ['branch_id'], name: 'staff_branch_id_index' },
-        { fields: ['geofence_id'], name: 'staff_geofence_id_index' },
-      ],
+    user_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: { model: 'users', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'CASCADE'
+    },
+    country_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'countries', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL'
+    },
+    services: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: false,
+      defaultValue: ['mtables', 'munch', 'mevents', 'mpark', 'mstays', 'mtickets'],
+      validate: {
+        isIn: {
+          args: [['mtables', 'munch', 'mevents', 'mpark', 'mstays', 'mtickets']],
+          msg: 'Services must be one of: mtables, munch, mevents, mpark, mstays, mtickets'
+        }
+      }
+    },
+    staff_type: {
+      type: DataTypes.ENUM(
+        'server', 'host', 'chef', 'manager', 'butcher', 'barista', 'stock_clerk', 'picker',
+        'cashier', 'driver', 'packager', 'event_staff', 'consultant', 'front_of_house',
+        'back_of_house', 'car_park_operative', 'front_desk', 'housekeeping', 'concierge',
+        'ticket_agent', 'event_coordinator'
+      ),
+      allowNull: false
+    },
+    status: {
+      type: DataTypes.ENUM('active', 'inactive', 'pending_onboarding', 'suspended', 'terminated'),
+      defaultValue: 'pending_onboarding'
+    },
+    certifications: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: []
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: sequelize.literal('CURRENT_TIMESTAMP')
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: sequelize.literal('CURRENT_TIMESTAMP')
+    },
+    deleted_at: {
+      type: DataTypes.DATE,
+      allowNull: true
     }
-  );
+  }, {
+    sequelize,
+    modelName: 'Staff',
+    tableName: 'staff',
+    underscored: true,
+    paranoid: true,
+    hooks: {
+      beforeValidate: (staff, options) => {
+        const allowedServices = {
+          server: ['mtables', 'munch'],
+          host: ['mtables', 'munch'],
+          chef: ['mtables', 'munch', 'mevents'],
+          manager: ['mtables', 'munch', 'mevents', 'mpark', 'mstays', 'mtickets'],
+          butcher: ['munch'],
+          barista: ['munch'],
+          stock_clerk: ['munch'],
+          picker: ['munch'],
+          cashier: ['munch', 'mstays', 'mtickets'],
+          driver: ['munch', 'mevents'],
+          packager: ['munch'],
+          event_staff: ['mevents', 'munch', 'mstays', 'mtickets'],
+          consultant: ['mevents', 'mstays', 'mtickets'],
+          front_of_house: ['mtables', 'munch', 'mevents', 'mpark', 'mstays', 'mtickets'],
+          back_of_house: ['mtables', 'munch', 'mevents', 'mpark', 'mstays', 'mtickets'],
+          car_park_operative: ['mpark'],
+          front_desk: ['mstays'],
+          housekeeping: ['mstays'],
+          concierge: ['mstays'],
+          ticket_agent: ['mtickets'],
+          event_coordinator: ['mtickets', 'mevents']
+        };
+        if (staff.services && staff.staff_type) {
+          const validServices = allowedServices[staff.staff_type] || [];
+          staff.services.forEach(service => {
+            if (!validServices.includes(service)) {
+              throw new Error(`Service ${service} is not allowed for staff type ${staff.staff_type}`);
+            }
+          });
+        }
+      }
+    }
+  });
 
   return Staff;
 };

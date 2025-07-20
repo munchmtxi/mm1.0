@@ -1,29 +1,11 @@
 'use strict';
 const { Model, DataTypes } = require('sequelize');
-const authConstants = require('@constants/common/authConstants');
-const adminCoreConstants = require('@constants/admin/adminCoreConstants');
-const adminEngagementConstants = require('@constants/admin/adminEngagementConstants');
 
 module.exports = (sequelize) => {
   class Role extends Model {
     static associate(models) {
-      // One-to-many with Users
-      this.hasMany(models.User, { foreignKey: 'role_id', as: 'users' });
-      // One-to-many with Permissions (general)
-      if (models.Permission) {
-        this.hasMany(models.Permission, { foreignKey: 'role_id', as: 'permissions' });
-      }
-      // One-to-many with Admins (admin-specific)
-      if (models.admin) {
-        this.hasMany(models.admin, { foreignKey: 'role_id', as: 'admins' });
-      }
       // One-to-many with BranchRole
       this.hasMany(models.BranchRole, { foreignKey: 'role_id', as: 'branchRoles' });
-    }
-
-    // Utility to fetch permission names
-    getPermissions() {
-      return this.permissions ? this.permissions.map((perm) => perm.name) : [];
     }
   }
 
@@ -41,7 +23,14 @@ module.exports = (sequelize) => {
         unique: true,
         validate: {
           isIn: {
-            args: [['merchant', 'staff', 'admin', 'customer', 'driver']],
+            args: [[
+              'server', 'host', 'chef', 'manager', 'butcher', 'barista', 'stock_clerk', 'picker',
+              'cashier', 'driver', 'packager', 'event_staff', 'consultant', 'front_of_house',
+              'back_of_house', 'car_park_operative', 'front_desk', 'housekeeping', 'concierge',
+              'ticket_agent', 'event_coordinator', 'customer', 'admin',
+              'bakery', 'butcher', 'cafe', 'caterer', 'dark_kitchen', 'grocery', 'parking_lot',
+              'restaurant', 'accommodation_provider', 'ticket_provider'
+            ]],
             msg: 'Invalid role',
           },
         },
@@ -50,33 +39,89 @@ module.exports = (sequelize) => {
         type: DataTypes.STRING(255),
         allowNull: true,
       },
-      // New role attribute to match roleActionConfig keys
-      role: {
-        type: DataTypes.STRING(50),
-        allowNull: false,
+      types: {
+        type: DataTypes.ARRAY(DataTypes.STRING),
+        allowNull: true,
         validate: {
-          isIn: [['admin', 'customer', 'driver', 'staff']], // Match roleActionConfig keys
+          isValidTypes(value) {
+            const allowedStaffTypes = [
+              'server', 'host', 'chef', 'manager', 'butcher', 'barista', 'stock_clerk', 'picker',
+              'cashier', 'driver', 'packager', 'event_staff', 'consultant', 'front_of_house',
+              'back_of_house', 'car_park_operative', 'front_desk', 'housekeeping', 'concierge',
+              'ticket_agent', 'event_coordinator'
+            ];
+            const allowedMerchantTypes = [
+              'bakery', 'butcher', 'cafe', 'caterer', 'dark_kitchen', 'grocery', 'parking_lot',
+              'restaurant', 'accommodation_provider', 'ticket_provider'
+            ];
+            if (value && !value.every(type => allowedStaffTypes.includes(type) || allowedMerchantTypes.includes(type))) {
+              throw new Error('Invalid staff or merchant type');
+            }
+          },
         },
+        comment: 'Array of staff or merchant types (e.g., ["server", "chef"] or ["restaurant", "cafe"])',
       },
-      // New action attribute with full role-based validation
       action: {
-        type: DataTypes.STRING(50),
-        allowNull: false,
+        type: DataTypes.ARRAY(DataTypes.STRING),
+        allowNull: true,
         validate: {
-          isIn: [
-            Object.values(adminEngagementConstants.GAMIFICATION_CONSTANTS.ADMIN_ACTIONS)
-              .concat(
-                Object.values(adminEngagementConstants.GAMIFICATION_CONSTANTS.CUSTOMER_ACTIONS)
-              )
-              .concat(
-                Object.values(adminEngagementConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS)
-              )
-              .concat(
-                Object.values(adminEngagementConstants.GAMIFICATION_CONSTANTS.STAFF_ACTIONS)
-              )
-              .map((a) => a.action),
-          ],
+          isValidActions(value) {
+            const allowedActions = [
+              // Server actions
+              'serve_table', 'process_orders', 'manage_check_ins', 'handle_support_requests',
+              'view_customer_data', 'view_wallet', 'request_withdrawal', 'escalate_issues',
+              // Host actions
+              'manage_bookings', 'table_assignment',
+              // Chef actions
+              'view_orders', 'update_order_statuses', 'prepare_food', 'view_kitchen_inventory',
+              // Manager actions
+              'manage_staff', 'approve_withdrawals', 'view_analytics', 'audit_operations', 'train_staff',
+              // Butcher actions
+              'prepare_meat', 'customize_order', 'coordinate_suppliers',
+              // Barista actions
+              'prepare_beverage', 'prepare_food', 'assist_customers',
+              // Stock Clerk actions
+              'stock_shelves', 'verify_deliveries', 'report_discrepancies',
+              // Picker actions
+              'pick_order', 'handle_substitutions',
+              // Cashier actions
+              'process_checkout', 'view_transactions', 'process_refunds',
+              // Driver actions
+              'process_deliveries', 'verify_orders', 'monitor_parking',
+              // Packager actions
+              'package_order',
+              // Event Staff actions
+              'event_setup', 'serve_event',
+              // Consultant actions
+              'client_consultation', 'customize_menu', 'customize_stays', 'customize_tickets',
+              // Front of House actions
+              'coordinate_drivers', 'check_tickets',
+              // Back of House actions
+              'manage_supplies', 'process_delivery_packages', 'verify_driver_credentials',
+              'view_restocking_alerts', 'manage_room_inventory', 'manage_ticket_inventory',
+              // Car Park Operative actions
+              'assist_parking', 'process_payments', 'report_issues',
+              // Front Desk actions
+              'process_check_in_out',
+              // Housekeeping actions
+              'clean_rooms', 'report_maintenance', 'update_room_status',
+              // Concierge actions
+              'provide_recommendations', 'coordinate_services',
+              // Ticket Agent actions
+              'process_ticket_sales',
+              // Event Coordinator actions
+              'coordinate_vendors', 'manage_ticket_bookings',
+              // Admin actions
+              'manage_users', 'view_reports', 'configure_system',
+              // Customer actions
+              'place_order', 'book_service', 'view_bookings'
+            ];
+            if (value && !value.every(action => allowedActions.includes(action))) {
+              throw new Error('Invalid action');
+            }
+          },
         },
+        comment: 'Array of actions associated with the role (e.g., ["serve_table", "process_orders"])',
       },
       created_at: {
         type: DataTypes.DATE,
@@ -84,7 +129,9 @@ module.exports = (sequelize) => {
         defaultValue: DataTypes.NOW,
       },
       updated_at: {
-        typedefaultValue: DataTypes.NOW,
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
       },
       deleted_at: {
         type: DataTypes.DATE,

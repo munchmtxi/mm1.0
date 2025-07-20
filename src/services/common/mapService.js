@@ -5,8 +5,8 @@ const logger = require('@utils/logger');
 const config = require('@config/config');
 const { Client } = require('@googlemaps/google-maps-services-js');
 const axios = require('axios');
-const { sequelize } = require('@models'); // Adjust path to your Sequelize models
-const socketService = require('@services/socketService'); // Adjust path to socketService.js
+const { sequelize } = require('@models'); 
+const socketService = require('@services/socketService');
 const localizationConstants = require('@constants/common/localizationConstants');
 
 const googleMapsClient = new Client({});

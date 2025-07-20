@@ -1,192 +1,169 @@
 'use strict';
-const { Model, Op } = require('sequelize');
-const libphonenumber = require('google-libphonenumber');
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Driver extends Model {
     static associate(models) {
+      // Associations
       this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
+      this.belongsTo(models.Country, { foreignKey: 'country_id', as: 'country' });
+      this.belongsToMany(models.Role, {
+        through: 'UserRoles',
+        foreignKey: 'user_id',
+        otherKey: 'role_id',
+        as: 'roles'
+      });
+      this.hasMany(models.Ride, { foreignKey: 'driver_id', as: 'rides' });
       this.hasMany(models.Order, { foreignKey: 'driver_id', as: 'orders' });
-      this.hasMany(models.Payment, { foreignKey: 'driver_id', as: 'payments' });
+      this.hasMany(models.Event, { foreignKey: 'customer_id', as: 'events' });
       this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications' });
-      this.belongsTo(models.Route, { foreignKey: 'active_route_id', as: 'activeRoute' });
       this.hasMany(models.DriverAvailability, { foreignKey: 'driver_id', as: 'availability' });
-    }
-
-    format_phone_for_whatsapp() {
-      const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
-      try {
-        const number = phoneUtil.parse(this.phone_number);
-        return `+${number.getCountryCode()}${number.getNationalNumber()}`;
-      } catch (error) {
-        throw new Error('Invalid phone number format');
-      }
+      this.hasMany(models.DriverEarnings, { foreignKey: 'driver_id', as: 'earnings' });
+      this.hasMany(models.DriverPerformanceMetric, { foreignKey: 'driver_id', as: 'performanceMetrics' });
+      this.hasMany(models.DriverRatings, { foreignKey: 'driver_id', as: 'ratings' });
+      this.hasMany(models.DriverSafetyIncident, { foreignKey: 'driver_id', as: 'safetyIncidents' });
+      this.hasMany(models.DriverSupportTicket, { foreignKey: 'driver_id', as: 'supportTickets' });
+      this.hasMany(models.Vehicle, { foreignKey: 'driver_id', as: 'vehicles' });
+      this.hasMany(models.Dispute, { foreignKey: 'driver_id', as: 'disputes' });
+      this.belongsToMany(models.DeliveryHotspot, {
+        through: 'DriverHotspotAssignments',
+        foreignKey: 'driver_id',
+        otherKey: 'hotspot_id',
+        as: 'deliveryHotspots'
+      });
+      // New association for Feedback
+      this.hasMany(models.Feedback, { foreignKey: 'driver_id', as: 'feedback' });
     }
   }
 
-  Driver.init({
-    id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      autoIncrement: true,
-      primaryKey: true,
-    },
-    user_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      unique: true,
-      references: { model: 'users', key: 'id' },
-      onUpdate: 'CASCADE',
-      onDelete: 'CASCADE',
-      validate: {
-        notNull: { msg: 'User ID is required' },
-        isInt: { msg: 'User ID must be an integer' },
+  Driver.init(
+    {
+      id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+        allowNull: false,
+      },
+      user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: { model: 'users', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      country_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'countries', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+      },
+      services: {
+        type: DataTypes.ARRAY(DataTypes.STRING),
+        allowNull: false,
+        defaultValue: ['mtxi', 'munch', 'mevents'],
+        validate: {
+          isIn: {
+            args: [['mtxi', 'munch', 'mevents']],
+            msg: 'Services must be one of: mtxi, munch, mevents',
+          },
+        },
+      },
+      status: {
+        type: DataTypes.ENUM('available', 'on_ride', 'on_delivery', 'offline', 'pending_verification', 'suspended', 'banned'),
+        allowNull: false,
+        defaultValue: 'pending_verification',
+        validate: {
+          isIn: {
+            args: [['available', 'on_ride', 'on_delivery', 'offline', 'pending_verification', 'suspended', 'banned']],
+            msg: 'Status must be one of: available, on_ride, on_delivery, offline, pending_verification, suspended, banned',
+          },
+        },
+      },
+      vehicle_type: {
+        type: DataTypes.ENUM('car', 'motorbike', 'bicycle', 'van', 'electric_scooter'),
+        allowNull: false,
+        validate: {
+          isIn: {
+            args: [['car', 'motorbike', 'bicycle', 'van', 'electric_scooter']],
+            msg: 'Vehicle type must be one of: car, motorbike, bicycle, van, electric_scooter',
+          },
+        },
+      },
+      certifications: {
+        type: DataTypes.JSONB,
+        allowNull: false,
+        defaultValue: [],
+        validate: {
+          isValidCertifications(value) {
+            const requiredCertifications = ['drivers_license', 'vehicle_insurance', 'food_safety_driver', 'background_check'];
+            if (!Array.isArray(value)) {
+              throw new Error('Certifications must be an array');
+            }
+            const invalidCert = value.find(cert => !requiredCertifications.includes(cert));
+            if (invalidCert) {
+              throw new Error(`Invalid certification: ${invalidCert}. Must be one of: ${requiredCertifications.join(', ')}`);
+            }
+          },
+        },
+      },
+      onboarding_status: {
+        type: DataTypes.ENUM('pending', 'verified', 'rejected'),
+        allowNull: false,
+        defaultValue: 'pending',
+        validate: {
+          isIn: {
+            args: [['pending', 'verified', 'rejected']],
+            msg: 'Onboarding status must be one of: pending, verified, rejected',
+          },
+        },
+      },
+      max_active_tasks: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 7,
+        validate: {
+          max: {
+            args: [7],
+            msg: 'Maximum active tasks cannot exceed 7',
+          },
+        },
+      },
+      kyc_required: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      updated_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
+      },
+      deleted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
       },
     },
-    name: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      validate: { notEmpty: { msg: 'Name is required' } },
-    },
-    phone_number: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
+    {
+      sequelize,
+      modelName: 'Driver',
+      tableName: 'drivers',
+      underscored: true,
+      paranoid: true,
       validate: {
-        notEmpty: { msg: 'Phone number is required' },
-        isPhoneNumber(value) {
-          const phoneUtil = libphonenumber.PhoneNumberUtil.getInstance();
-          try {
-            const number = phoneUtil.parse(value);
-            if (!phoneUtil.isValidNumber(number)) {
-              throw new Error('Invalid phone number format');
-            }
-          } catch (error) {
-            throw new Error('Invalid phone number format');
+        maxVehicles() {
+          if (this.vehicles && this.vehicles.length > 3) {
+            throw new Error('Maximum vehicles per driver cannot exceed 3');
           }
         },
       },
-    },
-    vehicle_info: {
-      type: DataTypes.JSON,
-      allowNull: false,
-      validate: { notEmpty: { msg: 'Vehicle information is required' } },
-    },
-    license_number: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true,
-      validate: { notEmpty: { msg: 'License number is required' } },
-    },
-    profile_picture_url: { type: DataTypes.STRING, allowNull: true },
-    license_picture_url: { type: DataTypes.STRING, allowNull: true },
-    routes: { type: DataTypes.JSON, allowNull: true },
-    availability_status: {
-      type: DataTypes.ENUM('available', 'unavailable', 'busy'),
-      allowNull: false,
-      defaultValue: 'available',
-    },
-    current_location: { type: DataTypes.JSONB, allowNull: true },
-    last_location_update: { type: DataTypes.DATE, allowNull: true },
-    active_route_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      references: { model: 'routes', key: 'id' },
-      onUpdate: 'CASCADE',
-      onDelete: 'SET NULL',
-    },
-    service_area: { type: DataTypes.JSONB, allowNull: true },
-    preferred_zones: { type: DataTypes.JSONB, allowNull: true },
-    status: {
-      type: DataTypes.ENUM('active', 'busy'),
-      allowNull: false,
-      defaultValue: 'active',
-    },
-    rating: { type: DataTypes.DECIMAL, allowNull: true },
-    total_rides: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
-    total_deliveries: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
-    created_at: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-    },
-    updated_at: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-    },
-    deleted_at: { type: DataTypes.DATE, allowNull: true },
-  }, {
-    sequelize,
-    modelName: 'Driver',
-    tableName: 'drivers',
-    underscored: true,
-    paranoid: true,
-    indexes: [
-      { unique: true, fields: ['user_id'], name: 'drivers_user_id_unique' },
-      { unique: true, fields: ['phone_number'], name: 'drivers_phone_number_unique' },
-      { unique: true, fields: ['license_number'], name: 'drivers_license_number_unique' },
-      { fields: ['active_route_id'], name: 'drivers_active_route_id_index' },
-      { fields: ['current_location'], using: 'gist', name: 'drivers_current_location_index' },
-    ],
-  });
-
-  Driver.addHook('afterUpdate', async (driver, options) => {
-    try {
-      console.log(`afterUpdate hook triggered for driver_id: ${driver.id}`);
-      const now = new Date();
-      const currentDate = now.toISOString().split('T')[0];
-      const currentTime = now.toTimeString().split(' ')[0];
-      const { DriverAvailability } = sequelize.models;
-
-      const availability = await DriverAvailability.findOne({
-        where: {
-          driver_id: driver.id,
-          date: currentDate,
-          start_time: { [Op.lte]: currentTime },
-          end_time: { [Op.gte]: currentTime },
-        },
-        order: [['last_updated', 'DESC']],
-      });
-
-      if (availability) {
-        const newStatus = availability.status === 'available' ? 'available' :
-                         availability.status === 'busy' ? 'busy' : 'unavailable';
-        console.log(`Availability found: ${availability.status}, calculated newStatus: ${newStatus}`);
-
-        // Only update if status has changed
-        if (driver.availability_status !== newStatus) {
-          console.log(`Updating availability_status from ${driver.availability_status} to ${newStatus}`);
-          await sequelize.query(
-            `UPDATE drivers SET availability_status = :status, updated_at = :updatedAt WHERE id = :id`,
-            {
-              replacements: {
-                status: newStatus,
-                updatedAt: new Date(),
-                id: driver.id,
-              },
-              type: sequelize.QueryTypes.UPDATE,
-            }
-          );
-          console.log(`Updated availability_status for driver_id: ${driver.id} to ${newStatus}`);
-        } else {
-          console.log(`No status change needed for driver_id: ${driver.id}, current: ${driver.availability_status}`);
-        }
-      } else {
-        console.log(`No matching availability record found for driver_id: ${driver.id}`);
-      }
-    } catch (error) {
-      console.error('Error in Driver afterUpdate hook:', error);
     }
-  });
+  );
 
   return Driver;
 };

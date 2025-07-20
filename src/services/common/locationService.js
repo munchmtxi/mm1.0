@@ -1,640 +1,354 @@
 'use strict';
-
-/**
- * Location Service
- * Centralized service for resolving, validating, and managing locations across all roles.
- * Integrates with Google Maps/OpenStreetMap via localizationServiceConstants, validates
- * locations, supports geofence checks, and updates sessions/addresses.
- *
- * Last Updated: June 25, 2025
- */
-
-const axios = require('axios');
-const axiosRetry = require('axios-retry').default;
-const NodeCache = require('node-cache');
-const config = require('@config/config');
-const localizationServiceConstants = require('@constants/common/localizationServiceConstants');
-const logger = require('@utils/logger');
-const AppError = require('@utils/AppError');
-const { Address, Geofence, User, Session, Customer, Driver, Merchant, Staff } = require('@models');
 const { Op } = require('sequelize');
+const logger = require('@utils/logger');
+const { googleMapsClient } = require('@config/googleMaps');
+const {
+  localizationServiceConstants,
+  authConstants,
+} = require('@constants/common');
+const {
+  DEFAULT_CURRENCY,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_CURRENCY_MAP,
+  SUPPORTED_COUNTRIES,
+  SUPPORTED_CITIES,
+  DEFAULT_TIMEZONE,
+  SUPPORTED_MAP_PROVIDERS,
+} = require('@constants/common/localizationConstants');
+const { MTABLES_CONSTANTS } = require('@constants/common/mtablesConstants');
+const { MPARK_CONSTANTS } = require('@constants/common/mparkConstants');
+const { MTXI_CONSTANTS } = require('@constants/common/mtxiConstants');
+const { MUNCH_CONSTANTS } = require('@constants/common/munchConstants');
+const {
+  CUSTOMER_STATUSES,
+  WALLET_CONSTANTS: CUSTOMER_WALLET_CONSTANTS,
+  MTABLES_CONSTANTS: CUSTOMER_MTABLES_CONSTANTS,
+  MUNCH_CONSTANTS: CUSTOMER_MUNCH_CONSTANTS,
+  MTXI_CONSTANTS: CUSTOMER_MTXI_CONSTANTS,
+  MPARK_CONSTANTS: CUSTOMER_MPARK_CONSTANTS,
+} = require('@constants/customer/customerConstants');
+const {
+  DRIVER_STATUSES,
+  MTXI_CONSTANTS: DRIVER_MTXI_CONSTANTS,
+  MUNUCH_DELIVERY_CONSTANTS,
+  WALLET_CONSTANTS: DRIVER_WALLET_CONSTANTS,
+} = require('@constants/driver/driverConstants');
+const {
+  STAFF_STATUSES,
+  STAFF_ROLES,
+  STAFF_PERMISSIONS,
+  STAFF_WALLET_CONSTANTS,
+} = require('@constants/staff/staffConstants');
+const {
+  MERCHANT_TYPES,
+  WALLET_CONSTANTS: MERCHANT_WALLET_CONSTANTS,
+} = require('@constants/merchant/merchantConstants');
+const {
+  ADMIN_ROLES,
+  ADMIN_STATUSES,
+  WALLET_CONSTANTS: ADMIN_WALLET_CONSTANTS,
+} = require('@constants/admin/adminCoreConstants');
 
-// Constants for cache and API retries
-const CACHE_TTL_SECONDS = 3600; // 1 hour
-const API_RETRY_ATTEMPTS = 3;
-const API_RETRY_DELAY_MS = 1000;
+module.exports = (sequelize) => {
+  const { Address, Geofence, User, Customer, Merchant, Driver, Staff, Session, Device } = sequelize.models;
 
-// Initialize cache
-const locationCache = new NodeCache({ stdTTL: CACHE_TTL_SECONDS });
+  class LocationService {
+    static async resolveLocation({ coordinates, address, placeId, userId, role, merchantType }) {
+      try {
+        let resolvedAddress;
+        const user = await User.findByPk(userId, {
+          include: [
+            { model: Customer, as: 'customer_profile' },
+            { model: Merchant, as: 'merchant_profile' },
+            { model: Driver, as: 'driver_profile' },
+            { model: Staff, as: 'staff_profile' },
+          ],
+        });
 
-// Configure axios retries
-axiosRetry(axios, {
-  retries: API_RETRY_ATTEMPTS,
-  retryDelay: (retryCount) => retryCount * API_RETRY_DELAY_MS,
-});
+        if (!user) throw new Error('User not found');
+        if (!this.validateRoleAndMerchantType(role, merchantType, user)) throw new Error('Invalid role or merchant type');
 
-// Role-specific configurations
-const ROLES = {
-  ADMIN: {
-    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
-    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
-    MIN_CONFIDENCE_LEVEL: 'MEDIUM',
-    GEOFENCE_REQUIRED: false,
-    MAX_ADDRESS_STORAGE: 50,
-    ERROR_CODES: {
-      INVALID_LOCATION: 'INVALID_LOCATION',
-      UNSUPPORTED_CITY: 'UNSUPPORTED_CITY',
-      API_FAILURE: 'API_FAILURE',
-      SESSION_UPDATE_FAILED: 'SESSION_UPDATE_FAILED',
-      GEOFENCE_VIOLATION: 'GEOFENCE_VIOLATION',
-    }
-  },
-  CUSTOMER: {
-    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
-    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
-    MIN_CONFIDENCE_LEVEL: 'HIGH',
-    GEOFENCE_REQUIRED: true,
-    MAX_ADDRESS_STORAGE: 10,
-    ERROR_CODES: {
-      INVALID_LOCATION: 'CUSTOMER_INVALID_LOCATION',
-      UNSUPPORTED_CITY: 'CUSTOMER_UNSUPPORTED_CITY',
-      API_FAILURE: 'CUSTOMER_API_FAILURE',
-      SESSION_UPDATE_FAILED: 'CUSTOMER_SESSION_UPDATE_FAILED',
-      GEOFENCE_VIOLATION: 'CUSTOMER_GEOFENCE_VIOLATION'
-    }
-  },
-  DRIVER: {
-    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
-    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
-    MIN_CONFIDENCE_LEVEL: 'HIGH',
-    GEOFENCE_REQUIRED: true,
-    MAX_ADDRESS_STORAGE: 20,
-    ERROR_CODES: {
-      INVALID_LOCATION: 'DRIVER_INVALID_LOCATION',
-      UNSUPPORTED_CITY: 'DRIVER_UNSUPPORTED_CITY',
-      API_FAILURE: 'DRIVER_API_FAILURE',
-      SESSION_UPDATE_FAILED: 'DRIVER_SESSION_UPDATE_FAILED',
-      GEOFENCE_VIOLATION: 'DRIVER_GEOFENCE_VIOLATION'
-    }
-  },
-  STAFF: {
-    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
-    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
-    MIN_CONFIDENCE_LEVEL: 'MEDIUM',
-    GEOFENCE_REQUIRED: true,
-    MAX_ADDRESS_STORAGE: 10,
-    ERROR_CODES: {
-      INVALID_LOCATION: 'STAFF_INVALID_LOCATION',
-      UNSUPPORTED_CITY: 'STAFF_UNSUPPORTED_CITY',
-      API_FAILURE: 'STAFF_API_FAILURE',
-      SESSION_UPDATE_FAILED: 'STAFF_SESSION_UPDATE_FAILED',
-      GEOFENCE_VIOLATION: 'STAFF_GEOFENCE_VIOLATION'
-    }
-  },
-  MERCHANT: {
-    MAP_PROVIDER: localizationServiceConstants.SUPPORTED_MAP_PROVIDERS,
-    SUPPORTED_CITIES: localizationServiceConstants.SUPPORTED_CITIES,
-    MIN_CONFIDENCE_LEVEL: 'HIGH',
-    GEOFENCE_REQUIRED: true,
-    MAX_ADDRESS_STORAGE: 20,
-    ERROR_CODES: {
-      INVALID_LOCATION: 'MERCHANT_INVALID_LOCATION',
-      UNSUPPORTED_CITY: 'MERCHANT_UNSUPPORTED_CITY',
-      API_FAILURE: 'MERCHANT_API_FAILURE',
-      SESSION_UPDATE_FAILED: 'MERCHANT_SESSION_UPDATE_FAILED',
-      GEOFENCE_VIOLATION: 'MERCHANT_GEOFENCE_VIOLATION'
-    }
-  }
-};
-
-// Supported confidence levels
-const SUPPORTED_CONFIDENCE_LEVELS = ['HIGH', 'MEDIUM', 'LOW'];
-
-class LocationService {
-  /**
-   * Resolves and validates a location input for any role.
-   * @param {Object|string} location - Location input (address string, { lat, lng }, or JSON).
-   * @param {number} [userId] - User ID for address storage and session updates.
-   * @param {string} [sessionToken] - Session token for active session updates.
-   * @param {string} role - User role (admin, customer, driver, staff, merchant).
-   * @param {string} [languageCode] - Preferred language for error messages.
-   * @returns {Promise<Object>} Standardized location object.
-   */
-  async resolveLocation(location, userId, sessionToken, role, languageCode = localizationServiceConstants.DEFAULT_LANGUAGE) {
-    if (!role || !ROLES[role.toUpperCase()]) {
-      throw new AppError('Invalid role', 400, ROLES.ADMIN.ERROR_CODES.INVALID_LOCATION);
-    }
-    if (!localizationServiceConstants.SUPPORTED_LANGUAGES.includes(languageCode)) {
-      languageCode = localizationServiceConstants.DEFAULT_LANGUAGE;
-    }
-    const roleConfig = ROLES[role.toUpperCase()];
-
-    try {
-      let geocodedResult;
-      const cacheKey = typeof location === 'string' ? location : `${location.lat}:${location.lng}`;
-
-      // Check cache
-      const cached = locationCache.get(cacheKey);
-      if (cached) {
-        logger.info('Location retrieved from cache', { cacheKey, userId, role });
-        geocodedResult = cached;
-      } else {
-        // Determine map provider based on country
-        const countryCode = await this.deriveCountryCode(location);
-        const mapProvider = roleConfig.MAP_PROVIDER[countryCode] || localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US;
-
-        if (typeof location === 'string') {
-          geocodedResult = await this.geocodeAddress(location, mapProvider);
-        } else if (location.lat && location.lng) {
-          geocodedResult = await this.reverseGeocode(location.lat, location.lng, mapProvider);
-        } else if (location.address || location.formattedAddress) {
-          geocodedResult = await this.geocodeAddress(location.address || location.formattedAddress, mapProvider);
+        if (placeId) {
+          resolvedAddress = await this.resolveFromPlaceId(placeId);
+        } else if (coordinates) {
+          resolvedAddress = await this.resolveFromCoordinates(coordinates);
+        } else if (address) {
+          resolvedAddress = await this.resolveFromAddress(address);
         } else {
-          throw new AppError(
-            'Invalid location format',
-            400,
-            roleConfig.ERROR_CODES.INVALID_LOCATION
-          );
+          throw new Error('Invalid input: provide coordinates, address, or placeId');
         }
-        locationCache.set(cacheKey, geocodedResult);
+
+        resolvedAddress.user_id = userId;
+        resolvedAddress.currency = this.resolveCurrency(resolvedAddress.countryCode);
+        resolvedAddress.timezone = DEFAULT_TIMEZONE;
+        resolvedAddress.city = this.resolveCity(resolvedAddress);
+        return await this.validateAndStoreLocation(resolvedAddress, userId, role, merchantType);
+      } catch (error) {
+        logger.error('Error resolving location', { error: error.message, userId, role });
+        throw error;
       }
+    }
 
-      const { formatted_address, geometry, address_components, place_id, types } = geocodedResult;
+    static validateRoleAndMerchantType(role, merchantType, user) {
+      if (role === ADMIN_ROLES.super_admin && user.staff_profile?.role === ADMIN_ROLES.super_admin) return true;
+      if (role === 'customer' && user.customer_profile && CUSTOMER_STATUSES.includes(user.customer_profile.status)) return true;
+      if (role === 'driver' && user.driver_profile && DRIVER_STATUSES.includes(user.driver_profile.status)) return true;
+      if (role === 'staff' && user.staff_profile && STAFF_STATUSES.includes(user.staff_profile.status) && STAFF_ROLES[user.staff_profile.role]) return true;
+      if (role === 'merchant' && user.merchant_profile && MERCHANT_TYPES.includes(merchantType) && user.merchant_profile.merchant_type === merchantType) return true;
+      return false;
+    }
 
-      // Extract country code and city
-      const countryComponent = address_components.find(comp => comp.types.includes('country'));
-      const cityComponent = address_components.find(comp =>
-        comp.types.includes('locality') || comp.types.includes('administrative_area_level_1')
-      );
-      const countryCode = countryComponent ? countryComponent.short_name : null;
-      const city = cityComponent ? cityComponent.long_name : null;
+    static resolveCurrency(countryCode) {
+      return COUNTRY_CURRENCY_MAP[countryCode] || DEFAULT_CURRENCY;
+    }
 
-      // Validate supported cities
-      if (!countryCode || !roleConfig.SUPPORTED_CITIES[countryCode]?.includes(city)) {
-        throw new AppError(
-          `Unsupported city: ${city || 'unknown'}`,
-          400,
-          roleConfig.ERROR_CODES.UNSUPPORTED_CITY
-        );
-      }
+    static resolveCity({ latitude, longitude, countryCode }) {
+      const cities = SUPPORTED_CITIES[countryCode] || [];
+      return cities.length > 0 ? cities[0] : null;
+    }
 
-      // Create standardized location object
-      const resolvedLocation = {
-        formattedAddress: formatted_address,
-        placeId: place_id,
-        coordinates: {
-          lat: geometry.location.lat,
-          lng: geometry.location.lng,
-        },
+    static async resolveFromPlaceId(placeId) {
+      const { data } = await googleMapsClient.placeDetails({ params: { place_id: placeId } });
+      const result = data.result;
+      const countryCode = result.address_components.find(c => c.types.includes('country'))?.short_name;
+      if (!SUPPORTED_COUNTRIES.includes(countryCode)) throw new Error('Unsupported country');
+      return {
+        formattedAddress: result.formatted_address,
+        placeId: result.place_id,
+        latitude: result.geometry.location.lat,
+        longitude: result.geometry.location.lng,
+        components: result.address_components,
         countryCode,
-        city,
-        components: address_components,
-        locationType: geometry.location_type || types[0],
-        confidenceLevel: this.determineConfidenceLevel(geometry.location_type || types[0]),
+        locationType: result.geometry.location_type,
+        confidenceLevel: 'HIGH',
+        mapProvider: SUPPORTED_MAP_PROVIDERS[countryCode] || 'google_maps',
       };
-
-      // Validate confidence level
-      if (!this.isConfidenceLevelSufficient(resolvedLocation.confidenceLevel, roleConfig.MIN_CONFIDENCE_LEVEL)) {
-        throw new AppError(
-          `Insufficient location accuracy: ${resolvedLocation.confidenceLevel}`,
-          400,
-          roleConfig.ERROR_CODES.INVALID_LOCATION
-        );
-      }
-
-      // Role-specific validations
-      if (userId) {
-        const user = await User.findOne({ where: { id: userId } });
-        if (!user) {
-          throw new AppError('User not found', 404, roleConfig.ERROR_CODES.INVALID_LOCATION);
-        }
-        await this.validateRoleSpecificConstraints(userId, role, resolvedLocation);
-        await this.saveAddress(resolvedLocation, userId, role);
-      }
-
-      // Update session
-      if (sessionToken && userId) {
-        await this.updateSessionLocation(userId, sessionToken, resolvedLocation, role);
-      }
-
-      // Geofence validation
-      if (roleConfig.GEOFENCE_REQUIRED) {
-        await this.validateGeofencing(resolvedLocation, role, userId);
-      }
-
-      logger.info('Location resolved successfully', { placeId: resolvedLocation.placeId, userId, role });
-      return resolvedLocation;
-    } catch (error) {
-      logger.error('Location resolution failed', { error: error.message, userId, role });
-      throw error instanceof AppError ? error : new AppError(
-        'Location resolution failed',
-        500,
-        roleConfig.ERROR_CODES.API_FAILURE
-      );
     }
-  }
 
-  /**
-   * Derives country code from location input.
-   * @param {Object|string} location - Location input.
-   * @returns {Promise<string>} Country code.
-   */
-  async deriveCountryCode(location) {
-    try {
-      if (typeof location === 'string') {
-        const result = await this.geocodeAddress(location));
-        return result.address_components.find(comp => comp.types.includes('country'))?.short_name || 'US';
-      } else if (location.lat && location.lng) {
-        const result = await this.reverseGeocode(location.lat, location.lng);
-        return result.address_components.find(comp => comp.types.includes('country'))?.short_name || 'US';
-      } else if (location.address || location.formattedAddress) {
-        const result = await this.geocodeAddress(location.address || location.formattedAddress);
-        return result.address_components.find(comp => c.types.includes('country'))?.short_name || 'US';
-      }
-      return 'US';
-    } catch (error) {
-      logger.error('Country code derivation failed, defaulting to US', { error: error.message });
-      return 'US';
+    static async resolveFromCoordinates({ latitude, longitude }) {
+      const { data } = await googleMapsClient.reverseGeocode({ params: { latlng: [latitude, longitude] } });
+      const result = data.results[0];
+      const countryCode = result.address_components.find(c => c.types.includes('country'))?.short_name;
+      if (!SUPPORTED_COUNTRIES.includes(countryCode)) throw new Error('Unsupported country');
+      return {
+        formattedAddress: result.formatted_address,
+        placeId: result.place_id,
+        latitude,
+        longitude,
+        components: result.address_components,
+        countryCode,
+        locationType: result.geometry.location_type,
+        confidenceLevel: result.geometry.location_type === 'ROOFTOP' ? 'HIGH' : 'MEDIUM',
+        mapProvider: SUPPORTED_MAP_PROVIDERS[countryCode] || 'google_maps',
+      };
     }
-  }
 
-  /**
-   * Updates session location.
-   * @param {number} userId - User ID.
-   * @param {string} sessionToken - Session token.
-   * @param {Object} location - Resolved location.
-   * @param {string} role - User role.
-   * @returns {Promise<void>}
-   */
-  async updateSessionLocation(userId, sessionToken, location, role) {
-    const roleConfig = ROLES[role.toUpperCase()];
-    try {
-      const session = await Session.findOne({
-        where: {
+    static async resolveFromAddress(address) {
+      const { data } = await googleMapsClient.geocode({ params: { address } });
+      const result = data.results[0];
+      const countryCode = result.address_components.find(c => c.types.includes('country'))?.short_name;
+      if (!SUPPORTED_COUNTRIES.includes(countryCode)) throw new Error('Unsupported country');
+      return {
+        formattedAddress: result.formatted_address,
+        placeId: result.place_id,
+        latitude: result.geometry.location.lat,
+        longitude: result.geometry.location.lng,
+        components: result.address_components,
+        countryCode,
+        locationType: result.geometry.location_type,
+        confidenceLevel: result.geometry.location_type === 'ROOFTOP' ? 'HIGH' : 'MEDIUM',
+        mapProvider: SUPPORTED_MAP_PROVIDERS[countryCode] || 'google_maps',
+      };
+    }
+
+    static async validateAndStoreLocation(locationData, userId, role, merchantType) {
+      const { formattedAddress, placeId, latitude, longitude, countryCode, city, currency } = locationData;
+      let address = await Address.findOne({ where: { placeId, user_id: userId } });
+
+      if (!address) {
+        address = await Address.create({
+          ...locationData,
           user_id: userId,
-          token: sessionToken,
-          status: 'ACTIVE',
-          expires_at: { [Op.gt]: new Date() },
-        },
+          validatedAt: new Date(),
+          validationStatus: localizationServiceConstants.VALIDATION_STATUSES.VALID,
+          currency: SUPPORTED_CURRENCIES.includes(currency) ? currency : DEFAULT_CURRENCY,
+        });
+      } else if (address.formattedAddress !== formattedAddress || address.currency !== currency) {
+        address = await address.update({
+          ...locationData,
+          validatedAt: new Date(),
+          currency: SUPPORTED_CURRENCIES.includes(currency) ? currency : DEFAULT_CURRENCY,
+        });
+      }
+
+      await this.checkGeofence(address, role, merchantType);
+      await this.updateRoleSpecificLocation(userId, address, role, merchantType);
+      await this.updateSessionLocation(userId, address);
+      return address;
+    }
+
+    static async checkGeofence(address, role, merchantType) {
+      const geofences = await Geofence.scope('active').findAll({
+        where: { merchantType: role === 'merchant' ? merchantType : null },
+      });
+      const point = { type: 'Point', coordinates: [address.longitude, address.latitude] };
+
+      for (const geofence of geofences) {
+        const isWithin = await this.isPointInPolygon(point, geofence.coordinates);
+        if (isWithin) {
+          logger.info('Location within geofence', { geofenceId: geofence.id, role, merchantType });
+          return geofence;
+        }
+      }
+      return null;
+    }
+
+    static async isPointInPolygon(point, polygon) {
+      // Placeholder: Implement point-in-polygon logic with turf.js or similar
+      return true;
+    }
+
+    static async updateRoleSpecificLocation(userId, address, role, merchantType) {
+      const user = await User.findByPk(userId, {
+        include: [
+          { model: Customer, as: 'customer_profile' },
+          { model: Merchant, as: 'merchant_profile' },
+          { model: Driver, as: 'driver_profile' },
+          { model: Staff, as: 'staff_profile' },
+        ],
       });
 
-      if (!session) {
-        logger.warn('No active session found', { userId, sessionToken, role });
-        return;
-      }
+      if (!user) throw new Error('User not found');
 
-      await session.update({
-        location: {
-          formattedAddress: location.formattedAddress,
-          coordinates: location.coordinates,
-          countryCode: location.countryCode,
-          city: location.city,
-        },
-        last_active_at: new Date(),
-        updated_at: new Date(),
-      });
-
-      logger.info('Session location updated', { sessionId: session.id, userId, role });
-    } catch (error) {
-      logger.error('Session location update failed', { error: error.message, userId, sessionToken, role });
-      throw new AppError('Session update failed', 500, roleConfig.ERROR_CODES.SESSION_UPDATE_FAILED);
-    }
-  }
-
-  /**
-   * Geocodes an address string.
-   * @param {string} address - Address string.
-   * @param {string} provider - Map provider (google_maps, openstreetmap).
-   * @returns {Promise<Object>} Geocoded result.
-   */
-  async geocodeAddress(address, provider = localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US) {
-    try {
-      if (provider === 'openstreetmap') {
-        const response = await axios.get('https://nominatim.openstreetmap.org/search', {
-          params: {
-            q: address,
-            format: 'json',
-            addressdetails: 1,
-            limit: 1,
-          },
-          headers: { 'User-Agent': 'MM1.0-App' },
-        });
-
-        if (!response.data.length) {
-          throw new Error('No results found');
-        }
-
-        const result = response.data[0];
-        return {
-          formatted_address: result.display_name,
-          geometry: { location: { lat: parseFloat(result.lat), lng: parseFloat(result.lon) } },
-          address_components: this.parseOSMAddressComponents(result.address),
-          place_id: result.place_id,
-          types: [result.type],
-        };
-      } else {
-        const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-          params: {
-            address,
-            key: config.googleMaps.apiKey,
-          },
-        });
-
-        if (response.data.status !== 'OK' || !response.data.results.length) {
-          throw new Error('Geocoding failed');
-        }
-
-        return response.data.results[0];
-      }
-    } catch (error) {
-      logger.error('Geocoding failed', { address, provider, error: error.message });
-      throw new AppError('Geocoding failed', 400, ROLES.ADMIN.ERROR_CODES.API_FAILURE);
-    }
-  }
-
-  /**
-   * Reverse geocodes coordinates.
-   * @param {number} lat - Latitude.
-   * @param {number} lng - Longitude.
-   * @param {string} provider - Map provider.
-   * @returns {Promise<Object>} Geocoded result.
-   */
-  async reverseGeocode(lat, lng, provider = localizationServiceConstants.SUPPORTED_MAP_PROVIDERS.US) {
-    try {
-      if (provider === 'openstreetmap') {
-        const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
-          params: {
-            lat,
-            lon: lng,
-            format: 'json',
-            addressdetails: 1,
-          },
-          headers: { 'User-Agent': 'MM1.0-App' },
-        });
-
-        if (!response.data.address) {
-          throw new Error('No results found');
-        }
-
-        return {
-          formatted_address: response.data.display_name,
-          geometry: { location: { lat: parseFloat(response.data.lat), lng: parseFloat(response.data.lon) } },
-          address_components: this.parseOSMAddressComponents(response.data.address),
-          place_id: response.data.place_id,
-          types: [response.data.type],
-        };
-      } else {
-        const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-          params: {
-            latlng: `${lat},${lng}`,
-            key: config.googleMaps.apiKey,
-          },
-        });
-
-        if (response.data.status !== 'OK' || !response.data.results.length) {
-          throw new Error('Reverse geocoding failed');
-        }
-
-        return response.data.results[0];
-      }
-    } catch (error) {
-      logger.error('Reverse geocoding failed', { lat, lng, provider, error: error.message });
-      throw new AppError('Reverse geocoding failed', 400, ROLES.ADMIN.ERROR_CODES.API_FAILURE);
-    }
-  }
-
-  /**
-   * Parses OSM address components.
-   * @param {Object} address - OSM address object.
-   * @returns {Array} Standardized components.
-   */
-  parseOSMAddressComponents(address) {
-    const components = [];
-    for (const [type, value] of Object.entries(address)) {
-      components.push({
-        long_name: value,
-        short_name: value,
-        types: [type],
-      });
-    }
-    return components;
-  }
-
-  /**
-   * Stores resolved location in Address model.
-   * @param {Object} location - Resolved location.
-   * @param {number} userId - User ID.
-   * @param {string} role - User role.
-   * @returns {Promise<void>}
-   */
-  async storeAddress(location, userId, role) {
-    const roleConfig = ROLES[role.toUpperCase()];
-    try {
-      const addressCount = await Address.count({ where: { user_id: userId } });
-      if (addressCount >= roleConfig.MAX_ADDRESS_STORAGE) {
-        const oldestAddress = await Address.findOne({
-          where: { user_id: userId },
-          order: [['createdAt', 'ASC']],
-        });
-        if (oldestAddress) await oldestAddress.destroy();
-      }
-
-      await Address.create({
-        user_id: userId,
-        formattedAddress: location.formattedAddress,
-        placeId: location.placeId,
-        latitude: location.coordinates.lat,
-        longitude: location.coordinates.lng,
-        components: location.components,
-        countryCode: location.countryCode,
-        locationType: location.locationType,
-        confidenceLevel: location.confidenceLevel,
-        validationStatus: location.confidenceLevel === 'HIGH' ? 'VALID' : 'PENDING',
-        validatedAt: new Date(),
-      });
-
-      if (role === 'customer') {
-        await Customer.update(
-          { last_known_location: { lat: location.coordinates.lat, lng: location.coordinates.lng } },
-          { where: { user_id: userId } }
-        );
-      } else if (role === 'driver') {
-        await Driver.update(
-          { current_location: { lat: location.coordinates.lat, lng: location.coordinates.lng }, last_location_update: new Date() },
-          { where: { user_id: userId } }
-        );
-      }
-    } catch (error) {
-      logger.error('Address storage failed', { userId, role, error: error.message });
-    }
-  }
-
-  /**
-   * Validates location against geofences.
-   * @param {Object} location - Resolved location.
-   * @param {string} role - User role.
-   * @param {number} [userId] - User ID for role-specific geofences.
-   * @returns {Promise<void>}
-   */
-  async validateGeofence(location, role, userId) {
-    const roleConfig = ROLES[role.toUpperCase()];
-    try {
-      let geofences = await Geofence.findAll({ where: { active: true } });
-
-      if (role === 'merchant' && userId) {
-        const merchant = await Merchant.findOne({ where: { user_id: userId } });
-        if (merchant && merchant.geofence_id) {
-          const merchantGeofence = await Geofence.findByPk(merchant.geofence_id);
-          if (merchantGeofence) geofences = [merchantGeofence];
-        }
-      } else if (role === 'staff' && userId) {
-        const staff = await Staff.findOne({ where: { user_id: userId } });
-        if (staff && staff.geofence_id) {
-          const staffGeofence = await Geofence.findByPk(staff.geofence_id);
-          if (staffGeofence) geofences = [staffGeofence];
-        }
-      }
-
-      const isWithinGeofence = geofences.some(geofence =>
-        this.isPointInPolygon(
-          [location.coordinates.lng, location.coordinates.lat],
-          geofence.coordinates
-        )
-      );
-
-      if (!isWithinGeofence) {
-        logger.warn('Location outside geofences', { placeId: location.placeId, role, userId });
-        throw new AppError('Location outside allowed area', 400, roleConfig.ERROR_CODES.GEOFENCE_VIOLATION);
-      }
-    } catch (error) {
-      logger.error('Geofence validation failed', { role, userId, error: error.message });
-      throw error instanceof AppError ? error : new AppError(
-        'Geofence validation failed',
-        500,
-        roleConfig.ERROR_CODES.GEOFENCE_VIOLATION
-      );
-    }
-  }
-
-  /**
-   * Validates role-specific constraints.
-   * @param {number} userId - User ID.
-   * @param {string} role - User role.
-   * @param {Object} location - Resolved location.
-   * @returns {Promise<void>}
-   */
-  async validateRoleSpecificConstraints(userId, role, location) {
-    const roleConfig = ROLES[role.toUpperCase()];
-    try {
-      if (role === 'driver') {
-        const driver = await Driver.findOne({ where: { user_id: userId } });
-        if (driver && driver.active_route_id) {
-          const route = await sequelize.models.Route.findByPk(driver.active_route_id);
-          if (route) {
-            const points = [
-              [route.origin.lng, route.origin.lat],
-              ...(route.waypoints ? route.waypoints.map(wp => [wp.lng, wp.lat]) : []),
-              [route.destination.lng, route.destination.lat],
-            ];
-            if (points.length > 1) points.push(points[0]);
-            if (points.length >= 3 && !this.isPointInPolygon(
-              [location.coordinates.lng, location.coordinates.lat],
-              points
-            )) {
-              throw new AppError('Location outside active route', 400, roleConfig.ERROR_CODES.GEOFENCE_VIOLATION);
-            }
-          } else if (driver.service_area) {
-            if (!this.isPointInPolygon(
-              [location.coordinates.lng, location.coordinates.lat],
-              driver.service_area.coordinates
-            )) {
-              throw new AppError('Location outside service area', 400, roleConfig.ERROR_CODES.GEOFENCE_VIOLATION);
-            }
-          }
-        }
-      } else if (role === 'merchant') {
-        const merchant = await Merchant.findOne({ where: { user_id: userId } });
-        if (merchant && merchant.service_radius && merchant.location) {
-          const distance = this.calculateDistance(
-            location.coordinates,
-            { lat: merchant.location.coordinates[1], lng: merchant.location.coordinates[0] }
+      if (user.customer_profile && role === 'customer') {
+        if (!CUSTOMER_STATUSES.includes(user.customer_profile.status)) throw new Error('Invalid customer status');
+        if (SUPPORTED_CITIES[address.countryCode]?.includes(address.city)) {
+          await Customer.update(
+            { default_address_id: address.id, address: address.formattedAddress, currency: address.currency },
+            { where: { user_id: userId } }
           );
-          if (distance > merchant.service_radius) {
-            throw new AppError('Location outside service radius', 400, roleConfig.ERROR_CODES.GEOFENCE_VIOLATION);
+          if (CUSTOMER_MTABLES_CONSTANTS.SUPPORTED_MERCHANT_TYPES.includes(merchantType)) {
+            if (address.latitude < -90 || address.latitude > 90 || address.longitude < -180 || address.longitude > 180) {
+              throw new Error('Invalid coordinates for mtables booking');
+            }
           }
         }
       }
-    } catch (error) {
-      logger.error('Role-specific validation failed', { role, userId, error: error.message });
-      throw error;
+
+      if (user.merchant_profile && role === 'merchant' && user.merchant_profile.merchant_type === merchantType) {
+        if (!MERCHANT_TYPES.includes(merchantType)) throw new Error('Invalid merchant type');
+        await Merchant.update(
+          { address_id: address.id, address: address.formattedAddress, currency: address.currency },
+          { where: { user_id: userId, merchant_type: merchantType } }
+        );
+        if (merchantType === 'parking_lot' && CUSTOMER_MPARK_CONSTANTS.PARKING_TYPES.includes('standard')) {
+          if (!SUPPORTED_CITIES[address.countryCode]?.includes(address.city)) {
+            throw new Error('Unsupported city for parking');
+          }
+        }
+      }
+
+      if (user.driver_profile && role === 'driver') {
+        if (!DRIVER_STATUSES.includes(user.driver_profile.status)) throw new Error('Invalid driver status');
+        if (address.city && SUPPORTED_CITIES[address.countryCode]?.includes(address.city)) {
+          await Driver.update(
+            {
+              current_location: { type: 'Point', coordinates: [address.longitude, address.latitude] },
+              currency: address.currency,
+            },
+            { where: { user_id: userId } }
+          );
+          if (DRIVER_MTXI_CONSTANTS.RIDE_TYPES.includes('standard') || MUNUCH_DELIVERY_CONSTANTS.DELIVERY_TYPES.includes('standard')) {
+            if (address.latitude < -90 || address.latitude > 90 || address.longitude < -180 || address.longitude > 180) {
+              throw new Error('Invalid coordinates for driver tasks');
+            }
+          }
+        }
+      }
+
+      if (user.staff_profile && role === 'staff' && STAFF_ROLES[user.staff_profile.role]) {
+        if (!STAFF_STATUSES.includes(user.staff_profile.status)) throw new Error('Invalid staff status');
+        await Staff.update(
+          {
+            work_location: { type: 'Point', coordinates: [address.longitude, address.latitude] },
+            currency: address.currency,
+          },
+          { where: { user_id: userId } }
+        );
+        if (STAFF_PERMISSIONS[user.staff_profile.role].includes('monitor_parking') && merchantType === 'parking_lot') {
+          if (!SUPPORTED_CITIES[address.countryCode]?.includes(address.city)) {
+            throw new Error('Unsupported city for parking operations');
+          }
+        }
+      }
+
+      await User.update(
+        {
+          google_location: { lat: address.latitude, lng: address.longitude },
+          location_updated_at: new Date(),
+          location_source: 'manual',
+          currency: address.currency,
+        },
+        { where: { id: userId } }
+      );
+    }
+
+    static async updateSessionLocation(userId, address) {
+      await Session.update(
+        {
+          location: { lat: address.latitude, lng: address.longitude, currency: address.currency },
+          last_active_at: new Date(),
+          status: authConstants.SESSION_CONSTANTS.SESSION_STATUSES.ACTIVE,
+        },
+        {
+          where: {
+            user_id: userId,
+            status: authConstants.SESSION_CONSTANTS.SESSION_STATUSES.ACTIVE,
+            expires_at: { [Op.gt]: new Date() },
+          },
+        }
+      );
+    }
+
+    static async getNearbyAddresses({ latitude, longitude, radius = 5.0, role, merchantType }) {
+      const allowedRoles = [ADMIN_ROLES.super_admin, 'customer', 'driver', 'staff', 'merchant'];
+      if (!allowedRoles.includes(role)) throw new Error('Invalid role');
+      if (role === 'merchant' && !MERCHANT_TYPES.includes(merchantType)) throw new Error('Invalid merchant type');
+
+      const addresses = await Address.findAll({
+        where: {
+          validationStatus: localizationServiceConstants.VALIDATION_STATUSES.VALID,
+          latitude: { [Op.between]: [latitude - 0.05 * (radius / 5), latitude + 0.05 * (radius / 5)] },
+          longitude: { [Op.between]: [longitude - 0.05 * (radius / 5), longitude + 0.05 * (radius / 5)] },
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            include: [
+              { model: Customer, as: 'customer_profile', where: role === 'customer' ? { status: CUSTOMER_STATUSES } : null },
+              { model: Merchant, as: 'merchant_profile', where: role === 'merchant' ? { merchant_type: merchantType } : null },
+              { model: Driver, as: 'driver_profile', where: role === 'driver' ? { status: DRIVER_STATUSES } : null },
+              { model: Staff, as: 'staff_profile', where: role === 'staff' ? { status: STAFF_STATUSES } : null },
+            ].filter(model => model.where !== null),
+          },
+        ],
+      });
+
+      return addresses.filter(address => {
+        if (role === 'customer' && CUSTOMER_MTABLES_CONSTANTS.SUPPORTED_MERCHANT_TYPES.includes(merchantType)) {
+          return CUSTOMER_MTABLES_CONSTANTS.BOOKING_STATUSES.includes('pending');
+        }
+        if (role === 'merchant' && merchantType === 'parking_lot') {
+          return CUSTOMER_MPARK_CONSTANTS.PARKING_STATUSES.includes('available');
+        }
+        if (role === 'driver' && (DRIVER_MTXI_CONSTANTS.RIDE_STATUSES.includes('requested') || MUNUCH_DELIVERY_CONSTANTS.DELIVERY_STATUSES.includes('requested'))) {
+          return true;
+        }
+        return true;
+      });
     }
   }
 
-  /**
-   * Determines confidence level.
-   * @param {string} locationType - Google Maps/OSM location type.
-   * @returns {string} Confidence level.
-   */
-  determineConfidenceLevel(locationType) {
-    switch (locationType) {
-      case 'ROOFTOP':
-      case 'point':
-        return SUPPORTED_CONFIDENCE_LEVELS[0]; // HIGH
-      case 'RANGE_INTERPOLATED':
-      case 'GEOMETRIC_CENTER':
-      case 'road':
-        return SUPPORTED_CONFIDENCE_LEVELS[1]; // MEDIUM
-      default:
-        return SUPPORTED_CONFIDENCE_LEVELS[2]; // LOW
-    }
-  }
-
-  /**
-   * Checks if confidence level meets minimum requirement.
-   * @param {string} level - Confidence level.
-   * @param {string} minLevel - Minimum required level.
-   * @returns {boolean} True if sufficient.
-   */
-  isConfidenceLevelSufficient(level, minLevel) {
-    return SUPPORTED_CONFIDENCE_LEVELS.indexOf(level) <= SUPPORTED_CONFIDENCE_LEVELS.indexOf(minLevel);
-  }
-
-  /**
-   * Checks if point is inside polygon.
-   * @param {Array<number>} point - [lng, lat].
-   * @param {Array<Array<number>>} polygon - Array of [lng, lat].
-   * @returns {boolean} True if inside.
-   */
-  isPointInPolygon(point, polygon) {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i][0], yi = polygon[i][1];
-      const xj = polygon[j][0], yj = polygon[j][1];
-      const intersect = ((yi > point[1]) !== (yj > point[1])) &&
-        (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  }
-
-  /**
-   * Calculates distance between two coordinates (Haversine formula).
-   * @param {Object} coord1 - { lat, lng }.
-   * @param {Object} coord2 - { lat, lng }.
-   * @returns {number} Distance in kilometers.
-   */
-  calculateDistance(coord1, coord2) {
-    if (!coord1 || !coord2) return Infinity;
-    const toRad = (deg) => deg * Math.PI / 180;
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(coord2.lat - coord1.lat);
-    const dLng = toRad(coord2.lng - coord1.lng);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(toRad(coord1.lat)) * Math.cos(toRad(coord2.lat)) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-}
-
-module.exports = new LocationService();
+  return LocationService;
+};

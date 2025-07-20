@@ -1,47 +1,65 @@
 'use strict';
 
-const { Driver, Route, sequelize } = require('@models');
-const driverConstants = require('@constants/driverConstants');
+const { Driver, Route, RouteOptimization, Vehicle, sequelize } = require('@models');
+const driverConstants = require('@constants/driver/driverConstants');
+const vehicleConstants = require('@constants/driver/vehicleConstants');
 const routeOptimizationConstants = require('@constants/driver/routeOptimizationConstants');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
-async function calculateOptimalRoute(origin, destination, pointService) {
+async function calculateOptimalRoute(origin, destination, driverId) {
   if (!origin || !origin.lat || !origin.lng || !destination || !destination.lat || !destination.lng) {
     throw new AppError('Missing origin or destination coordinates', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
 
+  const driver = await Driver.findByPk(driverId, { include: [{ model: Vehicle, as: 'vehicles' }] });
+  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+
   const distance = calculateDistance(origin, destination);
   const duration = calculateEstimatedTime(origin, destination);
-  const routeDetails = {
-    origin,
-    destination,
-    waypoints: [],
-    distance,
-    duration,
-    polyline: 'encoded_polyline_string',
-    steps: [
-      { instruction: 'Start at origin', distance: 0, duration: 0 },
-      { instruction: `Head to destination (${destination.lat}, ${destination.lng})`, distance, duration },
-    ],
-    trafficModel: 'best_guess',
-    fuel_efficiency_score: routeOptimizationConstants.ROUTE_OPTIMIZATION.FUEL_EFFICIENCY_WEIGHT * 100,
-    time_efficiency_score: routeOptimizationConstants.ROUTE_OPTIMIZATION.TIME_EFFICIENCY_WEIGHT * 100,
-  };
+  const transaction = await sequelize.transaction();
+  try {
+    const route = await Route.create({
+      origin,
+      destination,
+      waypoints: [],
+      distance,
+      duration,
+      polyline: 'encoded_polyline_string',
+      steps: [
+        { instruction: 'Start at origin', distance: 0, duration: 0 },
+        { instruction: `Head to destination (${destination.lat}, ${destination.lng})`, distance, duration },
+      ],
+      trafficModel: 'best_guess',
+    }, { transaction });
 
-  await pointService.awardPoints({
-    userId: 'system', // System-initiated action
-    role: 'driver',
-    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_calculate').action,
-    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-  });
+    await RouteOptimization.create({
+      totalDistance: distance,
+      totalDuration: duration,
+      driverLocation: driver.current_location,
+      deliveryIds: [],
+    }, { transaction });
 
-  logger.info('Optimal route calculated', { origin, destination });
-  return routeDetails;
+    await driver.update({ active_route_id: route.id }, { transaction });
+
+    await transaction.commit();
+    logger.info('Optimal route calculated', { origin, destination, driverId });
+    return {
+      routeId: route.id,
+      origin,
+      destination,
+      distance,
+      duration,
+      vehicle: driver.vehicles?.[0]?.type || null,
+    };
+  } catch (error) {
+    await transaction.rollback();
+    throw new AppError(`Route calculation failed: ${error.message}`, 500, driverConstants.ERROR_CODES.DELIVERY_FAILED);
+  }
 }
 
-async function updateRoute(driverId, routeId, newWaypoints, auditService, notificationService, socketService, pointService) {
-  const driver = await Driver.findByPk(driverId);
+async function updateRoute(driverId, routeId, newWaypoints) {
+  const driver = await Driver.findByPk(driverId, { include: [{ model: Route, as: 'activeRoute' }] });
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
   const route = await Route.findByPk(routeId);
@@ -69,35 +87,10 @@ async function updateRoute(driverId, routeId, newWaypoints, auditService, notifi
 
     await route.update(updates, { transaction });
 
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: routeOptimizationConstants.AUDIT_TYPES.UPDATE_ROUTE,
-      details: { driverId, routeId, newWaypoints },
-      ipAddress: 'unknown',
-    });
-
-    await notificationService.sendNotification({
-      userId: driver.user_id,
-      notificationType: routeOptimizationConstants.NOTIFICATION_TYPES.ROUTE_UPDATED,
-      message: formatMessage(
-        'driver',
-        'route',
-        driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-        'route.updated',
-        { routeId }
-      ),
-      priority: 'MEDIUM',
-    });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_update').action,
-      languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emit(null, routeOptimizationConstants.EVENT_TYPES.ROUTE_UPDATED, { driverId, routeId, newWaypoints });
+    await RouteOptimization.update(
+      { totalDistance: updates.distance || route.distance, totalDuration: updates.duration || route.duration },
+      { where: { id: route.id }, transaction }
+    );
 
     await transaction.commit();
     logger.info('Route updated', { driverId, routeId });
@@ -107,7 +100,7 @@ async function updateRoute(driverId, routeId, newWaypoints, auditService, notifi
   }
 }
 
-async function getRouteDetails(routeId, auditService, pointService) {
+async function getRouteDetails(routeId) {
   const route = await Route.findByPk(routeId, {
     include: [
       { model: sequelize.models.Order, as: 'orders', attributes: ['id', 'status'] },
@@ -116,20 +109,7 @@ async function getRouteDetails(routeId, auditService, pointService) {
   });
   if (!route) throw new AppError('Route not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
-  await auditService.logAction({
-    userId: 'system',
-    role: 'driver',
-    action: routeOptimizationConstants.AUDIT_TYPES.GET_ROUTE_DETAILS,
-    details: { routeId },
-    ipAddress: 'unknown',
-  });
-
-  await pointService.awardPoints({
-    userId: 'system',
-    role: 'driver',
-    action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'route_details_access').action,
-    languageCode: driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-  });
+  const optimization = await RouteOptimization.findOne({ where: { id: route.id } });
 
   logger.info('Route details retrieved', { routeId });
   return {
@@ -146,7 +126,60 @@ async function getRouteDetails(routeId, auditService, pointService) {
     orders: route.orders ? route.orders.map(o => ({ id: o.id, status: o.status })) : [],
     created_at: route.created_at,
     updated_at: route.updated_at,
+    optimization: optimization ? { totalDistance: optimization.totalDistance, totalDuration: optimization.totalDuration } : null,
   };
+}
+
+async function optimizeRouteForDriver(driverId, routeId) {
+  const driver = await Driver.findByPk(driverId, {
+    include: [
+      { model: Vehicle, as: 'vehicles' },
+      { model: DriverAvailability, as: 'availability' },
+      { model: Route, as: 'activeRoute' },
+    ],
+  });
+  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+
+  const route = await Route.findByPk(routeId);
+  if (!route) throw new AppError('Route not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (driver.active_route_id !== routeId) {
+    throw new AppError('Route not assigned to driver', 403, driverConstants.ERROR_CODES.PERMISSION_DENIED);
+  }
+
+  const vehicle = driver.vehicles.find(v => v.id === driver.vehicle_info?.id);
+  if (!vehicle || vehicle.status !== 'active') {
+    throw new AppError('No active vehicle assigned', 400, vehicleConstants.ERROR_CODES.INVALID_VEHICLE_STATUS);
+  }
+
+  const activeAvailability = driver.availability.find(a => a.status === 'available' && a.isOnline);
+  if (!activeAvailability) {
+    throw new AppError('Driver not available', 400, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
+
+  const transaction = await sequelize.transaction();
+  try {
+    const distance = calculateDistance(route.origin, route.destination);
+    const duration = calculateEstimatedTime(route.origin, route.destination);
+    const capacityFactor = vehicle.capacity / vehicleConstants.VEHICLE_SETTINGS.MAX_CARGO_CAPACITY_KG;
+    const optimizedOrder = route.waypoints ? [...route.waypoints].sort(() => capacityFactor * Math.random()) : [];
+
+    await RouteOptimization.create({
+      totalDistance: distance,
+      totalDuration: duration,
+      optimizedOrder,
+      driverLocation: driver.current_location,
+      deliveryIds: route.orders?.map(o => o.id) || [],
+    }, { transaction });
+
+    await route.update({ waypoints: optimizedOrder, distance, duration }, { transaction });
+
+    await transaction.commit();
+    logger.info('Route optimized', { driverId, routeId });
+    return { routeId, optimizedOrder, distance, duration };
+  } catch (error) {
+    await transaction.rollback();
+    throw new AppError(`Route optimization failed: ${error.message}`, 500, driverConstants.ERROR_CODES.DELIVERY_FAILED);
+  }
 }
 
 function calculateDistance(start, end) {
@@ -170,4 +203,5 @@ module.exports = {
   calculateOptimalRoute,
   updateRoute,
   getRouteDetails,
+  optimizeRouteForDriver,
 };

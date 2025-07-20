@@ -1,9 +1,8 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const { Driver, User, Ride, Order, DriverSafetyIncident, sequelize } = require('@models');
+const { Driver, Ride, Order, DriverSafetyIncident, Route, sequelize } = require('@models');
 const driverConstants = require('@constants/driverConstants');
-const { formatMessage } = require('@utils/localization');
 const AppError = require('@utils/AppError');
 const logger = require('@utils/logger');
 
@@ -11,10 +10,18 @@ function generateIncidentNumber() {
   return `INC-${uuidv4().substr(0, 8).toUpperCase()}`;
 }
 
-async function reportIncident(driverId, incidentDetails, auditService, notificationService, socketService, pointService) {
+/**
+ * Reports a safety incident for a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @param {object} incidentDetails - Details of the incident (type, description, location, ride_id, delivery_order_id).
+ * @returns {object} - Incident details (id, incident_number, type, status, priority, created_at).
+ */
+async function reportIncident(driverId, incidentDetails) {
   const { incident_type, description, location, ride_id, delivery_order_id } = incidentDetails;
 
-  if (!driverConstants.SAFETY_CONSTANTS.INCIDENT_TYPES.includes(incident_type)) {
+  // Validate inputs
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  if (!incident_type || !driverConstants.SAFETY_CONSTANTS.INCIDENT_TYPES.includes(incident_type)) {
     throw new AppError('Invalid incident type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
   if (description && description.length > 1000) {
@@ -24,7 +31,7 @@ async function reportIncident(driverId, incidentDetails, auditService, notificat
     throw new AppError('Invalid location format', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
 
-  const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
+  const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
   const transaction = await sequelize.transaction();
@@ -56,46 +63,6 @@ async function reportIncident(driverId, incidentDetails, auditService, notificat
       { transaction }
     );
 
-    await auditService.logAction(
-      {
-        userId: driverId.toString(),
-        role: 'driver',
-        action: 'REPORT_SAFETY_INCIDENT',
-        details: { driverId, incidentId: incident.id, incident_number: incident.incident_number },
-        ipAddress: 'unknown',
-      },
-      { transaction }
-    );
-
-    await notificationService.sendNotification(
-      {
-        userId: driver.user_id,
-        notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SAFETY_INCIDENT,
-        message: formatMessage(
-          'driver',
-          'safety',
-          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-          'safety.incident_reported',
-          { incident_number: incident.incident_number }
-        ),
-        priority: 'HIGH',
-      },
-      { transaction }
-    );
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'safety_report').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'safety:incident_reported', {
-      driverId,
-      incidentId: incident.id,
-      incident_number: incident.incident_number,
-    });
-
     await transaction.commit();
     logger.info('Safety incident reported', { driverId, incidentId: incident.id });
     return {
@@ -112,8 +79,15 @@ async function reportIncident(driverId, incidentDetails, auditService, notificat
   }
 }
 
-async function triggerSOS(driverId, auditService, notificationService, socketService, pointService) {
-  const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
+/**
+ * Triggers an SOS alert for a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @returns {object} - SOS incident details (id, incident_number, status, priority, created_at).
+ */
+async function triggerSOS(driverId) {
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+
+  const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
   const transaction = await sequelize.transaction();
@@ -124,62 +98,12 @@ async function triggerSOS(driverId, auditService, notificationService, socketSer
         incident_number: generateIncidentNumber(),
         incident_type: 'SOS',
         description: 'Emergency SOS triggered by driver',
-        location: driver.last_known_location || null,
+        location: driver.current_location || null,
         status: 'open',
         priority: 'critical',
       },
       { transaction }
     );
-
-    await auditService.logAction(
-      {
-        userId: driverId.toString(),
-        role: 'driver',
-        action: 'TRIGGER_SOS',
-        details: { driverId, incidentId: incident.id, incident_number: incident.incident_number },
-        ipAddress: 'unknown',
-      },
-      { transaction }
-    );
-
-    await notificationService.sendNotification(
-      {
-        userId: driver.user_id,
-        notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SAFETY_SOS,
-        message: formatMessage(
-          'driver',
-          'safety',
-          driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-          'safety.sos_triggered',
-          { incident_number: incident.incient_number }
-        ),
-        priority: 'CRITICAL',
-      },
-      { transaction }
-    );
-
-    await notificationService.sendNotification(
-      {
-        userId: driverConstants.SAFETY_CONSTANTS.SUPPORT_TEAM_ID,
-        notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SAFETY_SOS,
-        message: `SOS triggered by driver ${driverId} (Incident: ${incident.incident_number})`,
-        priority: 'CRITICAL',
-      },
-      { transaction }
-    );
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'sos_trigger').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'safety:sos_triggered', {
-      driverId,
-      incidentId: incident.id,
-      incident_number: incident.incident_number,
-    });
 
     await transaction.commit();
     logger.info('SOS triggered', { driverId, incidentId: incident.id });
@@ -196,8 +120,15 @@ async function triggerSOS(driverId, auditService, notificationService, socketSer
   }
 }
 
-async function getSafetyStatus(driverId, auditService, socketService, pointService) {
-  const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
+/**
+ * Retrieves the safety status of a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @returns {object} - Safety status (active_alerts, recent_incidents).
+ */
+async function getSafetyStatus(driverId) {
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+
+  const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
   const transaction = await sequelize.transaction();
@@ -232,26 +163,6 @@ async function getSafetyStatus(driverId, auditService, socketService, pointServi
       })),
     };
 
-    await auditService.logAction(
-      {
-        userId: driverId.toString(),
-        role: 'driver',
-        action: 'GET_SAFETY_STATUS',
-        details: { driverId, active_alerts: status.active_alerts },
-        ipAddress: 'unknown',
-      },
-      { transaction }
-    );
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'safety_status_check').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'safety:status_updated', { driverId, status });
-
     await transaction.commit();
     logger.info('Safety status retrieved', { driverId, active_alerts: status.active_alerts });
     return status;
@@ -261,12 +172,19 @@ async function getSafetyStatus(driverId, auditService, socketService, pointServi
   }
 }
 
-async function sendDiscreetAlert(driverId, alertType, auditService, notificationService, socketService, pointService) {
-  if (!driverConstants.SAFETY_CONSTANTS.ALERT_TYPES.includes(alertType)) {
+/**
+ * Sends a discreet alert for a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @param {string} alertType - The type of discreet alert.
+ * @returns {object} - Alert details (id, incident_number, status, priority, created_at).
+ */
+async function sendDiscreetAlert(driverId, alertType) {
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  if (!alertType || !driverConstants.SAFETY_CONSTANTS.ALERT_TYPES.includes(alertType)) {
     throw new AppError('Invalid alert type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
 
-  const driver = await Driver.findByPk(driverId, { include: [{ model: User, as: 'user' }] });
+  const driver = await Driver.findByPk(driverId);
   if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
 
   const transaction = await sequelize.transaction();
@@ -277,46 +195,12 @@ async function sendDiscreetAlert(driverId, alertType, auditService, notification
         incident_number: generateIncidentNumber(),
         incident_type: 'DISCREET_ALERT',
         description: `Discreet alert: ${alertType}`,
-        location: driver.last_known_location || null,
+        location: driver.current_location || null,
         status: 'open',
         priority: 'high',
       },
       { transaction }
     );
-
-    await auditService.logAction(
-      {
-        userId: driverId.toString(),
-        role: 'driver',
-        action: 'SEND_DISCREET_ALERT',
-        details: { driverId, incidentId: incident.id, incident_number: incident.incident_number, alertType },
-        ipAddress: 'unknown',
-      },
-      { transaction }
-    );
-
-    await notificationService.sendNotification(
-      {
-        userId: driverConstants.SAFETY_CONSTANTS.SUPPORT_TEAM_ID,
-        notificationType: driverConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SAFETY_ALERT,
-        message: `Discreet alert (${alertType}) from driver ${driverId} (Incident: ${incident.incident_number})`,
-        priority: 'HIGH',
-      },
-      { transaction }
-    );
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'discreet_alert').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'safety:discreet_alert_sent', {
-      driverId,
-      incidentId: incident.id,
-      incident_number: incident.incident_number,
-    });
 
     await transaction.commit();
     logger.info('Discreet alert sent', { driverId, incidentId: incident.id, alertType });
@@ -333,9 +217,127 @@ async function sendDiscreetAlert(driverId, alertType, auditService, notification
   }
 }
 
+/**
+ * Monitors route deviation for a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @returns {object} - Deviation incident details or on-route status.
+ */
+async function monitorRouteDeviation(driverId) {
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+
+  const driver = await Driver.findByPk(driverId, {
+    include: [{ model: Route, as: 'activeRoute' }],
+  });
+  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver.activeRoute) throw new AppError('No active route assigned', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+
+  const transaction = await sequelize.transaction();
+  try {
+    const route = driver.activeRoute;
+    const currentLocation = driver.current_location;
+    if (!currentLocation || !currentLocation.lat || !currentLocation.lng) {
+      throw new AppError('Current location unavailable', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+    }
+
+    // Placeholder for route deviation logic (use geospatial library like Turf.js or PostGIS in production)
+    const routePath = route.polyline || route.steps;
+    const isOffRoute = !routePath; // Simplified; real logic would calculate deviation
+
+    if (isOffRoute) {
+      const incident = await DriverSafetyIncident.create(
+        {
+          driver_id: driverId,
+          incident_number: generateIncidentNumber(),
+          incident_type: 'ROAD_HAZARD',
+          description: 'Significant route deviation detected',
+          location: currentLocation,
+          status: 'open',
+          priority: 'high',
+        },
+        { transaction }
+      );
+
+      await transaction.commit();
+      logger.info('Route deviation incident reported', { driverId, incidentId: incident.id });
+      return {
+        id: incident.id,
+        incident_number: incident.incident_number,
+        status: incident.status,
+        priority: incident.priority,
+        created_at: incident.created_at,
+      };
+    }
+
+    await transaction.commit();
+    return { status: 'on_route' };
+  } catch (error) {
+    await transaction.rollback();
+    throw new AppError(`Route deviation check failed: ${error.message}`, 500, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+}
+
+/**
+ * Requests a safety check-in for a driver.
+ * @param {number} driverId - The ID of the driver.
+ * @returns {object} - Check-in incident details or status if recent check-in exists.
+ */
+async function requestSafetyCheckIn(driverId) {
+  if (!driverId) throw new AppError('Driver ID is required', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+
+  const transaction = await sequelize.transaction();
+  try {
+    const recentCheckIn = await DriverSafetyIncident.findOne({
+      where: {
+        driver_id: driverId,
+        incident_type: 'CHECKpps_IN',
+        created_at: {
+          [sequelize.Op.gte]: sequelize.literal(`NOW() - INTERVAL '${driverConstants.SAFETY_CONSTANTS.SAFETY_ALERT_FREQUENCY_MINUTES} minutes'`),
+        },
+      },
+      transaction,
+    });
+
+    if (recentCheckIn) {
+      await transaction.commit();
+      return { status: 'recent_check_in_exists', incidentId: recentCheckIn.id };
+    }
+
+    const incident = await DriverSafetyIncident.create(
+      {
+        driver_id: driverId,
+        incident_number: generateIncidentNumber(),
+        incident_type: 'CHECK_IN',
+        description: 'Periodic safety check-in requested',
+        location: driver.current_location || null,
+        status: 'open',
+        priority: 'medium',
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+    logger.info('Safety check-in requested', { driverId, incidentId: incident.id });
+    return {
+      id: incident.id,
+      incident_number: incident.incident_number,
+      status: incident.status,
+      priority: incident.priority,
+      created_at: incident.created_at,
+    };
+  } catch (error) {
+    await transaction.rollback();
+    throw new AppError(`Safety check-in request failed: ${error.message}`, 500, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+}
+
 module.exports = {
   reportIncident,
   triggerSOS,
   getSafetyStatus,
   sendDiscreetAlert,
+  monitorRouteDeviation,
+  requestSafetyCheckIn,
 };

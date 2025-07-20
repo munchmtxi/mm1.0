@@ -1,234 +1,282 @@
 'use strict';
 
-const { Wallet, Driver, sequelize } = require('@models');
-const driverConstants = require('@constants/driverConstants');
+const { Wallet, Driver, WalletTransaction, sequelize } = require('@models');
+const driverConstants = require('@constants/driver/driverConstants');
+const driverWalletConstants = require('@constants/driver/driverWalletConstants');
 const paymentConstants = require('@constants/common/paymentConstants');
-const { formatMessage } = require('@utils/localization');
-const AppError = require('@utils/AppError');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { handleServiceError } = require('@utils/errorHandling');
+const { roundToDecimal } = require('@utils/mathUtils');
+const { getStartOfDay, getEndOfDay } = require('@utils/dateTimeUtils');
 const logger = require('@utils/logger');
+const { Op } = require('sequelize');
 
-async function getWalletBalance(driverId, auditService, socketService, pointService) {
-  const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
-
-  const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
-  });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
-
-  const transaction = await sequelize.transaction();
+async function getWalletBalance(driverId, currency = localizationConstants.DEFAULT_CURRENCY) {
   try {
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'GET_WALLET_BALANCE',
-      details: { driverId, walletId: wallet.id },
-      ipAddress: 'unknown',
-    }, { transaction });
+    const driver = await Driver.findByPk(driverId);
+    if (!driver) {
+      throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+    }
 
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'wallet_balance_check').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
+    const wallet = await Wallet.findOne({
+      where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
+    });
+    if (!wallet) {
+      throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+    }
+
+    const todayStart = getStartOfDay(new Date());
+    const todayEnd = getEndOfDay(new Date());
+    const recentTransactions = await WalletTransaction.findAll({
+      where: {
+        wallet_id: wallet.id,
+        created_at: { [Op.between]: [todayStart, todayEnd] },
+      },
+      limit: 5,
+      order: [['created_at', 'DESC']],
     });
 
-    socketService.emitToUser(driver.user_id, 'wallet:balance_updated', {
-      driverId,
-      walletId: wallet.id,
-      balance: parseFloat(wallet.balance),
-    });
-
-    await transaction.commit();
-    logger.info('Wallet balance retrieved', { driverId, walletId: wallet.id });
+    logger.info('Wallet balance retrieved', { driverId, walletId: wallet.id, currency });
     return {
       driverId,
       walletId: wallet.id,
-      balance: parseFloat(wallet.balance),
-      currency: wallet.currency,
-      lockedBalance: parseFloat(wallet.locked_balance || 0),
+      balance: roundToDecimal(parseFloat(wallet.balance), 2),
+      lockedBalance: roundToDecimal(parseFloat(wallet.locked_balance || 0), 2),
+      currency: localizationConstants.SUPPORTED_CURRENCIES.includes(currency) ? currency : wallet.currency,
+      recentTransactions: recentTransactions.map(t => ({
+        amount: roundToDecimal(parseFloat(t.amount), 2),
+        type: t.type,
+        status: t.status,
+        created_at: t.created_at,
+      })),
+      supportedCurrencies: localizationConstants.SUPPORTED_CURRENCIES,
     };
   } catch (error) {
-    await transaction.rollback();
-    throw new AppError(`Get wallet balance failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('getWalletBalance', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function updateBalance(driverId, amount, type, auditService, notificationService, socketService, pointService) {
-  if (!driverConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(type)) {
+async function updateBalance(driverId, amount, type, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(type)) {
     throw new AppError('Invalid transaction type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
-  const typeUpper = type.toUpperCase();
-  const limits = paymentConstants.FINANCIAL_LIMITS.find(l => l.type === typeUpper);
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
+  const limits = paymentConstants.FINANCIAL_LIMITS.find(l => l.type === type.toUpperCase());
   if (!limits || amount < limits.min || amount > limits.max) {
-    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
+    include: [{ model: WalletTransaction, as: 'transactions' }],
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   const transaction = await sequelize.transaction();
   try {
-    const newBalance = parseFloat(wallet.balance) + amount;
-    if (newBalance < paymentConstants.WALLET_SETTINGS.MIN_BALANCE ||
-        newBalance > paymentConstants.WALLET_SETTINGS.MAX_BALANCE) {
-      throw new AppError('Balance out of bounds', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    const newBalance = roundToDecimal(parseFloat(wallet.balance) + amount, 2);
+    if (
+      newBalance < paymentConstants.WALLET_SETTINGS.MIN_BALANCE ||
+      newBalance > paymentConstants.WALLET_SETTINGS.MAX_BALANCE
+    ) {
+      throw new AppError('Balance out of bounds', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
     }
 
-    await wallet.update({ balance: newBalance }, { transaction });
-
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'UPDATE_BALANCE',
-      details: { driverId, amount, type, newBalance },
-      ipAddress: 'unknown',
-    }, { transaction });
-
-    await notificationService.sendNotification({
-      userId: driver.user_id,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[type === 'tip' ? 'TIP_RECEIVED' : 'DEPOSIT_CONFIRMED'],
-      message: formatMessage(
-        'driver',
-        'wallet',
-        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-        `balance.${type}_added`,
-        { amount, currency: wallet.currency }
-      ),
-      priority: paymentConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-    }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === `wallet_${type}_received`).action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'wallet:balance_updated', {
-      driverId,
-      amount,
+    await wallet.update({ balance: newBalance, currency }, { transaction });
+    await WalletTransaction.create({
+      wallet_id: wallet.id,
       type,
-      newBalance,
-    });
+      amount: roundToDecimal(amount, 2),
+      currency,
+      status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+      description: `Balance update: ${type}`,
+    }, { transaction });
 
     await transaction.commit();
-    logger.info('Balance updated', { driverId, amount, type, newBalance });
+    logger.info('Balance updated', { driverId, amount, type, newBalance, currency });
     return {
       driverId,
       walletId: wallet.id,
       balance: newBalance,
-      currency: wallet.currency,
+      currency,
+      transactionType: type,
     };
   } catch (error) {
     await transaction.rollback();
-    throw new AppError(`Update balance failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('updateBalance', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function lockBalance(driverId, amount, auditService, socketService, pointService) {
-  if (amount <= 0) throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+async function lockBalance(driverId, amount) {
+  if (amount <= 0) {
+    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   if (parseFloat(wallet.balance) < amount) {
-    throw new AppError('Insufficient funds', 400, paymentConstants.ERROR_CODES[1]); // 'INSUFFICIENT_FUNDS'
+    throw new AppError('Insufficient funds', 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
   }
 
   const transaction = await sequelize.transaction();
   try {
-    const lockedBalance = parseFloat(wallet.locked_balance || 0) + amount;
-    await wallet.update({ locked_balance }, { transaction });
-
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'LOCK_BALANCE',
-      details: { driverId, amount, lockedBalance },
-      ipAddress: 'unknown',
+    const lockedBalance = roundToDecimal(parseFloat(wallet.locked_balance || 0) + amount, 2);
+    await wallet.update({ locked_balance: lockedBalance }, { transaction });
+    await WalletTransaction.create({
+      wallet_id: wallet.id,
+      type: 'lock',
+      amount: roundToDecimal(amount, 2),
+      currency: wallet.currency,
+      status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+      description: 'Balance locked',
     }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'wallet_balance_lock').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'wallet:balance_locked', {
-      driverId,
-      amount,
-      lockedBalance,
-    });
 
     await transaction.commit();
     logger.info('Balance locked', { driverId, amount, lockedBalance });
-    return { driverId, amount, lockedBalance };
+    return { driverId, amount, lockedBalance, currency: wallet.currency };
   } catch (error) {
     await transaction.rollback();
-    throw new AppError(`Lock balance failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('lockBalance', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function unlockBalance(driverId, amount, auditService, socketService, pointService) {
-  if (amount <= 0) throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+async function unlockBalance(driverId, amount) {
+  if (amount <= 0) {
+    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   const currentLocked = parseFloat(wallet.locked_balance || 0);
   if (currentLocked < amount) {
-    throw new AppError('Insufficient locked funds', 400, paymentConstants.ERROR_CODES[1]); // 'INSUFFICIENT_FUNDS'
+    throw new AppError('Insufficient locked funds', 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
   }
 
   const transaction = await sequelize.transaction();
   try {
-    const lockedBalance = currentLocked - amount;
+    const lockedBalance = roundToDecimal(currentLocked - amount, 2);
     await wallet.update({ locked_balance: lockedBalance }, { transaction });
-
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'UNLOCK_BALANCE',
-      details: { driverId, amount, lockedBalance },
-      ipAddress: 'unknown',
+    await WalletTransaction.create({
+      wallet_id: wallet.id,
+      type: 'unlock',
+      amount: roundToDecimal(amount, 2),
+      currency: wallet.currency,
+      status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
+      description: 'Balance unlocked',
     }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'wallet_balance_unlock').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    });
-
-    socketService.emitToUser(driver.user_id, 'wallet:balance_unlocked', {
-      driverId,
-      amount,
-      lockedBalance,
-    });
 
     await transaction.commit();
     logger.info('Balance unlocked', { driverId, amount, lockedBalance });
-    return { driverId, amount, lockedBalance };
+    return { driverId, amount, lockedBalance, currency: wallet.currency };
   } catch (error) {
     await transaction.rollback();
-    throw new AppError(`Unlock balance failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('unlockBalance', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
+}
+
+async function convertBalance(driverId, targetCurrency) {
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(targetCurrency)) {
+    throw new AppError('Invalid target currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
+
+  const wallet = await Wallet.findOne({
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
+  });
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
+
+  try {
+    // Mock conversion rate (in a real system, fetch from an external API)
+    const conversionRates = {
+      USD: { EUR: 0.85, GBP: 0.73, MWK: 1700 },
+      EUR: { USD: 1.18, GBP: 0.86, MWK: 2000 },
+      GBP: { USD: 1.37, EUR: 1.16, MWK: 2300 },
+      MWK: { USD: 0.00059, EUR: 0.0005, GBP: 0.00043 },
+    };
+    const rate = conversionRates[wallet.currency]?.[targetCurrency] || 1;
+    const convertedBalance = roundToDecimal(parseFloat(wallet.balance) * rate, 2);
+    const convertedLockedBalance = roundToDecimal(parseFloat(wallet.locked_balance || 0) * rate, 2);
+
+    logger.info('Balance converted', { driverId, fromCurrency: wallet.currency, toCurrency: targetCurrency });
+    return {
+      driverId,
+      walletId: wallet.id,
+      balance: convertedBalance,
+      lockedBalance: convertedLockedBalance,
+      originalCurrency: wallet.currency,
+      targetCurrency,
+    };
+  } catch (error) {
+    throw handleServiceError('convertBalance', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
+}
+
+async function estimateTaxImpact(driverId, amount, transactionType) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(transactionType)) {
+    throw new AppError('Invalid transaction type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+  if (amount <= 0) {
+    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
+
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
+
+  try {
+    const taxRate = payoutConstants.DRIVER_REVENUE_SETTINGS.TAX_RATES[driver.country]?.VAT || 0;
+    const taxAmount = roundToDecimal(amount * taxRate, 2);
+    const netAmount = roundToDecimal(amount - taxAmount, 2);
+
+    logger.info('Tax impact estimated', { driverId, amount, transactionType, taxAmount });
+    return {
+      driverId,
+      amount,
+      transactionType,
+      taxAmount,
+      netAmount,
+      currency: localizationConstants.COUNTRY_CURRENCY_MAP[driver.country] || localizationConstants.DEFAULT_CURRENCY,
+      taxRate,
+    };
+  } catch (error) {
+    throw handleServiceError('estimateTaxImpact', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
@@ -237,4 +285,6 @@ module.exports = {
   updateBalance,
   lockBalance,
   unlockBalance,
+  convertBalance,
+  estimateTaxImpact,
 };

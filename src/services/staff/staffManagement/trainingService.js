@@ -1,73 +1,137 @@
 'use strict';
 
-const { Training, Staff, Verification, Badge, UserBadge } = require('@models');
+const { Training, Staff, Merchant } = require('@models');
 const staffConstants = require('@constants/staff/staffConstants');
-const { formatMessage } = require('@utils/localization');
-const { AppError } = require('@utils/errors');
+const stockClerkConstants = require('@constants/staff/stockClerkConstants');
+const managerConstants = require('@constants/staff/managerConstants');
+const frontOfHouseConstants = require('@constants/staff/frontOfHouseConstants');
+const driverConstants = require('@constants/staff/driverConstants');
+const chefConstants = require('@constants/staff/chefConstants');
+const cashierConstants = require('@constants/staff/cashierConstants');
+const carParkOperativeConstants = require('@constants/staff/carParkOperativeConstants');
+const butcherConstants = require('@constants/staff/butcherConstants');
+const baristaConstants = require('@constants/staff/baristaConstants');
+const backOfHouseConstants = require('@constants/staff/backOfHouseConstants');
+const merchantConstants = require('@constants/merchant/merchantConstants');
+const { AppError } = require('@utils/AppError');
 const logger = require('@utils/logger');
-const { Op } = require('sequelize');
+const { handleServiceError } = require('@utils/errorHandling');
 
-async function distributeTraining(staffId, training, ipAddress, notificationService, socketService, auditService, pointService) {
+async function markTrainingAsComplete(staffId, trainingId) {
   try {
-    const staff = await Staff.findByPk(staffId);
+    const staff = await Staff.findByPk(staffId, { include: [{ model: Merchant, as: 'merchant' }] });
     if (!staff) {
       throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    if (!staffConstants.STAFF_TRAINING_TYPES.includes(training.category)) {
-      throw new AppError('Invalid training category', 400, staffConstants.STAFF_ERROR_CODES.ERROR);
+    const training = await Training.findByPk(trainingId, { where: { staff_id: staffId } });
+    if (!training) {
+      throw new AppError('Training not found or not assigned to staff', 404, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
     }
 
-    const newTraining = await Training.create({
-      staff_id: staffId,
+    const roleConstants = {
+      stock_clerk: stockClerkConstants,
+      manager: managerConstants,
+      front_of_house: frontOfHouseConstants,
+      driver: driverConstants,
+      chef: chefConstants,
+      cashier: cashierConstants,
+      car_park_operative: carParkOperativeConstants,
+      butcher: butcherConstants,
+      barista: baristaConstants,
+      back_of_house: backOfHouseConstants,
+    };
+
+    const staffRole = staff.staff_types[0];
+    const roleConfig = roleConstants[staffRole];
+    if (!roleConfig) {
+      throw new AppError('Invalid staff role', 400, staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE);
+    }
+
+    if (!roleConfig.TRAINING_MODULES.includes(training.category)) {
+      throw new AppError('Training category not authorized for role', 403, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
+    }
+
+    if (!merchantConstants.MERCHANT_TYPES.includes(staff.merchant.business_type)) {
+      throw new AppError('Invalid merchant type', 400, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    if (training.status === 'completed') {
+      throw new AppError('Training already completed', 400, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
+    }
+
+    await training.update({ status: 'completed' });
+
+    return {
+      staffId,
+      trainingId,
       category: training.category,
-      content: training.content,
-      status: 'assigned',
-    });
-
-    await auditService.logAction({
-      userId: staffId,
-      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
-      action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_PROFILE_UPDATE,
-      details: { staffId, trainingId: newTraining.id, action: 'distribute_training' },
-      ipAddress,
-    });
-
-    const message = formatMessage('training.assigned', { trainingId: newTraining.id });
-    await notificationService.sendNotification({
-      userId: staffId,
-      notificationType: staffConstants.STAFF_NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.TRAINING_REMINDER,
-      message,
-      role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
-      module: 'munch',
-      trainingId: newTraining.id,
-    });
-
-    socketService.emit(`munch:training:${staffId}`, 'training:assigned', { staffId, trainingId: newTraining.id });
-
-    const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
-    if (action) {
-      await pointService.awardPoints({
-        userId: staffId,
-        role: staff.position,
-        subRole: staff.position,
-        action: action.action,
-        languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
-      });
-      socketService.emit(`munch:staff:${staffId}`, 'points:awarded', {
-        action: action.action,
-        points: action.points,
-      });
-    }
-
-    return newTraining;
+      status: training.status,
+      completedAt: training.completed_at,
+    };
   } catch (error) {
-    logger.error('Training distribution failed', { error: error.message, staffId });
-    throw new AppError(`Training distribution failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    logger.error('Mark training as complete failed', { error: error.message, staffId, trainingId });
+    throw handleServiceError('markTrainingAsComplete', error, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
   }
 }
 
-async function trackTrainingCompletion(staffId, socketService, pointService) {
+async function accessTrainingModule(staffId, trainingId) {
+  try {
+    const staff = await Staff.findByPk(staffId, { include: [{ model: Merchant, as: 'merchant' }] });
+    if (!staff) {
+      throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
+    }
+
+    const training = await Training.findByPk(trainingId, { where: { staff_id: staffId } });
+    if (!training) {
+      throw new AppError('Training not found or not assigned to staff', 404, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
+    }
+
+    const roleConstants = {
+      stock_clerk: stockClerkConstants,
+      manager: managerConstants,
+      front_of_house: frontOfHouseConstants,
+      driver: driverConstants,
+      chef: chefConstants,
+      cashier: cashierConstants,
+      car_park_operative: carParkOperativeConstants,
+      butcher: butcherConstants,
+      barista: baristaConstants,
+      back_of_house: backOfHouseConstants,
+    };
+
+    const staffRole = staff.staff_types[0];
+    const roleConfig = roleConstants[staffRole];
+    if (!roleConfig) {
+      throw new AppError('Invalid staff role', 400, staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE);
+    }
+
+    if (!roleConfig.TRAINING_MODULES.includes(training.category)) {
+      throw new AppError('Training category not authorized for role', 403, staffConstants.STAFF_ERROR_CODES.PERMISSION_DENIED);
+    }
+
+    if (!merchantConstants.MERCHANT_TYPES.includes(staff.merchant.business_type)) {
+      throw new AppError('Invalid merchant type', 400, merchantConstants.ERROR_CODES.INVALID_MERCHANT_TYPE);
+    }
+
+    if (training.status !== 'assigned' && training.status !== 'in_progress') {
+      throw new AppError('Training module not accessible', 400, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
+    }
+
+    return {
+      staffId,
+      trainingId,
+      category: training.category,
+      content: training.content,
+      status: training.status,
+    };
+  } catch (error) {
+    logger.error('Access training module failed', { error: error.message, staffId, trainingId });
+    throw handleServiceError('accessTrainingModule', error, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
+  }
+}
+
+async function trackTrainingCompletion(staffId) {
   try {
     const staff = await Staff.findByPk(staffId);
     if (!staff) {
@@ -89,100 +153,64 @@ async function trackTrainingCompletion(staffId, socketService, pointService) {
       })),
     };
 
-    socketService.emit(`munch:training:${staffId}`, 'training:progress_updated', progress);
-
-    const completedTrainings = trainings.filter(t => t.status === 'completed');
-    if (completedTrainings.length > 0) {
-      const action = staffConstants.STAFF_GAMIFICATION_CONSTANTS.STAFF_ACTIONS.find(a => a.action === 'task_completion');
-      if (action) {
-        await pointService.awardPoints({
-          userId: staffId,
-          role: staff.position,
-          subRole: staff.position,
-          action: action.action,
-          languageCode: staffConstants.STAFF_SETTINGS.DEFAULT_LANGUAGE,
-        });
-        socketService.emit(`munch:staff:${staffId}`, 'points:awarded', {
-          action: action.action,
-          points: action.points,
-        });
-      }
-
-      const badge = await Badge.findOne({ where: { name: 'Training Master' } });
-      if (badge) {
-        await UserBadge.create({
-          user_id: staff.user_id,
-          badge_id: badge.id,
-          awarded_at: new Date(),
-        });
-        socketService.emit(`munch:staff:${staffId}`, 'badge:awarded', {
-          badgeName: 'Training Master',
-          awardedAt: new Date(),
-        });
-      }
-    }
-
     return progress;
   } catch (error) {
     logger.error('Training progress tracking failed', { error: error.message, staffId });
-    throw new AppError(`Progress tracking failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw handleServiceError('trackTrainingCompletion', error, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
   }
 }
 
-async function assessTrainingCompliance(staffId, ipAddress, socketService, auditService) {
+async function assessTrainingCompliance(staffId) {
   try {
-    const staff = await Staff.findByPk(staffId);
+    const staff = await Staff.findByPk(staffId, { include: [{ model: Merchant, as: 'merchant' }] });
     if (!staff) {
       throw new AppError('Staff not found', 404, staffConstants.STAFF_ERROR_CODES.STAFF_NOT_FOUND);
     }
 
-    const requiredCategories = staffConstants.STAFF_TRAINING_TYPES.filter(
-      c => staffConstants.STAFF_TRAINING_CATEGORIES[c].required && staffConstants.STAFF_TRAINING_CATEGORIES[c].roles.includes(staff.position)
-    );
+    const roleConstants = {
+      stock_clerk: stockClerkConstants,
+      manager: managerConstants,
+      front_of_house: frontOfHouseConstants,
+      driver: driverConstants,
+      chef: chefConstants,
+      cashier: cashierConstants,
+      car_park_operative: carParkOperativeConstants,
+      butcher: butcherConstants,
+      barista: baristaConstants,
+      back_of_house: backOfHouseConstants,
+    };
 
-    const completedTrainings = await Training.findAll({
+    const staffRole = staff.staff_types[0];
+    const roleConfig = roleConstants[staffRole];
+    if (!roleConfig) {
+      throw new AppError('Invalid staff role', 400, staffConstants.STAFF_ERROR_CODES.INVALID_STAFF_TYPE);
+    }
+
+    const requiredCertifications = staffConstants.STAFF_PROFILE_CONSTANTS.REQUIRED_CERTIFICATIONS[staffRole] || [];
+    const completedTrainings = await Training.find juruall({
       where: {
         staff_id: staffId,
-        category: { [Op.in]: requiredCategories },
+        category: { [Op.in]: requiredCertifications },
         status: 'completed',
       },
     });
 
     const compliance = {
       staffId,
-      isCompliant: completedTrainings.length === requiredCategories.length,
-      missing: requiredCategories.filter(c => !completedTrainings.some(t => t.category === c)),
+      isCompliant: completedTrainings.length === requiredCertifications.length,
+      missing: requiredCertifications.filter(c => !completedTrainings.some(t => t.category === c)),
     };
-
-    if (compliance.isCompliant) {
-      const verification = await Verification.create({
-        user_id: staff.user_id,
-        method: 'training_compliance',
-        status: 'verified',
-        document_type: 'training_certificate',
-        document_url: `https://munch.com/verifications/${staffId}/training`,
-      });
-
-      await auditService.logAction({
-        userId: staffId,
-        role: staffConstants.STAFF_TYPES.includes(staff.position) ? staff.position : 'staff',
-        action: staffConstants.STAFF_AUDIT_ACTIONS.STAFF_COMPLIANCE_VERIFY,
-        details: { staffId, verificationId: verification.id, action: 'assess_compliance' },
-        ipAddress,
-      });
-    }
-
-    socketService.emit(`munch:training:${staffId}`, 'training:compliance_assessed', compliance);
 
     return compliance;
   } catch (error) {
     logger.error('Training compliance assessment failed', { error: error.message, staffId });
-    throw new AppError(`Compliance assessment failed: ${error.message}`, 500, staffConstants.STAFF_ERROR_CODES.ERROR);
+    throw handleServiceError('assessTrainingCompliance', error, staffConstants.STAFF_ERROR_CODES.TASK_ASSIGNMENT_FAILED);
   }
 }
 
 module.exports = {
-  distributeTraining,
+  markTrainingAsComplete,
+  accessTrainingModule,
   trackTrainingCompletion,
-  assessTrainingCompliance
+  assessTrainingCompliance,
 };

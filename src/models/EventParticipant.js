@@ -1,4 +1,3 @@
-// src/models/EventParticipant.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -6,7 +5,7 @@ module.exports = (sequelize, DataTypes) => {
   class EventParticipant extends Model {
     static associate(models) {
       this.belongsTo(models.Event, { foreignKey: 'event_id' });
-      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'participant' });
+      this.belongsTo(models.Customer, { foreignKey: 'user_id', as: 'participant' });
     }
   }
 
@@ -26,12 +25,12 @@ module.exports = (sequelize, DataTypes) => {
       user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: { model: 'users', key: 'id' },
+        references: { model: 'customers', key: 'id' },
       },
       status: {
-        type: DataTypes.ENUM('invited', 'accepted', 'declined'),
+        type: DataTypes.ENUM(['INVITED', 'ACCEPTED', 'DECLINED', 'CHECKED_IN', 'NO_SHOW']), // PARTICIPANT_STATUSES from meventsConstants
         allowNull: false,
-        defaultValue: 'invited',
+        defaultValue: 'INVITED',
       },
       created_at: {
         type: DataTypes.DATE,

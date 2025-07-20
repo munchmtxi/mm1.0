@@ -6,16 +6,16 @@
  * Defines wallet-related constants for staff, focusing on salary payments, delivery earnings,
  * and limited payout options tailored to operational roles within merchant businesses.
  *
- * Last Updated: June 25, 2025
+ * Last Updated: July 18, 2025
  */
-
 module.exports = {
   WALLET_CONSTANTS: {
     WALLET_TYPE: 'staff',
     PAYMENT_METHODS: ['bank_transfer', 'mobile_money', 'wallet_transfer', 'crypto'],
     PAYMENT_STATUSES: ['pending', 'completed', 'failed', 'rejected', 'disputed'],
     TRANSACTION_TYPES: [
-      'salary_payment', 'bonus_payment', 'withdrawal', 'delivery_earnings'
+      'salary_payment', 'bonus_payment', 'withdrawal', 'delivery_earnings',
+      'parking_earnings', 'stay_earnings', 'ticket_earnings'
     ],
     WALLET_SETTINGS: {
       MIN_PAYOUT_AMOUNT: 5,
@@ -30,7 +30,8 @@ module.exports = {
     FINANCIAL_ANALYTICS: {
       REPORT_PERIODS: ['weekly', 'monthly'],
       TRANSACTION_CATEGORIES: [
-        'salary_payment', 'bonus_payment', 'withdrawal', 'delivery_earnings'
+        'salary_payment', 'bonus_payment', 'withdrawal', 'delivery_earnings',
+        'parking_earnings', 'stay_earnings', 'ticket_earnings'
       ],
       METRICS: ['earnings_total', 'payout_frequency', 'transaction_success_rate']
     },
@@ -46,7 +47,8 @@ module.exports = {
     ],
     SUCCESS_MESSAGES: [
       'payment_processed', 'withdrawal_requested', 'salary_payment_received',
-      'delivery_earnings_added'
+      'delivery_earnings_added', 'parking_earnings_added', 'stay_earnings_added',
+      'ticket_earnings_added'
     ]
   }
 };

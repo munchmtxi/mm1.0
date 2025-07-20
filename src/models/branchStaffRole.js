@@ -1,5 +1,3 @@
-// src/models/branchStaffRole.js
-
 'use strict';
 const { Model } = require('sequelize');
 
@@ -21,8 +19,15 @@ module.exports = (sequelize, DataTypes) => {
         as: 'branch'
       });
 
-      // User association for role assignment tracking
-      this.belongsTo(models.User, { foreignKey: 'assigned_by', as: 'assignedBy' });
+      this.belongsTo(models.User, {
+        foreignKey: 'assigned_by',
+        as: 'assignedBy'
+      });
+
+      this.hasMany(models.BranchPermission, {
+        foreignKey: 'staff_role_id',
+        as: 'permissions'
+      });
     }
   }
 
@@ -68,13 +73,34 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         isValidPermissions(value) {
           if (!value) return;
-          // Ensure 'manage_merchant' permission and others from branchRole
-          const PERMISSIONS = ['manage_merchant', /* add others from branchRole.js */];
-          const invalidPermissions = value.filter(perm => !PERMISSIONS.includes(perm));
+          const allPermissions = Object.values({
+            ...require('./staff_roles').STAFF_ROLES.server.permissions,
+            ...require('./staff_roles').STAFF_ROLES.host.permissions,
+            ...require('./staff_roles').STAFF_ROLES.chef.permissions,
+            ...require('./staff_roles').STAFF_ROLES.manager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.butcher.permissions,
+            ...require('./staff_roles').STAFF_ROLES.barista.permissions,
+            ...require('./staff_roles').STAFF_ROLES.stock_clerk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.picker.permissions,
+            ...require('./staff_roles').STAFF_ROLES.cashier.permissions,
+            ...require('./staff_roles').STAFF_ROLES.driver.permissions,
+            ...require('./staff_roles').STAFF_ROLES.packager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_staff.permissions,
+            ...require('./staff_roles').STAFF_ROLES.consultant.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.back_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.car_park_operative.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_desk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.housekeeping.permissions,
+            ...require('./staff_roles').STAFF_ROLES.concierge.permissions,
+            ...require('./staff_roles').STAFF_ROLES.ticket_agent.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_coordinator.permissions
+          });
+          const invalidPermissions = value.filter(perm => !allPermissions.includes(perm));
           if (invalidPermissions.length > 0) {
             throw new Error(`Invalid permissions: ${invalidPermissions.join(', ')}`);
           }
-        },
+        }
       }
     },
     assigned_by: {
@@ -83,10 +109,13 @@ module.exports = (sequelize, DataTypes) => {
       references: {
         model: 'users',
         key: 'id'
-      }
+      },
+      onUpdate: 'CASCADE',
+      onDelete: 'RESTRICT'
     },
     is_active: {
       type: DataTypes.BOOLEAN,
+      allowNull: false,
       defaultValue: true
     },
     valid_from: {
@@ -117,18 +146,17 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       {
         unique: true,
-        fields: ['staff_id', 'branch_id', 'role_id'],
-        where: {
-          is_active: true
-        }
+        fields: ['staff_id', 'branch_id', 'role_id', 'is_active']
       },
       {
         fields: ['valid_from', 'valid_until']
+      },
+      {
+        fields: ['assigned_by']
       }
     ],
     hooks: {
       beforeCreate: async (staffRole) => {
-        // Ensure only one active role per staff per branch
         const existingRole = await BranchStaffRole.findOne({
           where: {
             staff_id: staffRole.staff_id,

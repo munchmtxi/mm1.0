@@ -5,11 +5,14 @@ module.exports = (sequelize, DataTypes) => {
   class EventService extends Model {
     static associate(models) {
       this.belongsTo(models.Event, { foreignKey: 'event_id' });
-      this.belongsTo(models.Booking, { foreignKey: 'service_id', constraints: false });
-      this.belongsTo(models.Order, { foreignKey: 'service_id', constraints: false });
-      this.belongsTo(models.Ride, { foreignKey: 'service_id', constraints: false });
-      this.belongsTo(models.InDiningOrder, { foreignKey: 'service_id', constraints: false });
-      this.belongsTo(models.ParkingBooking, { foreignKey: 'service_id', constraints: false });
+      this.belongsTo(models.Booking, { foreignKey: 'service_id', constraints: false }); // mtables
+      this.belongsTo(models.Order, { foreignKey: 'service_id', constraints: false }); // munch
+      this.belongsTo(models.Ride, { foreignKey: 'service_id', constraints: false }); // mtxi
+      this.belongsTo(models.InDiningOrder, { foreignKey: 'service_id', constraints: false }); // mtables
+      this.belongsTo(models.ParkingBooking, { foreignKey: 'service_id', constraints: false }); // mpark
+      this.belongsTo(models.TicketBooking, { foreignKey: 'service_id', constraints: false }); // mtickets
+      this.belongsTo(models.RoomBooking, { foreignKey: 'service_id', constraints: false }); // mstays
+      this.belongsTo(models.Payment, { foreignKey: 'payment_id', as: 'payment' });
     }
   }
 
@@ -31,7 +34,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       service_type: {
-        type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'in_dining', 'mpark'),
+        type: DataTypes.ENUM(['mtables', 'munch', 'mtxi', 'in_dining', 'mpark', 'mtickets', 'mstays']), // SERVICE_INTEGRATIONS from meventsConstants
         allowNull: false,
       },
       payment_id: {

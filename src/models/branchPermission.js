@@ -1,5 +1,3 @@
-// src/models/branchPermission.js
-
 'use strict';
 const { Model } = require('sequelize');
 
@@ -14,6 +12,11 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.MerchantBranch, {
         foreignKey: 'branch_id',
         as: 'branch'
+      });
+
+      this.belongsTo(models.User, {
+        foreignKey: 'granted_by',
+        as: 'granter'
       });
     }
   }
@@ -48,11 +51,31 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isValidPermission(value) {
-          const { PERMISSIONS } = require('./branchRole');
-          if (!Object.values(PERMISSIONS).includes(value)) {
-            throw new Error('Invalid permission');
-          }
+        isIn: {
+          args: [Object.values({
+            ...require('./staff_roles').STAFF_ROLES.server.permissions,
+            ...require('./staff_roles').STAFF_ROLES.host.permissions,
+            ...require('./staff_roles').STAFF_ROLES.chef.permissions,
+            ...require('./staff_roles').STAFF_ROLES.manager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.butcher.permissions,
+            ...require('./staff_roles').STAFF_ROLES.barista.permissions,
+            ...require('./staff_roles').STAFF_ROLES.stock_clerk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.picker.permissions,
+            ...require('./staff_roles').STAFF_ROLES.cashier.permissions,
+            ...require('./staff_roles').STAFF_ROLES.driver.permissions,
+            ...require('./staff_roles').STAFF_ROLES.packager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_staff.permissions,
+            ...require('./staff_roles').STAFF_ROLES.consultant.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.back_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.car_park_operative.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_desk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.housekeeping.permissions,
+            ...require('./staff_roles').STAFF_ROLES.concierge.permissions,
+            ...require('./staff_roles').STAFF_ROLES.ticket_agent.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_coordinator.permissions
+          })],
+          msg: 'Invalid permission'
         }
       }
     },
@@ -62,16 +85,19 @@ module.exports = (sequelize, DataTypes) => {
       references: {
         model: 'users',
         key: 'id'
-      }
+      },
+      onUpdate: 'CASCADE',
+      onDelete: 'RESTRICT'
     },
     is_active: {
       type: DataTypes.BOOLEAN,
+      allowNull: false,
       defaultValue: true
     },
     conditions: {
       type: DataTypes.JSONB,
       allowNull: true,
-      comment: 'Optional conditions/restrictions for the permission'
+      comment: 'Optional conditions/restrictions for the permission, e.g., time-based or service-specific restrictions'
     },
     created_at: {
       type: DataTypes.DATE,
@@ -91,14 +117,17 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true,
     indexes: [
       {
-        fields: ['staff_role_id', 'permission'],
+        fields: ['staff_role_id', 'permission', 'branch_id'],
         unique: true,
         where: {
           is_active: true
         }
       },
       {
-        fields: ['branch_id']
+        fields: ['branch_id', 'is_active']
+      },
+      {
+        fields: ['granted_by']
       }
     ]
   });

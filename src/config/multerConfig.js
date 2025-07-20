@@ -1,13 +1,14 @@
+// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\config\multerConfig.js
 'use strict';
 
 const multer = require('multer');
 const logger = require('@utils/logger');
 const path = require('path');
-const fs = require('fs').promises; // Add fs for directory creation
+const fs = require('fs').promises;
+const uploadConstants = require('@constants/common/uploadConstants');
 
-const uploadDir = path.join(__dirname, '..', 'uploads', 'temp'); // Use uppercase Uploads for consistency
+const uploadDir = path.join(__dirname, '..', 'Uploads', 'temp');
 
-// Ensure upload directory exists
 fs.mkdir(uploadDir, { recursive: true }).catch(err => {
   logger.error('Failed to create upload directory', { error: err.message });
 });
@@ -18,13 +19,13 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  logger.debug('Multer fileFilter called', { 
-    fieldname: file?.fieldname, 
-    originalname: file?.originalname, 
+  logger.debug('Multer fileFilter called', {
+    fieldname: file?.fieldname,
+    originalname: file?.originalname,
     mimetype: file?.mimetype,
     fileKeys: file ? Object.keys(file) : null,
     hasBuffer: !!file?.buffer,
-    bufferLength: file?.buffer?.length
+    bufferLength: file?.buffer?.length,
   });
 
   if (!file) {
@@ -32,7 +33,11 @@ const fileFilter = (req, file, cb) => {
     return cb(null, false);
   }
 
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+  const allowedMimeTypes = [
+    ...uploadConstants.MIME_TYPES.IMAGES,
+    ...uploadConstants.MIME_TYPES.VIDEOS,
+    ...uploadConstants.MIME_TYPES.DOCUMENTS,
+  ];
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -42,8 +47,8 @@ const fileFilter = (req, file, cb) => {
 };
 
 const limits = {
-  fileSize: 5 * 1024 * 1024,
-  files: 2,
+  fileSize: uploadConstants.UPLOAD_LIMITS.MAX_FILE_SIZE, // 10MB
+  files: Math.max(...Object.values(uploadConstants.UPLOAD_LIMITS.MAX_FILES)), // 10
 };
 
 const upload = multer({

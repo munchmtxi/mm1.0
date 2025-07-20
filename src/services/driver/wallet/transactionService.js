@@ -1,263 +1,200 @@
 'use strict';
 
 const { Wallet, WalletTransaction, Driver, sequelize } = require('@models');
-const driverConstants = require('@constants/driverConstants');
+const driverConstants = require('@constants/driver/driverConstants');
+const driverWalletConstants = require('@constants/driver/driverWalletConstants');
 const paymentConstants = require('@constants/common/paymentConstants');
-const { formatMessage } = require('@utils/localization');
-const AppError = require('@utils/AppError');
+const localizationConstants = require('@constants/common/localizationConstants');
+const { handleServiceError } = require('@utils/errorHandling');
+const { roundToDecimal } = require('@utils/mathUtils');
+const { getStartOfDay, subtractDaysFromDate } = require('@utils/dateTimeUtils');
 const logger = require('@utils/logger');
 const { Op } = require('sequelize');
 const { Parser } = require('json2csv');
 
-async function recordTransaction(driverId, taskId, amount, type, auditService, notificationService, socketService, pointService) {
-  if (!driverConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(type)) {
+async function recordTransaction(driverId, taskId, amount, type, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(type)) {
     throw new AppError('Invalid transaction type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
   const typeUpper = type.toUpperCase();
   const limits = paymentConstants.FINANCIAL_LIMITS.find(l => l.type === typeUpper);
   if (!limits || amount < limits.min || amount > limits.max) {
-    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw new AppError('Invalid amount', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   const transaction = await sequelize.transaction();
   try {
     const walletTransaction = await WalletTransaction.create({
       wallet_id: wallet.id,
       type,
-      amount,
-      currency: wallet.currency,
-      status: paymentConstants.TRANSACTION_STATUSES[1], // 'completed'
+      amount: roundToDecimal(amount, 2),
+      currency,
+      status: paymentConstants.TRANSACTION_STATUSES.COMPLETED,
       description: `Transaction for task #${taskId} (${type})`,
     }, { transaction });
 
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'RECORD_TRANSACTION',
-      details: { driverId, taskId, amount, type, transactionId: walletTransaction.id },
-      ipAddress: 'unknown',
-    }, { transaction });
-
-    await notificationService.sendNotification({
-      userId: driver.user_id,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES[type === 'tip' ? 'TIP_RECEIVED' : 'DEPOSIT_CONFIRMED'],
-      message: formatMessage(
-        'driver',
-        'wallet',
-        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-        `transaction.${type}_recorded`,
-        { amount, taskId, currency: wallet.currency }
-      ),
-      priority: paymentConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.MEDIUM,
-    }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === `transaction_${type}_recorded`).action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    }, { transaction });
-
-    socketService.emitToUser(driver.user_id, 'transaction:recorded', {
-      driverId,
-      taskId,
-      amount,
-      type,
-      transactionId: walletTransaction.id,
-    });
-
     await transaction.commit();
-    logger.info('Transaction recorded', { driverId, transactionId: walletTransaction.id });
+    logger.info('Transaction recorded', { driverId, transactionId: walletTransaction.id, currency });
     return {
       transactionId: walletTransaction.id,
       type,
-      amount: parseFloat(walletTransaction.amount),
-      currency: walletTransaction.currency,
+      amount: roundToDecimal(parseFloat(walletTransaction.amount), 2),
+      currency,
       status: walletTransaction.status,
       description: walletTransaction.description,
       created_at: walletTransaction.created_at,
     };
   } catch (error) {
     await transaction.rollback();
-    throw new AppError(`Record transaction failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('recordTransaction', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function getTransactionHistory(driverId, period, auditService, socketService, pointService) {
-  if (!paymentConstants.ANALYTICS_CONSTANTS.REPORT_PERIODS.includes(period)) {
+async function getTransactionHistory(driverId, period, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.FINANCIAL_ANALYTICS.REPORT_PERIODS.includes(period)) {
     throw new AppError('Invalid period', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
   }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   const dateFilter = {};
   const now = new Date();
-  if (period === 'daily') dateFilter[Op.gte] = new Date(now.setHours(0, 0, 0, 0));
-  else if (period === 'weekly') dateFilter[Op.gte] = new Date(now.setDate(now.getDate() - 7));
-  else if (period === 'monthly') dateFilter[Op.gte] = new Date(now.setMonth(now.getMonth() - 1));
-  else if (period === 'yearly') dateFilter[Op.gte] = new Date(now.setFullYear(now.getFullYear() - 1));
+  if (period === 'daily') dateFilter[Op.gte] = getStartOfDay(now);
+  else if (period === 'weekly') dateFilter[Op.gte] = subtractDaysFromDate(now, 7);
+  else if (period === 'monthly') dateFilter[Op.gte] = subtractDaysFromDate(now, 30);
+  else if (period === 'yearly') dateFilter[Op.gte] = subtractDaysFromDate(now, 365);
 
-  const transaction = await sequelize.transaction();
   try {
     const transactions = await WalletTransaction.findAll({
       where: { wallet_id: wallet.id, created_at: dateFilter },
       order: [['created_at', 'DESC']],
-      transaction,
     });
 
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'GET_TRANSACTION_HISTORY',
-      details: { driverId, period, transactionCount: transactions.length },
-      ipAddress: 'unknown',
-    }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'transaction_history_view').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    }, { transaction });
-
-    socketService.emitToUser(driver.user_id, 'transaction:history_viewed', {
-      driverId,
-      period,
-      transactionCount: transactions.length,
-    });
-
-    await transaction.commit();
-    logger.info('Transaction history retrieved', { driverId, period });
+    logger.info('Transaction history retrieved', { driverId, period, currency });
     return transactions.map(t => ({
       transactionId: t.id,
       type: t.type,
-      amount: parseFloat(t.amount),
-      currency: t.currency,
+      amount: roundToDecimal(parseFloat(t.amount), 2),
+      currency,
       status: t.status,
       description: t.description,
       created_at: t.created_at,
     }));
   } catch (error) {
-    await transaction.rollback();
-    throw new AppError(`Get transaction history failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('getTransactionHistory', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function reverseTransaction(driverId, transactionId, auditService, notificationService, socketService, pointService) {
+async function reverseTransaction(driverId, transactionId, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
   const transactionRecord = await WalletTransaction.findByPk(transactionId);
   if (!transactionRecord || transactionRecord.wallet_id !== wallet.id) {
-    throw new AppError('Transaction not found', 404, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw new AppError('Transaction not found', 404, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
-  if (transactionRecord.status === paymentConstants.TRANSACTION_STATUSES[3]) { // 'rejected'
-    throw new AppError('Transaction already refunded', 400, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+  if (transactionRecord.status === paymentConstants.TRANSACTION_STATUSES.REJECTED) {
+    throw new AppError('Transaction already refunded', 400, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 
   const transaction = await sequelize.transaction();
   try {
     const amount = parseFloat(transactionRecord.amount);
-    const newBalance = parseFloat(wallet.balance) - amount;
+    const newBalance = roundToDecimal(parseFloat(wallet.balance) - amount, 2);
     if (newBalance < paymentConstants.WALLET_SETTINGS.MIN_BALANCE) {
-      throw new AppError('Insufficient funds for refund', 400, paymentConstants.ERROR_CODES[1]); // 'INSUFFICIENT_FUNDS'
-    }
+      throw new AppError('Insufficient funds for refund', 400, paymentConstants.ERROR_CODES.INSUFFICIENT_FUNDS);
+  }
 
     await wallet.update({ balance: newBalance }, { transaction });
-    await transactionRecord.update({ status: paymentConstants.TRANSACTION_STATUSES[3] }, { transaction }); // 'rejected'
-
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'REVERSE_TRANSACTION',
-      details: { driverId, transactionId, amount },
-      ipAddress: 'unknown',
-    }, { transaction });
-
-    await notificationService.sendNotification({
-      userId: driver.user_id,
-      notificationType: paymentConstants.NOTIFICATION_CONSTANTS.NOTIFICATION_TYPES.SOCIAL_BILL_SPLIT_COMPLETED,
-      message: formatMessage(
-        'driver',
-        'wallet',
-        driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-        'transaction.reversed',
-        { transactionId, amount, currency: wallet.currency }
-      ),
-      priority: paymentConstants.NOTIFICATION_CONSTANTS.PRIORITY_LEVELS.HIGH,
-    }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'transaction_reversed').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    }, { transaction });
-
-    socketService.emitToUser(driver.user_id, 'transaction:reversed', {
-      driverId,
-      transactionId,
-      amount,
-    });
+    await transactionRecord.update({ status: paymentConstants.TRANSACTION_STATUSES.REJECTED }, { transaction });
 
     await transaction.commit();
-    logger.info('Transaction reversed', { driverId, transactionId });
+    logger.info('Transaction reversed', { driverId, transactionId, currency });
     return {
       transactionId,
-      amount,
+      amount: roundToDecimal(amount, 2),
       newBalance,
+      currency,
     };
   } catch (error) {
     await transaction.rollback();
-    throw new AppError(`Reverse transaction failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('reverseTransaction', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
-async function exportTransactionData(driverId, format, auditService, socketService, pointService) {
+async function exportTransactionData(driverId, format, currency = localizationConstants.DEFAULT_CURRENCY) {
   if (!['csv', 'json'].includes(format)) {
     throw new AppError('Invalid format', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
   }
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
 
   const driver = await Driver.findByPk(driverId);
-  if (!driver) throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
 
   const wallet = await Wallet.findOne({
-    where: { user_id: driver.user_id, type: paymentConstants.WALLET_SETTINGS.WALLET_TYPES[2] }, // 'driver'
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
   });
-  if (!wallet) throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES[0]); // 'WALLET_NOT_FOUND'
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
 
-  const transaction = await sequelize.transaction();
   try {
     const transactions = await WalletTransaction.findAll({
       where: { wallet_id: wallet.id },
       order: [['created_at', 'DESC']],
-      transaction,
     });
 
     const data = transactions.map(t => ({
       transactionId: t.id,
       type: t.type,
-      amount: parseFloat(t.amount),
-      currency: t.currency,
+      amount: roundToDecimal(parseFloat(t.amount), 2),
+      currency,
       status: t.status,
       description: t.description,
       created_at: t.created_at.toISOString(),
@@ -272,33 +209,101 @@ async function exportTransactionData(driverId, format, auditService, socketServi
       result = JSON.stringify(data, null, 2);
     }
 
-    await auditService.logAction({
-      userId: driverId.toString(),
-      role: 'driver',
-      action: 'EXPORT_TRANSACTIONS',
-      details: { driverId, format, transactionCount: transactions.length },
-      ipAddress: 'unknown',
-    }, { transaction });
-
-    await pointService.awardPoints({
-      userId: driver.user_id,
-      role: 'driver',
-      action: driverConstants.GAMIFICATION_CONSTANTS.DRIVER_ACTIONS.find(a => a.action === 'transaction_export').action,
-      languageCode: driver.user.preferred_language || driverConstants.DRIVER_SETTINGS.DEFAULT_LANGUAGE,
-    }, { transaction });
-
-    socketService.emitToUser(driver.user_id, 'transaction:exported', {
-      driverId,
-      format,
-      transactionCount: transactions.length,
-    });
-
-    await transaction.commit();
-    logger.info('Transaction data exported', { driverId, format });
+    logger.info('Transaction data exported', { driverId, format, currency });
     return result;
   } catch (error) {
-    await transaction.rollback();
-    throw new AppError(`Export transaction data failed: ${error.message}`, 500, paymentConstants.ERROR_CODES[3]); // 'TRANSACTION_FAILED'
+    throw handleServiceError('exportTransactionData', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
+}
+
+async function calculateTransactionFees(driverId, amount, type, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.TRANSACTION_TYPES.includes(type)) {
+    throw new AppError('Invalid transaction type', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
+
+  try {
+    const platformFee = roundToDecimal(amount * 0.1, 2); // Mock 10% platform fee
+    const processingFee = roundToDecimal(amount * 0.02, 2); // Mock 2% processing fee
+    const netAmount = roundToDecimal(amount - platformFee - processingFee, 2);
+
+    logger.info('Transaction fees calculated', { driverId, type, platformFee, processingFee, currency });
+    return {
+      driverId,
+      type,
+      amount,
+      platformFee,
+      processingFee,
+      netAmount,
+      currency,
+    };
+  } catch (error) {
+    throw handleServiceError('calculateTransactionFees', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
+  }
+}
+
+async function aggregateTransactionMetrics(driverId, period, currency = localizationConstants.DEFAULT_CURRENCY) {
+  if (!driverWalletConstants.WALLET_CONSTANTS.FINANCIAL_ANALYTICS.REPORT_PERIODS.includes(period)) {
+    throw new AppError('Invalid period', 400, driverConstants.ERROR_CODES.INVALID_DRIVER);
+  }
+  if (!localizationConstants.SUPPORTED_CURRENCIES.includes(currency)) {
+    throw new AppError('Invalid currency', 400, paymentConstants.ERROR_CODES.INVALID_CURRENCY);
+  }
+
+  const driver = await Driver.findByPk(driverId);
+  if (!driver) {
+    throw new AppError('Driver not found', 404, driverConstants.ERROR_CODES.DRIVER_NOT_FOUND);
+  }
+
+  const wallet = await Wallet.findOne({
+    where: { user_id: driver.user_id, type: driverWalletConstants.WALLET_CONSTANTS.WALLET_TYPE },
+  });
+  if (!wallet) {
+    throw new AppError('Wallet not found', 404, paymentConstants.ERROR_CODES.WALLET_NOT_FOUND);
+  }
+
+  const dateFilter = {};
+  const now = new Date();
+  if (period === 'daily') dateFilter[Op.gte] = getStartOfDay(now);
+  else if (period === 'weekly') dateFilter[Op.gte] = subtractDaysFromDate(now, 7);
+  else if (period === 'monthly') dateFilter[Op.gte] = subtractDaysFromDate(now, 30);
+  else if (period === 'yearly') dateFilter[Op.gte] = subtractDaysFromDate(now, 365);
+
+  try {
+    const transactions = await WalletTransaction.findAll({
+      where: { wallet_id: wallet.id, created_at: dateFilter },
+    });
+
+    const totalAmount = roundToDecimal(
+      transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0),
+      2
+    );
+    const transactionCount = transactions.length;
+    const successRate = transactionCount
+      ? roundToDecimal(
+          (transactions.filter(t => t.status === paymentConstants.TRANSACTION_STATUSES.COMPLETED).length / transactionCount) * 100,
+          2
+        )
+      : 0;
+
+    logger.info('Transaction metrics aggregated', { driverId, period, totalAmount, currency });
+    return {
+      driverId,
+      period,
+      totalAmount,
+      transactionCount,
+      successRate,
+      currency,
+    };
+  } catch (error) {
+    throw handleServiceError('aggregateTransactionMetrics', error, paymentConstants.ERROR_CODES.TRANSACTION_FAILED);
   }
 }
 
@@ -307,4 +312,6 @@ module.exports = {
   getTransactionHistory,
   reverseTransaction,
   exportTransactionData,
+  calculateTransactionFees,
+  aggregateTransactionMetrics,
 };

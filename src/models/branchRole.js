@@ -1,55 +1,5 @@
-// src/models/branchRole.js
-
 'use strict';
 const { Model } = require('sequelize');
-
-const BRANCH_PERMISSIONS = {
-  MANAGE_STAFF: 'manage_staff',
-  MANAGE_ORDERS: 'manage_orders',
-  MANAGE_INVENTORY: 'manage_inventory',
-  VIEW_ANALYTICS: 'view_analytics',
-  PROCESS_PAYMENTS: 'process_payments',
-  MANAGE_BOOKINGS: 'manage_bookings',
-  HANDLE_REFUNDS: 'handle_refunds',
-  VIEW_REPORTS: 'view_reports',
-  MANAGE_PROMOTIONS: 'manage_promotions',
-  MANAGE_TABLES: 'manage_tables'
-};
-
-const BRANCH_ROLES = {
-  BRANCH_MANAGER: {
-    name: 'branch_manager',
-    permissions: Object.values(BRANCH_PERMISSIONS),
-    description: 'Full access to branch management'
-  },
-  SHIFT_SUPERVISOR: {
-    name: 'shift_supervisor',
-    permissions: [
-      BRANCH_PERMISSIONS.MANAGE_ORDERS,
-      BRANCH_PERMISSIONS.MANAGE_INVENTORY,
-      BRANCH_PERMISSIONS.PROCESS_PAYMENTS,
-      BRANCH_PERMISSIONS.VIEW_REPORTS,
-      BRANCH_PERMISSIONS.MANAGE_TABLES
-    ],
-    description: 'Supervise daily operations and staff'
-  },
-  CASHIER: {
-    name: 'cashier',
-    permissions: [
-      BRANCH_PERMISSIONS.PROCESS_PAYMENTS,
-      BRANCH_PERMISSIONS.MANAGE_ORDERS
-    ],
-    description: 'Handle payments and basic orders'
-  },
-  INVENTORY_MANAGER: {
-    name: 'inventory_manager',
-    permissions: [
-      BRANCH_PERMISSIONS.MANAGE_INVENTORY,
-      BRANCH_PERMISSIONS.VIEW_REPORTS
-    ],
-    description: 'Manage branch inventory and stock'
-  }
-};
 
 module.exports = (sequelize, DataTypes) => {
   class BranchRole extends Model {
@@ -65,16 +15,14 @@ module.exports = (sequelize, DataTypes) => {
       });
     }
 
-    // Check if role has specific permission
     hasPermission(permission) {
-      const roleConfig = BRANCH_ROLES[this.name];
-      return roleConfig && roleConfig.permissions.includes(permission);
+      const roleConfig = require('./staff_roles').STAFF_ROLES[this.name];
+      return roleConfig?.permissions.includes(permission) || this.custom_permissions?.includes(permission);
     }
 
-    // Get all permissions for role
     getAllPermissions() {
-      const roleConfig = BRANCH_ROLES[this.name];
-      return roleConfig ? roleConfig.permissions : [];
+      const roleConfig = require('./staff_roles').STAFF_ROLES[this.name];
+      return [...new Set([...(roleConfig?.permissions || []), ...(this.custom_permissions || [])])];
     }
   }
 
@@ -98,7 +46,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        isIn: [Object.keys(BRANCH_ROLES)]
+        isIn: {
+          args: [require('./staff_roles').STAFF_CONSTANTS.DEFAULT_ROLES],
+          msg: 'Invalid role name'
+        }
       }
     },
     custom_permissions: {
@@ -107,11 +58,30 @@ module.exports = (sequelize, DataTypes) => {
       validate: {
         isValidPermissions(value) {
           if (!value) return;
-          
-          const invalidPermissions = value.filter(
-            perm => !Object.values(BRANCH_PERMISSIONS).includes(perm)
-          );
-          
+          const allPermissions = Object.values({
+            ...require('./staff_roles').STAFF_ROLES.server.permissions,
+            ...require('./staff_roles').STAFF_ROLES.host.permissions,
+            ...require('./staff_roles').STAFF_ROLES.chef.permissions,
+            ...require('./staff_roles').STAFF_ROLES.manager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.butcher.permissions,
+            ...require('./staff_roles').STAFF_ROLES.barista.permissions,
+            ...require('./staff_roles').STAFF_ROLES.stock_clerk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.picker.permissions,
+            ...require('./staff_roles').STAFF_ROLES.cashier.permissions,
+            ...require('./staff_roles').STAFF_ROLES.driver.permissions,
+            ...require('./staff_roles').STAFF_ROLES.packager.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_staff.permissions,
+            ...require('./staff_roles').STAFF_ROLES.consultant.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.back_of_house.permissions,
+            ...require('./staff_roles').STAFF_ROLES.car_park_operative.permissions,
+            ...require('./staff_roles').STAFF_ROLES.front_desk.permissions,
+            ...require('./staff_roles').STAFF_ROLES.housekeeping.permissions,
+            ...require('./staff_roles').STAFF_ROLES.concierge.permissions,
+            ...require('./staff_roles').STAFF_ROLES.ticket_agent.permissions,
+            ...require('./staff_roles').STAFF_ROLES.event_coordinator.permissions
+          });
+          const invalidPermissions = value.filter(perm => !allPermissions.includes(perm));
           if (invalidPermissions.length > 0) {
             throw new Error(`Invalid permissions: ${invalidPermissions.join(', ')}`);
           }
@@ -120,6 +90,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     is_active: {
       type: DataTypes.BOOLEAN,
+      allowNull: false,
       defaultValue: true
     },
     created_at: {
@@ -141,14 +112,13 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       {
         unique: true,
-        fields: ['branch_id', 'name']
+        fields: ['branch_id', 'name', 'is_active']
+      },
+      {
+        fields: ['name']
       }
     ]
   });
-
-  // Export constants with model
-  BranchRole.PERMISSIONS = BRANCH_PERMISSIONS;
-  BranchRole.ROLES = BRANCH_ROLES;
 
   return BranchRole;
 };

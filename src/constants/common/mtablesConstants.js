@@ -1,6 +1,24 @@
 'use strict';
 
 module.exports = {
+  TIPPING_CONSTANTS: {
+    TIPPABLE_ROLES: ['staff', 'merchant'],
+    TIP_METHODS: ['percentage', 'fixed_amount', 'custom'],
+    TIP_STATUSES: ['pending', 'completed', 'failed', 'refunded'],
+    TIP_SETTINGS: {
+      MIN_TIP_AMOUNT: 0.5,
+      MAX_TIP_AMOUNT: 100,
+      DEFAULT_TIP_PERCENTAGES: [10, 15, 20],
+      MAX_TIPS_PER_BOOKING: 2, // One per role (staff, merchant)
+      TIP_DISTRIBUTION: {
+        staff: 'direct',   // Tip goes directly to assigned staff
+        merchant: 'pooled' // Tip pooled for merchant staff
+      },
+      AUTO_TIP_SUGGESTION: true,          // AI-driven tip suggestions based on booking size/service
+      TIP_CURRENCY: 'same_as_booking',    // Matches booking currency
+      TRANSACTION_LIMIT_PER_DAY: 50
+    }
+  },
   TABLE_STATUSES: ['AVAILABLE', 'RESERVED', 'OCCUPIED', 'MAINTENANCE'],
   IN_DINING_STATUSES: ['CONFIRMED', 'PREPARING', 'SERVED', 'CLOSED'],
   BOOKING_TYPES: ['TABLE', 'PRIVATE_ROOM', 'EVENT_SPACE'],

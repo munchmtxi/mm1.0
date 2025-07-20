@@ -136,6 +136,24 @@ module.exports = {
       'PAYMENT_PROCESSED', 'REFUND_PROCESSED', 'DISPUTE_RESOLVED', 'EVENT_PARKING'
     ]
   },
+  TIPPING_CONSTANTS: {
+    TIPPABLE_ROLES: ['staff', 'merchant'],
+    TIP_METHODS: ['percentage', 'fixed_amount', 'custom'],
+    TIP_STATUSES: ['pending', 'completed', 'failed', 'refunded'],
+    TIP_SETTINGS: {
+      MIN_TIP_AMOUNT: 0.5,
+      MAX_TIP_AMOUNT: 50,
+      DEFAULT_TIP_PERCENTAGES: [5, 10, 15],
+      MAX_TIPS_PER_BOOKING: 2, // One per role (staff, merchant)
+      TIP_DISTRIBUTION: {
+        staff: 'direct',   // Tip goes directly to assigned staff
+        merchant: 'pooled' // Tip pooled for merchant staff
+      },
+      AUTO_TIP_SUGGESTION: true, // AI-driven tip suggestions based on parking duration/service
+      TIP_CURRENCY: 'same_as_booking', // Matches booking currency
+      TRANSACTION_LIMIT_PER_DAY: 50
+    }
+  },
   ERROR_TYPES: [
     'INVALID_PARKING_SPOT', 'PARKING_NOT_AVAILABLE', 'INVALID_BOOKING_DURATION', 'PAYMENT_FAILED',
     'CANCELLATION_NOT_ALLOWED', 'EXTENSION_NOT_ALLOWED', 'INVALID_LOCATION', 'INVALID_MERCHANT_TYPE',

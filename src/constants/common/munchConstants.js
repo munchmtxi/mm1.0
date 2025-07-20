@@ -52,6 +52,27 @@ module.exports = {
       AI_RECOMMENDATIONS: ['personalized_menu', 'dietary_suggestions', 'trending_items'],
       SOCIAL_SHARING: ['share_order', 'post_review', 'invite_friends']
     }
+
+    TIPPING_CONSTANTS: {
+    TIPPABLE_ROLES: ['staff', 'merchant', 'driver'],
+    TIP_METHODS: ['percentage', 'fixed_amount', 'custom'],
+    TIP_STATUSES: ['pending', 'completed', 'failed', 'refunded'],
+    TIP_SETTINGS: {
+      MIN_TIP_AMOUNT: 0.5,
+      MAX_TIP_AMOUNT: 100,
+      DEFAULT_TIP_PERCENTAGES: [5, 10, 15, 20],
+      MAX_TIPS_PER_ORDER: 3, // One per role (staff, merchant, driver)
+      TIP_DISTRIBUTION: {
+        staff: 'direct', // Tip goes directly to assigned staff
+        merchant: 'pooled', // Tip pooled for merchant staff
+        driver: 'direct' // Tip goes directly to assigned driver
+      },
+      AUTO_TIP_SUGGESTION: true, // AI-driven tip suggestions based on order size
+      TIP_CURRENCY: 'same_as_order', // Matches order currency
+      TRANSACTION_LIMIT_PER_DAY: 50
+    }
+  },
+  
   },
   GROUP_SETTINGS: {
     MAX_FRIENDS_PER_ORDER: 20,

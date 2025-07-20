@@ -5,25 +5,30 @@ const { Model, Op } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Address extends Model {
     static associate(models) {
-      // Association with Customer: using default_address_id now
+      // Association with Customer: using default_address_id
       Address.hasMany(models.Customer, {
         foreignKey: 'default_address_id',
         as: 'customers',
       });
-      // Association with Merchant: remains the same
+      // Association with Merchant
       Address.hasMany(models.Merchant, {
         foreignKey: 'address_id',
         as: 'merchants',
       });
-      // New association with MerchantBranch
+      // Association with MerchantBranch
       Address.hasMany(models.MerchantBranch, {
         foreignKey: 'address_id',
         as: 'branches',
       });
-      // New association with User
+      // Association with User
       Address.belongsTo(models.User, {
         foreignKey: 'user_id',
         as: 'user',
+      });
+      // New association with Country
+      Address.belongsTo(models.Country, {
+        foreignKey: 'country_id',
+        as: 'country',
       });
     }
   }
@@ -36,7 +41,17 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
-      // New field for user association
+      // New field for country association
+      country_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+          model: 'countries',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'RESTRICT',
+      },
       user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -121,6 +136,7 @@ module.exports = (sequelize, DataTypes) => {
       underscored: false,
       indexes: [
         { fields: ['user_id'], name: 'addresses_user_id_index' },
+        { fields: ['country_id'], name: 'addresses_country_id_index' }, // New index for country_id
         { fields: ['placeId'], name: 'addresses_place_id_index' },
         { fields: ['latitude', 'longitude'], name: 'addresses_coordinates_index' },
         { fields: ['validationStatus'], name: 'addresses_validation_status_index' },

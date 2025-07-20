@@ -1,109 +1,59 @@
 'use strict';
 
-const { Merchant, MerchantBranch, branchStaffRole } = require('@models');
+/**
+ * socket/rooms/merchantRooms.js
+ *
+ * Manages merchant and branch room joining for munch, mtickets, mtables, mstays, mpark, and mevents.
+ *
+ * Dependencies:
+ * - utils/logger.js
+ * - utils/AppError.js
+ * - models/Merchant.js
+ * - models/MerchantBranch.js
+ *
+ * Last Updated: July 19, 2025
+ */
+
 const logger = require('@utils/logger');
 const AppError = require('@utils/AppError');
+const Merchant = require('@models/Merchant');
+const MerchantBranch = require('@models/MerchantBranch');
 
-module.exports = {
-  // Room names
-  getMerchantRoom: (merchantId) => `merchant-${merchantId}`,
-  getBranchRoom: (branchId) => `branch-${branchId}`,
-  ADMIN_ROOM: 'role-admin',
-  getStaffRoom: (branchId) => `staff-${branchId}`,
+const getMerchantRoom = (merchantId, service) => `mm:merchant-${merchantId}:${service}`;
+const getBranchRoom = (branchId, service) => `mm:branch-${branchId}:${service}`;
 
-  /**
-   * Join merchant-specific rooms on connection
-   * @param {Socket} socket
-   */
-  async joinMerchantRooms(socket) {
-    try {
-      const { id: userId, role } = socket.user;
-
-      if (role !== 'merchant') {
-        throw new AppError('Unauthorized role for merchant rooms', 403, 'UNAUTHORIZED_ROLE');
-      }
-
-      const merchant = await Merchant.findOne({ where: { user_id: userId } });
-      if (!merchant) {
-        throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
-      }
-
-      // Join merchant room
-      const merchantRoom = this.getMerchantRoom(merchant.id);
-      await socket.join(merchantRoom);
-      logger.info('Socket joined merchant room', { userId, merchantId: merchant.id, socketId: socket.id });
-
-      // Join branch rooms
-      const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.id } });
-      for (const branch of branches) {
-        const branchRoom = this.getBranchRoom(branch.id);
-        await socket.join(branchRoom);
-        logger.info('Socket joined branch room', { userId, branchId: branch.id, socketId: socket.id });
-      }
-    } catch (error) {
-      logger.logErrorEvent('Failed to join merchant rooms', {
-        userId: socket.user.id,
-        error: error.message,
-      });
-      throw error;
+const joinMerchantRoom = async (io, socket, user) => {
+  try {
+    if (user.role !== 'merchant' || !user.merchant_id || !user.service) {
+      logger.warn('Merchant room join failed: Invalid user or service', { userId: user.id, service: user.service });
+      throw new AppError('Invalid user or service', 400, 'INVALID_MERCHANT_DATA');
     }
-  },
-
-  /**
-   * Leave merchant-specific rooms on disconnect
-   * @param {Socket} socket
-   */
-  async leaveMerchantRooms(socket) {
-    try {
-      const { id: userId } = socket.user;
-
-      const merchant = await Merchant.findOne({ where: { user_id: userId } });
-      if (merchant) {
-        const merchantRoom = this.getMerchantRoom(merchant.id);
-        await socket.leave(merchantRoom);
-        logger.info('Socket left merchant room', { userId, merchantId: merchant.id, socketId: socket.id });
-
-        const branches = await MerchantBranch.findAll({ where: { merchant_id: merchant.id } });
-        for (const branch of branches) {
-          const branchRoom = this.getBranchRoom(branch.id);
-          await socket.leave(branchRoom);
-          logger.info('Socket left branch room', { userId, branchId: branch.id, socketId: socket.id });
-        }
-      }
-    } catch (error) {
-      logger.logErrorEvent('Failed to leave merchant rooms', {
-        userId: socket.user.id,
-        error: error.message,
-      });
+    const validServices = ['munch', 'mtxi', 'mtickets', 'mtables', 'mstays', 'mpark', 'mevents'];
+    if (!validServices.includes(user.service)) {
+      logger.warn('Invalid service for merchant room', { userId: user.id, service: user.service });
+      throw new AppError('Invalid service', 400, 'INVALID_SERVICE');
     }
-  },
-
-  /**
-   * Join staff to branch rooms based on roles
-   * @param {Socket} socket
-   */
-  async joinStaffRooms(socket) {
-    try {
-      const { id: userId, role } = socket.user;
-
-      if (role !== 'staff') return;
-
-      const staffRoles = await branchStaffRole.findAll({ where: { user_id: userId } });
-      for (const staffRole of staffRoles) {
-        const branchRoom = this.getBranchRoom(staffRole.branch_id);
-        const staffRoom = this.getStaffRoom(staffRole.branch_id);
-        await socket.join([branchRoom, staffRoom]);
-        logger.info('Socket joined staff/branch rooms', {
-          userId,
-          branchId: staffRole.branch_id,
-          socketId: socket.id,
-        });
-      }
-    } catch (error) {
-      logger.logErrorEvent('Failed to join staff rooms', {
-        userId: socket.user.id,
-        error: error.message,
-      });
+    const merchant = await Merchant.findById(user.merchant_id);
+    if (!merchant) {
+      logger.warn('Merchant not found', { userId: user.id, merchantId: user.merchant_id });
+      throw new AppError('Merchant not found', 404, 'MERCHANT_NOT_FOUND');
     }
-  },
+    const room = getMerchantRoom(user.merchant_id, user.service);
+    await socket.join(room);
+    logger.info('Merchant joined room', { userId: user.id, room, service: user.service });
+
+    // Join branch rooms
+    const branches = await MerchantBranch.findAll({ where: { merchantId: user.merchant_id } });
+    for (const branch of branches) {
+      const branchRoom = getBranchRoom(branch.id, user.service);
+      await socket.join(branchRoom);
+      logger.info('Merchant joined branch room', { userId: user.id, branchRoom, service: user.service });
+    }
+    return { merchantRoom: room, branchRooms: branches.map(b => getBranchRoom(b.id, user.service)) };
+  } catch (error) {
+    logger.error('Failed to join merchant room', { userId: user.id, error: error.message, service: user.service });
+    throw error;
+  }
 };
+
+module.exports = { joinMerchantRoom, getMerchantRoom, getBranchRoom };
