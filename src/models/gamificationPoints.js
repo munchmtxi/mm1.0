@@ -1,10 +1,8 @@
-// src/models/GamificationPoints.js
 'use strict';
+const { Model } = require('sequelize');
+const { GAMIFICATION_ACTIONS } = require('../constants/gamificationConstants');
 
-const { Model, DataTypes } = require('sequelize');
-const gamificationConstants = require('@constants/gamificationConstants');
-
-module.exports = (sequelize) => {
+module.exports = (sequelize, DataTypes) => {
   class GamificationPoints extends Model {
     static associate(models) {
       this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
@@ -13,66 +11,63 @@ module.exports = (sequelize) => {
 
   GamificationPoints.init(
     {
-      id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true,
-        allowNull: false,
-      },
-      user_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        references: { model: 'users', key: 'id' },
-      },
-      role: {
-        type: DataTypes.STRING(50),
-        allowNull: false,
-      },
-      sub_role: {
-        type: DataTypes.STRING(50),
-        allowNull: true,
-      },
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false },
+      user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+      points: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 }, comment: 'Points awarded for action' },
       action: {
-        type: DataTypes.STRING(50),
+        type: DataTypes.STRING,
         allowNull: false,
         validate: {
-          isIn: [Object.values(gamificationConstants.CUSTOMER_ACTIONS).map(a => a.action).concat(['points_redeemed'])],
+          isIn: {
+            args: [Object.keys(GAMIFICATION_ACTIONS)],
+            msg: 'Invalid action type',
+          },
         },
+        comment: 'Action that triggered points (e.g., booking_created)',
       },
-      points: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        validate: {
-          min: -gamificationConstants.MAX_POINTS_PER_DAY,
-          max: gamificationConstants.MAX_POINTS_PER_DAY,
-        },
-      },
-      metadata: {
-        type: DataTypes.JSONB,
-        allowNull: true,
-        defaultValue: {},
-      },
-      created_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
-      updated_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
-      expires_at: {
-        type: DataTypes.DATE,
-        allowNull: false,
-      },
+      description: { type: DataTypes.TEXT, allowNull: true, comment: 'Description of the action' },
+      awarded_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      expires_at: { type: DataTypes.DATE, allowNull: true, comment: 'Expiration date for points' },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
     },
     {
       sequelize,
       modelName: 'GamificationPoints',
       tableName: 'gamification_points',
-      timestamps: true,
       underscored: true,
+      indexes: [{ fields: ['user_id', 'action', 'awarded_at'] }],
+      hooks: {
+        beforeCreate: async (point, options) => {
+          const user = await sequelize.models.User.findByPk(point.user_id, { transaction: options.transaction });
+          const actionConfig = GAMIFICATION_ACTIONS[point.action];
+          if (!user || !actionConfig || !user.opt_in_gamification) {
+            throw new Error('User not found, invalid action, or user opted out of gamification');
+          }
+          const userRoles = await sequelize.models.UserRole.findAll({
+            where: { user_id: point.user_id },
+            include: [{ model: sequelize.models.Role, attributes: ['name'] }],
+            transaction: options.transaction,
+          });
+          const userRoleNames = userRoles.map(ur => ur.Role.name);
+          userRoleNames.push(user.role); // Include primary role
+          if (!actionConfig.roles.some(role => userRoleNames.includes(role))) {
+            throw new Error('Invalid action for user role');
+          }
+        },
+        afterCreate: async (point, options) => {
+          const user = await sequelize.models.User.findByPk(point.user_id, { transaction: options.transaction });
+          if (user.opt_in_gamification) {
+            await user.increment('total_points', { by: point.points, transaction: options.transaction });
+          }
+        },
+        afterDestroy: async (point, options) => {
+          const user = await sequelize.models.User.findByPk(point.user_id, { transaction: options.transaction });
+          if (user.opt_in_gamification) {
+            await user.decrement('total_points', { by: point.points, transaction: options.transaction });
+          }
+        },
+      },
     }
   );
 

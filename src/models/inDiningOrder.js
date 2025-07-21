@@ -4,58 +4,20 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class InDiningOrder extends Model {
     static associate(models) {
-      // Link to Customer (optional but tied to Payment)
-      this.belongsTo(models.Customer, {
-        foreignKey: 'customer_id',
-        as: 'customer',
-      });
-
-      // Link to MerchantBranch (required for context and payment methods)
-      this.belongsTo(models.MerchantBranch, {
-        foreignKey: 'branch_id',
-        as: 'branch',
-      });
-
-      // Link to Table (required for in-dining)
-      this.belongsTo(models.Table, {
-        foreignKey: 'table_id',
-        as: 'table',
-      });
-
-      // Link to OrderItems for dish details
-      this.hasMany(models.OrderItems, {
-        foreignKey: 'order_id',
-        as: 'orderItems',
-        constraints: false, // Allows referencing InDiningOrder instead of Order
-      });
-
-      // Link to MenuInventory through OrderItems
+      this.belongsTo(models.Customer, { foreignKey: 'customer_id', as: 'customer' });
+      this.belongsTo(models.MerchantBranch, { foreignKey: 'branch_id', as: 'branch' });
+      this.belongsTo(models.Table, { foreignKey: 'table_id', as: 'table' });
+      this.hasMany(models.OrderItems, { foreignKey: 'order_id', as: 'orderItems', constraints: false });
       this.belongsToMany(models.MenuInventory, {
         through: models.OrderItems,
         foreignKey: 'order_id',
         otherKey: 'menu_item_id',
         as: 'menuItems',
       });
-
-      // Link to Payment (for payment processing)
-      this.hasOne(models.Payment, {
-        foreignKey: 'order_id',
-        as: 'payment',
-        constraints: false, // Allows referencing InDiningOrder
-      });
-
-      // Link to Notification (for status updates)
-      this.hasMany(models.Notification, {
-        foreignKey: 'order_id',
-        as: 'notifications',
-        constraints: false, // Allows referencing InDiningOrder
-      });
-
-      // Optional: Link to Staff (server assignment)
-      this.belongsTo(models.Staff, {
-        foreignKey: 'staff_id',
-        as: 'server',
-      });
+      this.hasOne(models.Payment, { foreignKey: 'in_dining_order_id', as: 'payment', constraints: false }); // Changed
+      this.hasMany(models.Notification, { foreignKey: 'order_id', as: 'notifications', constraints: false });
+      this.belongsTo(models.Staff, { foreignKey: 'staff_id', as: 'server' });
+      this.hasMany(models.Review, { foreignKey: 'service_id', as: 'reviews', constraints: false, scope: { service_type: 'in_dining_order' } });
     }
   }
 
@@ -68,7 +30,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     customer_id: {
       type: DataTypes.INTEGER,
-      allowNull: false, // Required by Payment model
+      allowNull: false,
       references: {
         model: 'customers',
         key: 'id',
@@ -145,13 +107,12 @@ module.exports = (sequelize, DataTypes) => {
     payment_status: {
       type: DataTypes.ENUM('pending', 'completed', 'failed', 'refunded', 'processing', 'verified', 'cancelled'),
       allowNull: false,
-      defaultValue: 'pending', // Align with broader enum
+      defaultValue: 'pending',
     },
     notes: {
       type: DataTypes.TEXT,
       allowNull: true,
     },
-    // Optional fields
     staff_id: {
       type: DataTypes.INTEGER,
       allowNull: true,

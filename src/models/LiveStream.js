@@ -38,6 +38,7 @@ module.exports = (sequelize, DataTypes) => {
     description: {
       type: DataTypes.TEXT,
       allowNull: true,
+      validate: { len: [0, 2000] }
     },
     privacy: {
       type: DataTypes.ENUM('public', 'friends', 'private'),
@@ -56,6 +57,13 @@ module.exports = (sequelize, DataTypes) => {
     expires_at: {
       type: DataTypes.DATE,
       allowNull: false,
+      validate: {
+        isFutureDate(value) {
+          if (new Date(value) <= new Date()) {
+            throw new Error('Expiration must be in the future');
+          }
+        }
+      }
     },
     created_at: {
       type: DataTypes.DATE,
@@ -81,6 +89,7 @@ module.exports = (sequelize, DataTypes) => {
       { fields: ['user_id'] },
       { fields: ['event_id'] },
       { fields: ['expires_at'] },
+      { fields: ['status'] }
     ],
   });
 

@@ -32,6 +32,13 @@ module.exports = (sequelize, DataTypes) => {
         },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
+        validate: {
+          notSameAsFriend(value) {
+            if (value === this.friend_id) {
+              throw new Error('User cannot connect to themselves');
+            }
+          }
+        }
       },
       friend_id: {
         type: DataTypes.INTEGER,

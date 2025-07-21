@@ -1,4 +1,3 @@
-// src/models/UserBadge.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -16,6 +15,9 @@ module.exports = (sequelize, DataTypes) => {
       user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
       badge_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: 'badges', key: 'id' } },
       awarded_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      points_earned: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, comment: 'Points earned for this badge' },
+      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
+      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
     },
     {
       sequelize,
@@ -23,6 +25,14 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'user_badges',
       underscored: true,
       indexes: [{ fields: ['user_id', 'badge_id'] }],
+      hooks: {
+        beforeCreate: async (userBadge, options) => {
+          const user = await sequelize.models.User.findByPk(userBadge.user_id, { transaction: options.transaction });
+          if (!user || !user.opt_in_gamification) {
+            throw new Error('User not found or opted out of gamification');
+          }
+        },
+      },
     }
   );
 

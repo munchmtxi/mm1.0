@@ -30,6 +30,16 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'rideId',
         as: 'feedback',
       });
+      this.hasMany(models.Review, {
+        foreignKey: 'service_id',
+        as: 'reviews',
+        constraints: false,
+        scope: { service_type: 'ride' },
+      });
+      this.hasMany(models.Tip, {
+        foreignKey: 'ride_id',
+        as: 'tips',
+      });
     }
   }
 
@@ -51,7 +61,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       driverId: {
         type: DataTypes.INTEGER,
-        allowNull: true, // Changed to nullable to match service logic
+        allowNull: true,
         references: { model: 'drivers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
@@ -70,7 +80,7 @@ module.exports = (sequelize, DataTypes) => {
         field: 'dropoff_location',
       },
       rideType: {
-        type: DataTypes.STRING(255),
+        type: DataTypes.ENUM('STANDARD', 'SHARED', 'PREMIUM', 'SCHEDULED'),
         allowNull: false,
         defaultValue: 'STANDARD',
         validate: {
@@ -82,64 +92,54 @@ module.exports = (sequelize, DataTypes) => {
         field: 'ride_type',
       },
       status: {
-        type: DataTypes.STRING(255),
+        type: DataTypes.ENUM('REQUESTED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'DELAYED'),
         allowNull: false,
         defaultValue: 'REQUESTED',
-        validate: {
-          isIn: {
-            args: [['REQUESTED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'DELAYED']],
-            msg: 'Status must be one of: REQUESTED, ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED, DELAYED',
-          },
-        },
         field: 'status',
       },
-      scheduledTime: {
-        type: DataTypes.FLOAT,
+      distance: {
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
-        field: 'scheduled_time',
+        validate: {
+          min: { args: 0.5, msg: 'Distance must be at least 0.5 km' },
+          max: { args: 150, msg: 'Distance cannot exceed 150 km' },
+        },
+        field: 'distance',
       },
-      paymentId: {
-        type: DataTypes.INTEGER,
+      baseFare: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        defaultValue: 5.0,
+        field: 'base_fare',
+      },
+      surgeMultiplier: {
+        type: DataTypes.DECIMAL(4, 2),
         allowNull: true,
-        references: { model: 'payments', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-        field: 'payment_id',
+        defaultValue: 1.0,
+        validate: {
+          max: { args: 3.0, msg: 'Surge multiplier cannot exceed 3.0' },
+        },
+        field: 'surge_multiplier',
       },
-      routeOptimizationId: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: 'route_optimizations', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-        field: 'route_optimization_id',
+      currency: {
+        type: DataTypes.ENUM('USD', 'EUR', 'GBP', 'CAD', 'AUD', 'MWK', 'TZS', 'KES', 'MZN', 'ZAR', 'INR', 'XAF', 'GHS', 'MXN', 'ERN'),
+        allowNull: false,
+        defaultValue: 'MWK',
+        field: 'currency',
       },
-      routeId: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: 'routes', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
-        field: 'route_id',
-      },
-      reference: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        field: 'reference',
-      },
-      created_at: {
+      createdAt: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
         field: 'created_at',
       },
-      updated_at: {
+      updatedAt: {
         type: DataTypes.DATE,
         allowNull: false,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
         field: 'updated_at',
       },
-      deleted_at: {
+      deletedAt: {
         type: DataTypes.DATE,
         allowNull: true,
         field: 'deleted_at',
@@ -151,14 +151,6 @@ module.exports = (sequelize, DataTypes) => {
       tableName: 'rides',
       underscored: true,
       paranoid: true,
-      indexes: [
-        { fields: ['customer_id'] },
-        { fields: ['driver_id'] },
-        { fields: ['payment_id'] },
-        { fields: ['route_optimization_id'] },
-        { fields: ['status'] },
-        { fields: ['reference'] },
-      ],
     }
   );
 

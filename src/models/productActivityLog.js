@@ -1,22 +1,41 @@
-// src/models/productActivityLog.js
+'use strict';
+const { Model } = require('sequelize');
+
 module.exports = (sequelize, DataTypes) => {
-  const ProductActivityLog = sequelize.define('ProductActivityLog', {
+  class ProductActivityLog extends Model {
+    static associate(models) {
+      this.belongsTo(models.MenuInventory, { foreignKey: 'productId', as: 'product' });
+      this.belongsTo(models.MerchantBranch, { foreignKey: 'merchantBranchId', as: 'branch' });
+      this.belongsTo(models.User, { foreignKey: 'actorId', as: 'actor' });
+      this.belongsTo(models.OrderItem, { foreignKey: 'orderItemId', as: 'orderItem' });
+    }
+  }
+
+  ProductActivityLog.init({
     id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
       primaryKey: true
     },
     productId: {
-      type: DataTypes.UUID,
-      allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: { model: 'menu_inventories', key: 'id' }
     },
     merchantBranchId: {
-      type: DataTypes.UUID,
-      allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: { model: 'merchant_branches', key: 'id' }
+    },
+    orderItemId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: { model: 'order_items', key: 'id' }
     },
     actorId: {
-      type: DataTypes.UUID,
-      allowNull: false
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: { model: 'users', key: 'id' }
     },
     actorType: {
       type: DataTypes.ENUM('merchant', 'staff', 'customer', 'system', 'admin'),
@@ -24,16 +43,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     actionType: {
       type: DataTypes.ENUM(
-        'created', 
-        'updated', 
-        'deleted', 
-        'price_changed', 
-        'description_updated', 
-        'stock_adjusted',
-        'added_to_cart',
-        'viewed',
-        'reviewed',
-        'rollback'
+        'created', 'updated', 'deleted', 'price_changed', 'description_updated',
+        'stock_adjusted', 'added_to_cart', 'viewed', 'reviewed', 'rollback'
       ),
       allowNull: false
     },
@@ -57,54 +68,24 @@ module.exports = (sequelize, DataTypes) => {
     timestamp: {
       type: DataTypes.DATE,
       allowNull: false,
-      defaultValue: DataTypes.NOW
+      defaultValue: sequelize.literal('CURRENT_TIMESTAMP')
     }
   }, {
+    sequelize,
+    modelName: 'ProductActivityLog',
+    tableName: 'product_activity_logs',
+    timestamps: true,
+    underscored: true,
     indexes: [
       { fields: ['productId'] },
       { fields: ['merchantBranchId'] },
+      { fields: ['orderItemId'] },
       { fields: ['actorId', 'actorType'] },
       { fields: ['actionType'] },
       { fields: ['timestamp'] },
       { fields: ['version'] }
     ]
   });
-
-  ProductActivityLog.associate = (models) => {
-    try {
-      // Use optional chaining to safely check models
-      // Use constraints: false to make relations optional
-      models.productDraft && ProductActivityLog.belongsTo(models.productDraft, {
-        foreignKey: 'productId',
-        as: 'product',
-        constraints: false
-      });
-      
-      models.merchantBranch && ProductActivityLog.belongsTo(models.merchantBranch, {
-        foreignKey: 'merchantBranchId',
-        as: 'branch',
-        constraints: false
-      });
-      
-      // Try users first, fall back to User if available
-      if (models.users) {
-        ProductActivityLog.belongsTo(models.users, {
-          foreignKey: 'actorId',
-          as: 'actor',
-          constraints: false
-        });
-      } else if (models.User) {
-        ProductActivityLog.belongsTo(models.User, {
-          foreignKey: 'actorId',
-          as: 'actor',
-          constraints: false
-        });
-      }
-    } catch (error) {
-      // Silent fail to allow the model to be loaded even if associations fail
-      console.error('ProductActivityLog association error:', error.message);
-    }
-  };
 
   return ProductActivityLog;
 };

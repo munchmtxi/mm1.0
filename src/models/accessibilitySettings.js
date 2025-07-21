@@ -3,11 +3,7 @@
 const { Model, DataTypes } = require('sequelize');
 const accessibilityConstants = require('@constants/accessibilityConstants');
 
-/**
- * AccessibilitySettings Model
- * Stores user accessibility settings, including theme, screen reader, font size, language, and more.
- * Associated with the User model for role-agnostic settings.
- * Last Updated: July 19, 2025
+
  */
 module.exports = (sequelize) => {
   class AccessibilitySettings extends Model {

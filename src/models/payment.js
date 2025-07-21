@@ -5,11 +5,15 @@ module.exports = (sequelize, DataTypes) => {
   class Payment extends Model {
     static associate(models) {
       this.belongsTo(models.Order, { foreignKey: 'order_id', as: 'order' });
+      this.belongsTo(models.InDiningOrder, { foreignKey: 'in_dining_order_id', as: 'inDiningOrder' });
+      this.belongsTo(models.Booking, { foreignKey: 'table_booking_id', as: 'booking' }); // Changed
+      this.hasOne(models.Ride, { foreignKey: 'paymentId', as: 'ride' });
+      this.belongsTo(models.ParkingBooking, { foreignKey: 'parking_booking_id', as: 'parkingBooking' }); // Changed
+      this.belongsTo(models.RoomBooking, { foreignKey: 'room_booking_id', as: 'roomBooking' }); // Changed
       this.belongsTo(models.Customer, { foreignKey: 'customer_id', as: 'customer' });
       this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
       this.belongsTo(models.Driver, { foreignKey: 'driver_id', as: 'driver' });
       this.belongsTo(models.Staff, { foreignKey: 'staff_id', as: 'staff' });
-      this.belongsTo(models.InDiningOrder, { foreignKey: 'in_dining_order_id', as: 'inDiningOrder' });
     }
   }
 
@@ -24,6 +28,37 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         validate: { isInt: { msg: 'Order ID must be an integer' } },
       },
+      in_dining_order_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'in_dining_orders', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+      },
+      table_booking_id: { // Changed
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'bookings', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+        validate: { isInt: { msg: 'Table Booking ID must be an integer' } },
+      },
+      parking_booking_id: { // Changed
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'parking_bookings', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+        validate: { isInt: { msg: 'Parking Booking ID must be an integer' } },
+      },
+      room_booking_id: { // Changed
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'room_bookings', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+        validate: { isInt: { msg: 'Room Booking ID must be an integer' } },
+      },
       customer_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
@@ -34,15 +69,16 @@ module.exports = (sequelize, DataTypes) => {
       },
       merchant_id: {
         type: DataTypes.INTEGER,
-        allowNull: true, // Changed to allow null for rides and events
+        allowNull: true,
         references: { model: 'merchants', key: 'id' },
         onUpdate: 'CASCADE',
-        onDelete: 'SET NULL', // Changed to SET NULL for consistency
+        onDelete: 'SET NULL',
         validate: { isInt: { msg: 'Merchant ID must be an integer' } },
       },
       driver_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
+ Website: https://x.ai/grok
         references: { model: 'drivers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
@@ -55,13 +91,6 @@ module.exports = (sequelize, DataTypes) => {
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL',
         validate: { isInt: { msg: 'Staff ID must be an integer' } },
-      },
-      in_dining_order_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: { model: 'in_dining_orders', key: 'id' },
-        onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
       },
       amount: {
         type: DataTypes.FLOAT,
@@ -102,21 +131,24 @@ module.exports = (sequelize, DataTypes) => {
       underscored: true,
       paranoid: true,
       validate: {
-        atLeastOneOrderReference() {
-          if (!this.order_id && !this.in_dining_order_id) {
-            throw new Error('At least one of Order ID or In-Dining Order ID is required unless merchant_id is null');
+        atLeastOneReference() {
+          if (!this.order_id && !this.in_dining_order_id && !this.table_booking_id && !this.parking_booking_id && !this.room_booking_id && !this.merchant_id) {
+            throw new Error('At least one of Order ID, In-Dining Order ID, Table Booking ID, Parking Booking ID, Room Booking ID, or Merchant ID is required');
           }
         },
       },
       indexes: [
         { fields: ['order_id'], name: 'payments_order_id_index' },
+        { fields: ['in_dining_order_id'], name: 'payments_in_dining_order_id_index' },
+        { fields: ['table_booking_id'], name: 'payments_table_booking_id_index' },
+        { fields: ['parking_booking_id'], name: 'payments_parking_booking_id_index' },
+        { fields: ['room_booking_id'], name: 'payments_room_booking_id_index' },
         { fields: ['customer_id'], name: 'payments_customer_id_index' },
         { fields: ['merchant_id'], name: 'payments_merchant_id_index' },
         { fields: ['driver_id'], name: 'payments_driver_id_index' },
         { unique: true, fields: ['transaction_id'], name: 'payments_transaction_id_unique' },
         { fields: ['bank_reference'], name: 'payments_bank_reference_index' },
         { fields: ['provider'], name: 'payments_provider_index' },
-        { fields: ['in_dining_order_id'], name: 'payments_in_dining_order_id_index' },
       ],
     }
   );

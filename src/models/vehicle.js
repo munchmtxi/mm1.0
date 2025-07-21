@@ -8,9 +8,9 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'driver_id',
         as: 'driver',
       });
-      models.Driver.hasMany(this, {
-        foreignKey: 'driver_id',
-        as: 'vehicles',
+      this.hasMany(models.VehicleMaintenance, {
+        foreignKey: 'vehicle_id',
+        as: 'maintenances',
       });
     }
   }
@@ -34,13 +34,13 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
       },
       type: {
-        type: DataTypes.ENUM('bicycle', 'motorbike', 'car', 'van', 'truck'),
+        type: DataTypes.ENUM('bicycle', 'motorbike', 'car', 'van', 'electric_scooter'),
         allowNull: false,
         validate: {
           notEmpty: { msg: 'Vehicle type is required' },
           isIn: {
-            args: [['bicycle', 'motorbike', 'car', 'van', 'truck']],
-            msg: 'Vehicle type must be one of bicycle, motorbike, car, van, truck',
+            args: [['bicycle', 'motorbike', 'car', 'van', 'electric_scooter']],
+            msg: 'Vehicle type must be one of bicycle, motorbike, car, van, electric_scooter',
           },
         },
       },
@@ -50,8 +50,18 @@ module.exports = (sequelize, DataTypes) => {
         validate: {
           notEmpty: { msg: 'Capacity is required' },
           isInt: { msg: 'Capacity must be an integer' },
-          min: { args: [1], msg: 'Capacity must be at least 1' },
+          min: { args: 1, msg: 'Capacity must be at least 1' },
+          max: { args: 4, msg: 'Capacity cannot exceed 4 passengers' },
         },
+      },
+      status: {
+        type: DataTypes.ENUM('active', 'inactive', 'under_maintenance', 'retired'),
+        allowNull: false,
+        defaultValue: 'active',
+      },
+      fuel_type: {
+        type: DataTypes.ENUM('petrol', 'diesel', 'electric', 'hybrid'),
+        allowNull: true,
       },
       created_at: {
         type: DataTypes.DATE,

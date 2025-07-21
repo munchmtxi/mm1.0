@@ -1,35 +1,14 @@
 'use strict';
-
 const { Model, Op } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Address extends Model {
     static associate(models) {
-      // Association with Customer: using default_address_id
-      Address.hasMany(models.Customer, {
-        foreignKey: 'default_address_id',
-        as: 'customers',
-      });
-      // Association with Merchant
-      Address.hasMany(models.Merchant, {
-        foreignKey: 'address_id',
-        as: 'merchants',
-      });
-      // Association with MerchantBranch
-      Address.hasMany(models.MerchantBranch, {
-        foreignKey: 'address_id',
-        as: 'branches',
-      });
-      // Association with User
-      Address.belongsTo(models.User, {
-        foreignKey: 'user_id',
-        as: 'user',
-      });
-      // New association with Country
-      Address.belongsTo(models.Country, {
-        foreignKey: 'country_id',
-        as: 'country',
-      });
+      this.hasMany(models.Customer, { foreignKey: 'default_address_id', as: 'customers' });
+      this.hasMany(models.MerchantBranch, { foreignKey: 'address_id', as: 'branches' });
+      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
+      this.hasOne(models.User, { foreignKey: 'address_id', as: 'default_user' }); // Added
+      this.belongsTo(models.Country, { foreignKey: 'country_id', as: 'country' });
     }
   }
 
@@ -41,24 +20,17 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
-      // New field for country association
       country_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'countries',
-          key: 'id',
-        },
+        references: { model: 'countries', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'RESTRICT',
       },
       user_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'users',
-          key: 'id',
-        },
+        references: { model: 'users', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
@@ -84,7 +56,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       countryCode: {
-        type: DataTypes.STRING,
+        type: DataTypes.ENUM('US', 'CA', 'GB', 'MW', 'TZ', 'KE', 'MZ', 'ZA', 'IN', 'CM', 'GH', 'MX', 'ER'),
         allowNull: true,
       },
       validatedAt: {
@@ -136,7 +108,7 @@ module.exports = (sequelize, DataTypes) => {
       underscored: false,
       indexes: [
         { fields: ['user_id'], name: 'addresses_user_id_index' },
-        { fields: ['country_id'], name: 'addresses_country_id_index' }, // New index for country_id
+        { fields: ['country_id'], name: 'addresses_country_id_index' },
         { fields: ['placeId'], name: 'addresses_place_id_index' },
         { fields: ['latitude', 'longitude'], name: 'addresses_coordinates_index' },
         { fields: ['validationStatus'], name: 'addresses_validation_status_index' },

@@ -10,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.Ride, { foreignKey: 'service_id', as: 'ride', constraints: false });
       this.belongsTo(models.Event, { foreignKey: 'service_id', as: 'event', constraints: false });
       this.belongsTo(models.ParkingBooking, { foreignKey: 'service_id', as: 'parking', constraints: false });
+      this.belongsTo(models.RoomBooking, { foreignKey: 'service_id', as: 'roomBooking', constraints: false }); // Added
     }
   }
 
@@ -31,9 +32,16 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSONB,
       allowNull: false,
       comment: 'Stores media type and URL, e.g., { type: "image", url: "url" }',
+      validate: {
+        isValidMedia(value) {
+          if (!value.type || !value.url) {
+            throw new Error('Media must include type and URL');
+          }
+        }
+      }
     },
     service_type: {
-      type: DataTypes.ENUM('booking', 'order', 'ride', 'event', 'parking'),
+      type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'mevents', 'mpark', 'mstays', 'mtickets'),
       allowNull: true,
     },
     service_id: {
@@ -43,6 +51,13 @@ module.exports = (sequelize, DataTypes) => {
     expires_at: {
       type: DataTypes.DATE,
       allowNull: false,
+      validate: {
+        isFutureDate(value) {
+          if (new Date(value) <= new Date()) {
+            throw new Error('Expiration must be in the future');
+          }
+        }
+      }
     },
     created_at: {
       type: DataTypes.DATE,

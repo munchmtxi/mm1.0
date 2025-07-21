@@ -4,20 +4,9 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class InventoryBulkUpdate extends Model {
     static associate(models) {
-      this.belongsTo(models.Merchant, {
-        foreignKey: 'merchant_id',
-        as: 'merchant'
-      });
-      
-      this.belongsTo(models.MerchantBranch, {
-        foreignKey: 'branch_id',
-        as: 'branch'
-      });
-      
-      this.belongsTo(models.User, {
-        foreignKey: 'performed_by',
-        as: 'performer'
-      });
+      this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
+      this.belongsTo(models.MerchantBranch, { foreignKey: 'branch_id', as: 'branch' });
+      this.belongsTo(models.User, { foreignKey: 'performed_by', as: 'performer' });
     }
   }
 
@@ -30,23 +19,16 @@ module.exports = (sequelize, DataTypes) => {
     merchant_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: 'merchants',
-        key: 'id'
-      }
+      references: { model: 'merchants', key: 'id' }
     },
     branch_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
-      references: {
-        model: 'merchant_branches',
-        key: 'id'
-      }
+      references: { model: 'merchant_branches', key: 'id' }
     },
     file_path: {
       type: DataTypes.STRING,
-      allowNull: true,
-      comment: 'Path to the uploaded file if any'
+      allowNull: true
     },
     file_type: {
       type: DataTypes.ENUM('csv', 'excel', 'json', 'manual'),
@@ -78,10 +60,7 @@ module.exports = (sequelize, DataTypes) => {
     performed_by: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: 'users',
-        key: 'id'
-      }
+      references: { model: 'users', key: 'id' }
     },
     created_at: {
       type: DataTypes.DATE,
@@ -100,18 +79,10 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true,
     underscored: true,
     indexes: [
-      {
-        fields: ['merchant_id']
-      },
-      {
-        fields: ['branch_id']
-      },
-      {
-        fields: ['performed_by']
-      },
-      {
-        fields: ['created_at']
-      }
+      { fields: ['merchant_id'] },
+      { fields: ['branch_id'] },
+      { fields: ['performed_by'] },
+      { fields: ['created_at'] }
     ]
   });
 

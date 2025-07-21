@@ -4,14 +4,8 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class ProductAuditLog extends Model {
     static associate(models) {
-      this.belongsTo(models.MenuInventory, {
-        foreignKey: 'menu_item_id',
-        as: 'menuItem'
-      });
-      this.belongsTo(models.User, {
-        foreignKey: 'user_id',
-        as: 'user'
-      });
+      this.belongsTo(models.MenuInventory, { foreignKey: 'menu_item_id', as: 'menuItem' });
+      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
     }
   }
 
@@ -24,22 +18,26 @@ module.exports = (sequelize, DataTypes) => {
     menu_item_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: 'menu_inventories',
-        key: 'id'
-      }
+      references: { model: 'menu_inventories', key: 'id' }
     },
     user_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: 'users',
-        key: 'id'
-      }
+      references: { model: 'users', key: 'id' }
     },
     action: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      validate: {
+        async serviceSpecificAction(value) {
+          const item = await sequelize.models.MenuInventory.findByPk(this.menu_item_id);
+          if (!item) throw new Error('Invalid menu_item_id');
+          const prefix = item.service_type;
+          if (!value.startsWith(prefix)) {
+            throw new Error(`Action must start with service type prefix: ${prefix}`);
+          }
+        }
+      }
     },
     changes: {
       type: DataTypes.JSONB,
@@ -58,12 +56,8 @@ module.exports = (sequelize, DataTypes) => {
     updatedAt: false,
     underscored: true,
     indexes: [
-      {
-        fields: ['menu_item_id']
-      },
-      {
-        fields: ['user_id']
-      }
+      { fields: ['menu_item_id'] },
+      { fields: ['user_id'] }
     ]
   });
 

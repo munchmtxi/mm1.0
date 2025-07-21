@@ -1,22 +1,11 @@
+// PrivacySettings.js
 'use strict';
-
 const { Model, DataTypes } = require('sequelize');
 
-/**
- * PrivacySettings Model
- * Stores customer privacy settings, such as data anonymization preferences.
- * Associated with the User model for customer-specific settings.
- * Last Updated: May 18, 2025
- */
 module.exports = (sequelize) => {
   class PrivacySettings extends Model {
     static associate(models) {
-      // Define association with User model
-      PrivacySettings.belongsTo(models.User, {
-        foreignKey: 'user_id',
-        as: 'user',
-        onDelete: 'CASCADE',
-      });
+      this.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
     }
   }
 
@@ -32,20 +21,59 @@ module.exports = (sequelize) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         unique: true,
-        references: {
-          model: 'Users',
-          key: 'id',
+        references: { model: 'users', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      user_type: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'customer', // From Roles.js allowed roles
+        validate: {
+          isIn: {
+            args: [['admin', 'customer', 'merchant', 'staff', 'driver']],
+            msg: 'Invalid user type', // Align with Roles.js
+          },
         },
       },
-      anonymizeLocation: {
-        type: DataTypes.BOOLEAN,
+      data_sharing_consent: {
+        type: DataTypes.ENUM('explicit', 'implicit', 'opt_in', 'opt_out'),
         allowNull: false,
-        defaultValue: false,
+        defaultValue: 'opt_out', // From munchConstants (implied consent methods)
+        validate: {
+          isIn: [['explicit', 'implicit', 'opt_in', 'opt_out']],
+        },
       },
-      anonymizeProfile: {
+      profile_visibility: {
+        type: DataTypes.ENUM('public', 'friends', 'private'), // From socialConstants.SOCIAL_SETTINGS.POST_PRIVACY
+        allowNull: false,
+        defaultValue: 'private',
+      },
+      activity_tracking: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
-        defaultValue: false,
+        defaultValue: true,
+        comment: 'Allow tracking of user activity for analytics',
+      },
+      data_retention_days: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 730, // From mticketsConstants/mparkConstants/mstaysConstants/meventsConstants.ANALYTICS_CONFIG.DATA_RETENTION_DAYS
+        validate: { min: 90, max: 730 },
+      },
+      social_permissions: {
+        type: DataTypes.ARRAY(DataTypes.STRING),
+        allowNull: true,
+        defaultValue: [],
+        validate: {
+          isIn: [
+            [
+              'view_profile', 'view_bookings', 'view_orders', 'view_rides', 'view_events',
+              'view_parking', 'view_stays', 'view_tickets', 'split_payment', 'send_invites', 'share_posts',
+            ],
+          ], // From socialConstants.SOCIAL_SETTINGS.PERMISSION_TYPES
+        },
+        comment: 'Permissions for social interactions',
       },
       created_at: {
         type: DataTypes.DATE,
@@ -57,20 +85,19 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
       },
+      deleted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: 'PrivacySettings',
-      tableName: 'PrivacySettings',
+      tableName: 'privacy_settings',
+      underscored: true,
+      paranoid: true,
       timestamps: true,
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-      indexes: [
-        {
-          unique: true,
-          fields: ['user_id'],
-        },
-      ],
+      indexes: [{ unique: true, fields: ['user_id'] }],
     }
   );
 

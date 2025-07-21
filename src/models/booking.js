@@ -1,69 +1,50 @@
-// src/models/Booking.js
 'use strict';
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Booking extends Model {
     static associate(models) {
-      // Link to Customer (required, as bookings are made by customers)
       this.belongsTo(models.Customer, {
         foreignKey: 'customer_id',
         as: 'customer',
       });
-
-      // Link to Merchant (required, as bookings are tied to a merchant)
       this.belongsTo(models.Merchant, {
         foreignKey: 'merchant_id',
         as: 'merchant',
       });
-
-      // Link to MerchantBranch (required, as bookings are specific to a branch)
       this.belongsTo(models.MerchantBranch, {
         foreignKey: 'branch_id',
         as: 'branch',
       });
-
-      // Link to Table (optional, as table might be assigned later)
       this.belongsTo(models.Table, {
         foreignKey: 'table_id',
         as: 'table',
       });
-
-      // Link to BookingPartyMember (for group bookings)
       this.hasMany(models.BookingPartyMember, {
         foreignKey: 'booking_id',
         as: 'partyMembers',
       });
-
-      // Link to BookingTimeSlot (optional, for time slot-specific bookings)
       this.belongsTo(models.BookingTimeSlot, {
         foreignKey: 'time_slot_id',
         as: 'timeSlot',
       });
-
-      // Link to InDiningOrder (optional, for associated dining orders)
       this.hasMany(models.InDiningOrder, {
         foreignKey: 'booking_id',
         as: 'inDiningOrders',
       });
-
-      // Link to Notification (for booking-related notifications)
       this.hasMany(models.Notification, {
         foreignKey: 'booking_id',
         as: 'notifications',
       });
-
-      // Link to Payment (optional, for booking-related payments)
       this.hasMany(models.Payment, {
         foreignKey: 'booking_id',
         as: 'payments',
       });
-
-      // Optional: Link to Staff (for assigned staff, e.g., server or host)
       this.belongsTo(models.Staff, {
         foreignKey: 'assigned_staff_id',
         as: 'assignedStaff',
       });
+      this.hasMany(models.Review, { foreignKey: 'service_id', as: 'reviews', constraints: false, scope: { service_type: 'booking' } });
     }
   }
 
@@ -282,7 +263,6 @@ module.exports = (sequelize, DataTypes) => {
       ],
       hooks: {
         beforeValidate: (booking, options) => {
-          // Ensure end_time is after start_time
           if (booking.start_time && booking.end_time && booking.start_time >= booking.end_time) {
             throw new Error('End time must be after start time');
           }
@@ -295,7 +275,6 @@ module.exports = (sequelize, DataTypes) => {
             branch_id: booking.branch_id,
           });
           try {
-            // Check for blackout date conflicts
             const blackoutDate = await sequelize.models.BookingBlackoutDate.findOne({
               where: {
                 branch_id: booking.branch_id,
@@ -310,8 +289,6 @@ module.exports = (sequelize, DataTypes) => {
               });
               throw new Error('Booking date conflicts with a blackout date');
             }
-
-            // Validate time slot if assigned
             if (booking.time_slot_id) {
               const timeSlot = await sequelize.models.BookingTimeSlot.findByPk(booking.time_slot_id, {
                 transaction: options.transaction,

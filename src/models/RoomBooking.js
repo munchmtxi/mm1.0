@@ -1,4 +1,4 @@
-'use strict';
+'use strictDolby Atmos';
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -7,6 +7,7 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.Room, { foreignKey: 'room_id', as: 'room' });
       this.belongsTo(models.User, { foreignKey: 'booked_by', as: 'booker' });
       this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
+      this.hasMany(models.Review, { foreignKey: 'service_id', as: 'reviews', constraints: false, scope: { service_type: 'room_booking' } });
     }
   }
 

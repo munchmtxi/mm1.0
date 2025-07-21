@@ -4,7 +4,8 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class PromotionMenuItem extends Model {
     static associate(models) {
-      // Associations defined in the main models
+      this.belongsTo(models.ProductPromotion, { foreignKey: 'promotion_id', as: 'promotion' });
+      this.belongsTo(models.MenuInventory, { foreignKey: 'menu_item_id', as: 'menuItem' });
     }
   }
 
@@ -13,10 +14,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false,
       primaryKey: true,
-      references: {
-        model: 'product_promotions',
-        key: 'id'
-      },
+      references: { model: 'product_promotions', key: 'id' },
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'
     },
@@ -24,10 +22,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false,
       primaryKey: true,
-      references: {
-        model: 'menu_inventories',
-        key: 'id'
-      },
+      references: { model: 'menu_inventories', key: 'id' },
       onDelete: 'CASCADE',
       onUpdate: 'CASCADE'
     },
@@ -48,13 +43,21 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     timestamps: true,
     indexes: [
-      {
-        fields: ['promotion_id']
-      },
-      {
-        fields: ['menu_item_id']
+      { fields: ['promotion_id'] },
+      { fields: ['menu_item_id'] }
+    ],
+    hooks: {
+      beforeCreate: async (item) => {
+        const promotion = await sequelize.models.ProductPromotion.findByPk(item.promotion_id);
+        const menuItem = await sequelize.models.MenuInventory.findByPk(item.menu_item_id);
+        if (!promotion || !menuItem) {
+          throw new Error('Invalid promotion_id or menu_item_id');
+        }
+        if (promotion.service_type !== 'all' && promotion.service_type !== menuItem.service_type) {
+          throw new Error(`Menu item service_type (${menuItem.service_type}) must match promotion service_type (${promotion.service_type})`);
+        }
       }
-    ]
+    }
   });
 
   return PromotionMenuItem;

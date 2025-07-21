@@ -1,4 +1,3 @@
-// src/models/Badge.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -14,8 +13,12 @@ module.exports = (sequelize, DataTypes) => {
       id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false },
       name: { type: DataTypes.STRING, allowNull: false, unique: true },
       description: { type: DataTypes.TEXT, allowNull: true },
-      criteria: { type: DataTypes.JSONB, allowNull: false }, // e.g., { action: 'check_in', count: 10 }
+      criteria: { type: DataTypes.JSONB, allowNull: false }, // e.g., { action: 'booking_created', count: 10, points: 100 }
+      points_required: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+      level: { type: DataTypes.ENUM('Explorer', 'Trailblazer', 'Master', 'Legend'), allowNull: true },
+      roles: { type: DataTypes.ARRAY(DataTypes.STRING), allowNull: true, comment: 'Roles eligible for badge (e.g., ["customer", "server"])' },
       image_url: { type: DataTypes.STRING, allowNull: true },
+      is_active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
       created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
       updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: sequelize.literal('CURRENT_TIMESTAMP') },
     },
@@ -24,6 +27,7 @@ module.exports = (sequelize, DataTypes) => {
       modelName: 'Badge',
       tableName: 'badges',
       underscored: true,
+      indexes: [{ fields: ['level', 'is_active'] }],
     }
   );
 

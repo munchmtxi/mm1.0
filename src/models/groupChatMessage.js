@@ -1,4 +1,3 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\models\groupChatMessage.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -7,6 +6,8 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       this.belongsTo(models.GroupChat, { foreignKey: 'chat_id', as: 'chat' });
       this.belongsTo(models.User, { foreignKey: 'sender_id', as: 'sender' });
+      this.belongsTo(models.Customer, { foreignKey: 'sender_id', as: 'sender_customer', targetKey: 'user_id' });
+      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications', sourceKey: 'sender_id' });
     }
   }
 
@@ -36,6 +37,21 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       validate: { notEmpty: { msg: 'Message content is required' } },
     },
+    media: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      comment: 'Stores media type and URL, e.g., { type: "image", url: "url", size_mb: 10 }',
+      validate: {
+        isValidMedia(value) {
+          if (value && !['IMAGE', 'VIDEO'].includes(value.type)) {
+            throw new Error('INVALID_STORY');
+          }
+          if (value && value.size_mb && value.size_mb > 100) {
+            throw new Error('Media size exceeds 100 MB');
+          }
+        },
+      },
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -59,6 +75,7 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       { fields: ['chat_id'] },
       { fields: ['sender_id'] },
+      { fields: ['created_at'] },
     ],
   });
 

@@ -26,7 +26,7 @@ module.exports = {
       MAX_MESSAGES_PER_HOUR: 200,
       ROLES: ['ADMIN', 'MEMBER'],
       MAX_MEDIA_SIZE_MB: 100,
-      SUPPORTED_PLATFORMS: ['in_app', 'whatsapp', 'telegram']
+      SUPPORTED_PLATFORMS: ['in_app', 'whatsapp', 'telegram', 'facebook', 'instagram', 'x', 'snapchat', 'tiktok']
     },
     INVITE_METHODS: ['APP', 'SMS', 'EMAIL', 'WHATSAPP', 'TELEGRAM'],
     BILL_SPLIT_TYPES: ['EQUAL', 'CUSTOM', 'ITEMIZED', 'PERCENTAGE', 'SPONSOR_CONTRIBUTION', 'CROWDFUNDED'],

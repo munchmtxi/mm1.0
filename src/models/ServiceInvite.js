@@ -36,7 +36,7 @@ module.exports = (sequelize, DataTypes) => {
       onDelete: 'CASCADE',
     },
     service_type: {
-      type: DataTypes.ENUM('booking', 'order', 'ride', 'event', 'parking'),
+      type: DataTypes.ENUM('mtables', 'munch', 'mtxi', 'mevents', 'mpark', 'mstays', 'mtickets'),
       allowNull: false,
     },
     service_id: {
@@ -78,6 +78,16 @@ module.exports = (sequelize, DataTypes) => {
       { fields: ['friend_id'] },
       { fields: ['service_type', 'service_id'] },
     ],
+    hooks: {
+      afterSave: async (invite, options) => {
+        const logger = require('@utils/logger');
+        logger.info('ServiceInvite saved', { id: invite.id, service_type: invite.service_type });
+        const friend = await sequelize.models.User.findByPk(invite.friend_id, { transaction: options.transaction });
+        if (!friend) {
+          throw new Error('Friend ID does not exist');
+        }
+      }
+    }
   });
 
   return ServiceInvite;

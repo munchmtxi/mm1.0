@@ -4,6 +4,7 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Country extends Model {
     static associate(models) {
+      this.hasMany(models.User, { foreignKey: 'country_id', as: 'users' }); // Added
       this.hasMany(models.Customer, { foreignKey: 'country_id', as: 'customers' });
       this.hasMany(models.Driver, { foreignKey: 'country_id', as: 'drivers' });
       this.hasMany(models.Merchant, { foreignKey: 'country_id', as: 'merchants' });
@@ -12,7 +13,6 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.Bank, { foreignKey: 'country_id', as: 'banks' });
       this.hasMany(models.PaymentPartner, { foreignKey: 'country_id', as: 'paymentPartners' });
       this.hasMany(models.TaxRecord, { foreignKey: 'country_id', as: 'taxRecords' });
-      // Associate Country with DeliveryHotspot (one-to-many)
       this.hasMany(models.DeliveryHotspot, { foreignKey: 'country_id', as: 'deliveryHotspots' });
     }
   }

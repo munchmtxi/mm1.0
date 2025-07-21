@@ -164,7 +164,7 @@ module.exports = {
     },
     BILL_SPLIT_TYPES: ['equal', 'custom', 'itemized', 'percentage', 'sponsor_contribution'],
     MAX_SPLIT_PARTICIPANTS: 50,
-    SOCIAL_SHARING: ['facebook', 'instagram', 'whatsapp', 'x', 'telegram']
+    SOCIAL_SHARING: ['facebook', 'instagram', 'whatsapp', 'x', 'telegram', 'snapchat', 'tiktok'],
   },
   SUBSCRIPTION_CONSTANTS: {
     SUBSCRIPTION_PLANS: [

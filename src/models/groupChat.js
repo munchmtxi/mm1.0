@@ -1,4 +1,3 @@
-// C:\Users\munch\Desktop\MMFinale\System\Back\MM1.0\src\models\groupChat.js
 'use strict';
 const { Model } = require('sequelize');
 
@@ -6,13 +5,22 @@ module.exports = (sequelize, DataTypes) => {
   class GroupChat extends Model {
     static associate(models) {
       this.belongsTo(models.User, { foreignKey: 'creator_id', as: 'creator' });
+      this.belongsTo(models.Customer, { foreignKey: 'creator_id', as: 'creator_customer', targetKey: 'user_id' });
       this.belongsToMany(models.User, {
         through: 'GroupChatMembers',
         foreignKey: 'chat_id',
         otherKey: 'user_id',
         as: 'members',
       });
+      this.belongsToMany(models.Customer, {
+        through: 'GroupChatMembers',
+        foreignKey: 'chat_id',
+        otherKey: 'user_id',
+        as: 'customer_members',
+        targetKey: 'user_id',
+      });
       this.hasMany(models.GroupChatMessage, { foreignKey: 'chat_id', as: 'messages' });
+      this.hasMany(models.Notification, { foreignKey: 'user_id', as: 'notifications', sourceKey: 'creator_id' });
     }
   }
 
@@ -40,6 +48,17 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 'active',
     },
+    platform: {
+      type: DataTypes.ENUM('in_app', 'whatsapp', 'telegram', 'facebook', 'instagram', 'x', 'snapchat', 'tiktok'),
+      allowNull: false,
+      defaultValue: 'in_app',
+    },
+    max_participants: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 100,
+      validate: { max: 100 },
+    },
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
@@ -63,6 +82,7 @@ module.exports = (sequelize, DataTypes) => {
     indexes: [
       { fields: ['creator_id'] },
       { fields: ['status'] },
+      { fields: ['platform'] },
     ],
   });
 

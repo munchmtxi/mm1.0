@@ -8,6 +8,7 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.ParkingSpace, { foreignKey: 'space_id', as: 'space' });
       this.belongsTo(models.Merchant, { foreignKey: 'merchant_id', as: 'merchant' });
       this.hasOne(models.Payment, { foreignKey: 'booking_id', as: 'payment' });
+      this.hasMany(models.Review, { foreignKey: 'service_id', as: 'reviews', constraints: false, scope: { service_type: 'parking_booking' } });
     }
   }
 

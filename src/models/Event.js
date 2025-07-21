@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       this.hasMany(models.EventService, { foreignKey: 'event_id', as: 'services' });
       this.hasMany(models.Notification, { foreignKey: 'event_id', as: 'notifications' });
       this.hasMany(models.TicketBooking, { foreignKey: 'event_id', as: 'ticket_bookings' });
+      this.hasMany(models.Review, { foreignKey: 'service_id', as: 'reviews', constraints: false, scope: { service_type: 'event' } });
     }
   }
 
@@ -26,28 +27,28 @@ module.exports = (sequelize, DataTypes) => {
         references: { model: 'customers', key: 'id' },
       },
       title: {
-        type: DataTypes.STRING(150), // MAX_TITLE_LENGTH from meventsConstants
+        type: DataTypes.STRING(150),
         allowNull: false,
         validate: { notEmpty: true, len: [1, 150] },
       },
       description: {
         type: DataTypes.TEXT,
         allowNull: true,
-        validate: { len: [0, 2000] }, // MAX_DESCRIPTION_LENGTH from meventsConstants
+        validate: { len: [0, 2000] },
       },
       occasion: {
         type: DataTypes.ENUM([
           'BIRTHDAY', 'ANNIVERSARY', 'CORPORATE', 'SOCIAL', 'WEDDING', 'CONFERENCE',
           'BABY_SHOWER', 'GRADUATION', 'FESTIVAL', 'CHARITY', 'CONCERT', 'SPORTS', 'THEATER', 'OTHER'
-        ]), // EVENT_OCCASIONS from meventsConstants
+        ]),
         allowNull: false,
       },
       payment_type: {
-        type: DataTypes.ENUM(['SOLO', 'SPLIT', 'SPONSOR', 'CROWDFUNDED']), // PAYMENT_TYPES from meventsConstants
+        type: DataTypes.ENUM(['SOLO', 'SPLIT', 'SPONSOR', 'CROWDFUNDED']),
         allowNull: false,
       },
       status: {
-        type: DataTypes.ENUM(['DRAFT', 'CONFIRMED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'POSTPONED']), // EVENT_STATUSES from meventsConstants
+        type: DataTypes.ENUM(['DRAFT', 'CONFIRMED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'POSTPONED']),
         allowNull: false,
         defaultValue: 'DRAFT',
       },

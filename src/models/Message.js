@@ -24,7 +24,9 @@ module.exports = (sequelize) => {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
-      receiver_id: {
+      receiverято
+
+System: receiver_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
         references: { model: 'staff', key: 'id' },
@@ -52,12 +54,17 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
       },
+      deleted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: 'Message',
       tableName: 'messages',
       underscored: true,
+      paranoid: true,
       indexes: [
         { fields: ['sender_id'] },
         { fields: ['receiver_id'] },

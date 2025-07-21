@@ -4,11 +4,7 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class DriverAvailability extends Model {
     static associate(models) {
-      this.belongsTo(models.Driver, {
-        foreignKey: 'driver_id',
-        as: 'driver',
-      });
-      // Removed: models.Driver.hasMany(this, { foreignKey: 'driver_id', as: 'availability' });
+      this.belongsTo(models.Driver, { foreignKey: 'driver_id', as: 'driver' });
     }
   }
 
@@ -23,10 +19,7 @@ module.exports = (sequelize, DataTypes) => {
       driver_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-          model: 'drivers',
-          key: 'id',
-        },
+        references: { model: 'drivers', key: 'id' },
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE',
       },
@@ -41,9 +34,7 @@ module.exports = (sequelize, DataTypes) => {
       start_time: {
         type: DataTypes.TIME,
         allowNull: false,
-        validate: {
-          notEmpty: { msg: 'Start time is required' },
-        },
+        validate: { notEmpty: { msg: 'Start time is required' } },
       },
       end_time: {
         type: DataTypes.TIME,
@@ -53,6 +44,19 @@ module.exports = (sequelize, DataTypes) => {
           isAfterStart(value) {
             if (value && this.start_time && value <= this.start_time) {
               throw new Error('End time must be after start time');
+            }
+          },
+          shiftDuration() {
+            if (this.start_time && this.end_time) {
+              const start = new Date(`1970-01-01T${this.start_time}Z`);
+              const end = new Date(`1970-01-01T${this.end_time}Z`);
+              const hours = (end - start) / 1000 / 60 / 60;
+              if (hours < 2) {
+                throw new Error('Shift must be at least 2 hours');
+              }
+              if (hours > 14) {
+                throw new Error('Shift cannot exceed 14 hours');
+              }
             }
           },
         },
